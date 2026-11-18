@@ -23,7 +23,11 @@ has the honest breakdown, part by part.
 
 ## Running it
 
-You need [Rust](https://rustup.rs) (and the Visual Studio C++ build tools on Windows).
+**Just want to play?** Download the server for Windows or Linux from the
+[latest release](https://github.com/RustedMC/Rusted/releases/latest), run it, and add a server
+in Minecraft with your machine's address, port `19132`.
+
+To build it yourself, you need [Rust](https://rustup.rs) (and the Visual Studio C++ build tools on Windows).
 
 ```bash
 git clone https://github.com/RustedMC/Rusted.git
