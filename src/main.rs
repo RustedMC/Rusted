@@ -15,6 +15,7 @@ mod containers;
 mod drops;
 mod entities;
 mod hunger;
+mod minecart;
 mod mobs;
 mod overworld;
 mod fluids;

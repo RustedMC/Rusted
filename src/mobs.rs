@@ -87,6 +87,7 @@ pub enum Kind {
     EndCrystal,
     Shulker,
     Boat,
+    Minecart,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -135,7 +136,7 @@ impl Kind {
 
     /// Mobs a player can sit on. Pigs, striders and camels need a saddle first.
     pub fn rideable(self) -> bool {
-        self.horse_like() || matches!(self, Kind::Pig | Kind::Strider | Kind::Camel | Kind::Boat)
+        self.horse_like() || matches!(self, Kind::Pig | Kind::Strider | Kind::Camel | Kind::Boat | Kind::Minecart)
     }
 
     /// How far the rider's feet sit above the mob's feet.
@@ -165,7 +166,7 @@ impl Kind {
     }
 
     pub const PASSIVE: [Kind; 4] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken];
-    pub const ALL: [Kind; 72] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken, Kind::Zombie, Kind::Skeleton, Kind::Creeper, Kind::Spider, Kind::Enderman, Kind::Villager, Kind::IronGolem, Kind::Wolf, Kind::Cat, Kind::Squid, Kind::Cod, Kind::Salmon, Kind::Drowned, Kind::Rabbit, Kind::Horse, Kind::Donkey, Kind::Mule, Kind::Llama, Kind::Goat, Kind::Fox, Kind::Panda, Kind::PolarBear, Kind::Mooshroom, Kind::Ocelot, Kind::Turtle, Kind::Armadillo, Kind::Camel, Kind::Sniffer, Kind::Frog, Kind::Axolotl, Kind::GlowSquid, Kind::TropicalFish, Kind::Pufferfish, Kind::Dolphin, Kind::Bat, Kind::Parrot, Kind::Bee, Kind::Allay, Kind::Husk, Kind::Stray, Kind::Bogged, Kind::ZombieVillager, Kind::CaveSpider, Kind::Silverfish, Kind::Witch, Kind::Slime, Kind::Phantom, Kind::Pillager, Kind::Vindicator, Kind::Evoker, Kind::Ravager, Kind::Vex, Kind::Guardian, Kind::ElderGuardian, Kind::Breeze, Kind::Warden, Kind::WitherSkeleton, Kind::Blaze, Kind::Ghast, Kind::MagmaCube, Kind::Piglin, Kind::ZombiePigman, Kind::Hoglin, Kind::Strider, Kind::EnderDragon, Kind::EndCrystal, Kind::Shulker, Kind::Boat];
+    pub const ALL: [Kind; 73] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken, Kind::Zombie, Kind::Skeleton, Kind::Creeper, Kind::Spider, Kind::Enderman, Kind::Villager, Kind::IronGolem, Kind::Wolf, Kind::Cat, Kind::Squid, Kind::Cod, Kind::Salmon, Kind::Drowned, Kind::Rabbit, Kind::Horse, Kind::Donkey, Kind::Mule, Kind::Llama, Kind::Goat, Kind::Fox, Kind::Panda, Kind::PolarBear, Kind::Mooshroom, Kind::Ocelot, Kind::Turtle, Kind::Armadillo, Kind::Camel, Kind::Sniffer, Kind::Frog, Kind::Axolotl, Kind::GlowSquid, Kind::TropicalFish, Kind::Pufferfish, Kind::Dolphin, Kind::Bat, Kind::Parrot, Kind::Bee, Kind::Allay, Kind::Husk, Kind::Stray, Kind::Bogged, Kind::ZombieVillager, Kind::CaveSpider, Kind::Silverfish, Kind::Witch, Kind::Slime, Kind::Phantom, Kind::Pillager, Kind::Vindicator, Kind::Evoker, Kind::Ravager, Kind::Vex, Kind::Guardian, Kind::ElderGuardian, Kind::Breeze, Kind::Warden, Kind::WitherSkeleton, Kind::Blaze, Kind::Ghast, Kind::MagmaCube, Kind::Piglin, Kind::ZombiePigman, Kind::Hoglin, Kind::Strider, Kind::EnderDragon, Kind::EndCrystal, Kind::Shulker, Kind::Boat, Kind::Minecart];
 
     pub fn spec(self) -> &'static Spec {
         match self {
@@ -241,6 +242,7 @@ impl Kind {
             Kind::Shulker => &Spec { id: "minecraft:shulker", display: "Shulker", health: 30.0, size: (1.0, 1.0), speed: 0.0, melee: 0.0, class: Class::Hostile, food: &[], drops: &[("minecraft:shulker_shell", 0, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: Some("minecraft:shulker_bullet"), hit_effect: None },
             Kind::Strider => &Spec { id: "minecraft:strider", display: "Strider", health: 20.0, size: (0.9, 1.7), speed: 0.1, melee: 0.0, class: Class::Passive, food: &["minecraft:warped_fungus"], drops: &[("minecraft:string", 0, 5)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
             Kind::Boat => &Spec { id: "minecraft:boat", display: "Boat", health: 4.0, size: (1.4, 0.455), speed: 0.0, melee: 0.0, class: Class::Passive, food: &[], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Minecart => &Spec { id: "minecraft:minecart", display: "Minecart", health: 3.0, size: (0.98, 0.7), speed: 0.0, melee: 0.0, class: Class::Passive, food: &[], drops: &[("minecraft:minecart", 1, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
         }
     }
 
@@ -384,6 +386,8 @@ pub struct Mob {
     temper: u32,
     /// Ticks until an untamed horse decides whether to keep its rider.
     buck: u32,
+    /// Minecarts: the rider's yaw while they hold forward.
+    push: Option<f32>,
 }
 
 /// Weapon enchantment effects on a hit.
@@ -782,7 +786,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: kind.max_health(), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: if baby { GROW } else { 0 }, baby: if baby { GROW } else { 0 },
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, temper: 0, buck: 0,
+            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, temper: 0, buck: 0, push: None,
         };
         let size = [1u8, 2, 4][(self.rand() % 3) as usize];
         if kind.spec().splits {
@@ -807,7 +811,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: (size as f32).powi(2), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: 0,
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, temper: 0, buck: 0,
+            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, temper: 0, buck: 0, push: None,
         };
         broadcast(server, add_packet(&m));
         self.mobs.lock().insert(id, m);
@@ -878,7 +882,7 @@ impl Mobs {
                 broadcast(server, event(id, ActorEvent::Feed));
                 return Use::Consume;
             }
-            let can_ride = m.kind.horse_like() || m.saddled || m.kind == Kind::Boat;
+            let can_ride = m.kind.horse_like() || m.saddled || matches!(m.kind, Kind::Boat | Kind::Minecart);
             if can_ride && m.rider.is_none() && !m.kind.food(held) {
                 m.rider = Some(player);
                 m.path.clear();
@@ -947,8 +951,13 @@ impl Mobs {
 
     /// The rider moved: the client steers ridden mobs, so the mob follows its rider.
     /// `eye` is the rider's eye position.
-    pub fn ride(&self, id: i64, player: i64, eye: (f32, f32, f32), yaw: f32) {
+    pub fn ride(&self, id: i64, player: i64, eye: (f32, f32, f32), yaw: f32, forward: bool) {
         if let Some(m) = self.mobs.lock().get_mut(&id).filter(|m| m.rider == Some(player)) {
+            if m.kind == Kind::Minecart {
+                // The server drives minecarts; holding forward only gives them a push.
+                m.push = forward.then_some(yaw);
+                return;
+            }
             m.pos = (eye.0, eye.1 - 1.62 - m.kind.seat_height(), eye.2);
             m.yaw = yaw;
             m.head_yaw = yaw;
@@ -1132,7 +1141,7 @@ impl Mobs {
             }
             if let Some(p) = attacker && !baby {
                 let points = match kind {
-                    Kind::IronGolem | Kind::Villager | Kind::Boat => 0,
+                    Kind::IronGolem | Kind::Villager | Kind::Boat | Kind::Minecart => 0,
                     k if k.hostile() => 5,
                     _ => 1 + (self.rand() % 3) as i32,
                 };
@@ -1200,6 +1209,13 @@ impl Mobs {
                             }
                         }
                     }
+                    if m.kind == Kind::Minecart {
+                        self.cart(server, &mut m, &mut out);
+                        if let Some(slot) = self.mobs.lock().get_mut(&id) {
+                            (slot.pos, slot.vel, slot.yaw, slot.on_ground, slot.sent, slot.rider) = (m.pos, m.vel, m.yaw, m.on_ground, m.sent, m.rider);
+                        }
+                        continue;
+                    }
                     // Ridden: the rider steers, so no AI or physics of its own.
                     if m.sent.0 != m.pos || (m.sent.1 - m.yaw).abs() > 2.0 {
                         m.sent = (m.pos, m.yaw, m.head_yaw);
@@ -1218,6 +1234,13 @@ impl Mobs {
                     use bedrock::protocol::v975::enums::ActorEvent;
                     out.push(event(id, ActorEvent::InLoveHearts));
                 }
+            }
+            if m.kind == Kind::Minecart && m.rider.is_none() {
+                self.cart(server, &mut m, &mut out);
+                if let Some(slot) = self.mobs.lock().get_mut(&id) {
+                    (slot.pos, slot.vel, slot.yaw, slot.on_ground, slot.sent) = (m.pos, m.vel, m.yaw, m.on_ground, m.sent);
+                }
+                continue;
             }
             if matches!(m.kind, Kind::EndCrystal | Kind::Boat) {
                 continue; // crystals sit on their pillar, boats stay where they were left
@@ -1319,6 +1342,53 @@ impl Mobs {
         for p in out {
             broadcast(server, p);
         }
+    }
+
+    /// A minecart's tick: follow the rails, or roll and fall off them. Sends its movement.
+    fn cart(&self, server: &Server, m: &mut Mob, out: &mut Vec<Protocol>) {
+        use crate::minecart::{RailKind, find, off_rail, on_rail};
+        let w = &server.world;
+        match find(w, m.pos) {
+            Some(rail) => {
+                (m.pos, m.vel) = on_rail(w, rail, m.pos, m.vel, m.rider.is_some(), m.push.take(), solid);
+                m.on_ground = true;
+                if rail.kind == RailKind::Activator && rail.on && let Some(r) = m.rider.take() {
+                    // A powered activator rail throws the rider out.
+                    out.extend([link_packet(m.id, r, false), rider_flag(r, false), data_packet(m)]);
+                }
+            }
+            None => {
+                m.vel = off_rail(m.vel, m.on_ground);
+                let next = (m.pos.0 + m.vel.0, m.pos.1 + m.vel.1, m.pos.2 + m.vel.2);
+                let (nx, ny, nz) = (next.0.floor() as i32, next.1.floor() as i32, next.2.floor() as i32);
+                m.on_ground = solid(w.get(nx, ny, nz));
+                if m.on_ground {
+                    m.vel.1 = 0.0;
+                    m.pos = (m.pos.0, ny as f32 + 1.0, m.pos.2);
+                } else if solid(w.get(nx, m.pos.1.floor() as i32, nz)) {
+                    m.vel = (0.0, m.vel.1, 0.0);
+                    m.pos.1 = next.1;
+                } else {
+                    m.pos = next;
+                }
+            }
+        }
+        if m.vel.0.abs() + m.vel.2.abs() > 1e-3 {
+            m.yaw = (-m.vel.0).atan2(m.vel.2).to_degrees();
+        }
+        if m.sent.0 != m.pos || (m.sent.1 - m.yaw).abs() > 2.0 {
+            m.sent = (m.pos, m.yaw, m.head_yaw);
+            out.push(move_packet(m));
+        }
+    }
+
+    /// Puts a minecart on the rail at `at`.
+    pub fn spawn_minecart(&self, server: &Server, at: (i32, i32, i32)) -> i64 {
+        let id = self.spawn(server, Kind::Minecart, (at.0 as f32 + 0.5, at.1 as f32, at.2 as f32 + 0.5));
+        if let Some(m) = self.mobs.lock().get_mut(&id) {
+            m.baby = 0;
+        }
+        id
     }
 
     /// Hostile AI: burn in sun, pick a target, chase, melee/shoot/fuse. True if it blew up.
@@ -2690,7 +2760,7 @@ impl Mobs {
                         id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health, on_ground: false, target: None, panic: 0, dying: 0,
                         sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: baby.parse().unwrap_or(0),
                         aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner, sitting: *sitting == "1",
-                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false, rider: None, saddled, temper, buck: 0,
+                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false, rider: None, saddled, temper, buck: 0, push: None,
                     });
                     if let Some(site) = job.and_then(|j| j.site) {
                         crate::villagers::claim(site, id);
@@ -2883,7 +2953,7 @@ mod tests {
         assert!((2..=4).contains(&kids), "split into {kids}");
         assert!(server.mobs.count() >= before + 3);
         assert_eq!(Kind::from_name("cave_spider").map(|k| k.spec().hit_effect), Some(Some((19, 7))));
-        assert_eq!(Kind::ALL.len(), 72);
+        assert_eq!(Kind::ALL.len(), 73);
 
         // An ender pearl thrown straight down lands and teleports its thrower.
         let mut rx = server.events.subscribe();
@@ -2966,7 +3036,7 @@ mod tests {
         assert!(matches!(server.mobs.interact(&server, pig, None, 7), Use::Mount));
         assert_eq!(server.mobs.rider_of(pig), Some(7));
         // The ridden pig follows its rider and doesn't wander off on its own.
-        server.mobs.ride(pig, 7, (10.0, -57.0, 3.0), 90.0);
+        server.mobs.ride(pig, 7, (10.0, -57.0, 3.0), 90.0, false);
         server.mobs.tick(&server);
         let p = server.mobs.mobs.lock()[&pig].pos;
         assert!((p.0 - 10.0).abs() < 1e-3 && (p.2 - 3.0).abs() < 1e-3, "{p:?}");
@@ -3018,6 +3088,26 @@ mod tests {
         assert!(b.baby == 0 && b.color == 2 && b.pos == at(60.5), "{:?}", b.pos);
         assert!(matches!(server.mobs.interact(&server, boat, None, 7), Use::Mount));
         server.mobs.dismount(&server, 7);
+
+        // Minecarts: placed on a rail, the server rolls them along it.
+        use crate::blocks::{State, any_state, with};
+        let rail = |d: i32, kind: &str, on: bool| {
+            let base = with(any_state(&format!("minecraft:{kind}")).unwrap(), &[("rail_direction", State::Int(d))]);
+            if kind == "rail" { base } else { with(base, &[("rail_data_bit", State::Bool(on))]) }
+        };
+        for x in 100..120 {
+            server.world.set(x, -60, 0, rail(1, "rail", false));
+        }
+        server.world.set(115, -60, 0, rail(1, "activator_rail", true));
+        let cart = server.mobs.spawn_minecart(&server, (101, -60, 0));
+        assert!(matches!(server.mobs.interact(&server, cart, None, 7), Use::Mount));
+        server.mobs.mobs.lock().get_mut(&cart).unwrap().vel = (0.4, 0.0, 0.0);
+        for _ in 0..60 {
+            server.mobs.tick(&server);
+        }
+        let c = server.mobs.mobs.lock()[&cart].clone();
+        assert!(c.pos.0 > 110.0 && (c.pos.2 - 0.5).abs() < 1e-3, "rolled along the rail: {:?}", c.pos);
+        assert!(c.rider.is_none(), "the powered activator rail threw the rider out");
 
         // Saddles and temper are saved with the world.
         let file = std::env::temp_dir().join(format!("rusted_ride_{}.txt", std::process::id()));

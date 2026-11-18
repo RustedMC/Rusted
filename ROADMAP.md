@@ -3,14 +3,13 @@
 Rough order of what's next. See [PORTING.md](PORTING.md) for where each part stands today.
 
 ## Next up
-- Minecarts and rails (riding animals and boats is done)
 - Loot tables for generated chests, working mob spawners
 - Crossbows, fishing, fireworks and elytra, shields, totems
 - Beacon, loom, cartography table, crafter, lectern
 
 ## After that
 - PNX's full mob AI (memory, sensors, behaviours) to replace the current simpler AI
-- Repeater locking, rails, quasi-connectivity, sculk
+- Repeater locking, detector rails, quasi-connectivity, sculk
 - `/execute` and the remaining vanilla commands
 - More plugin events, plugins loaded at runtime
 - Sky light, NPC dialogs, camera control

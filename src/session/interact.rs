@@ -82,6 +82,18 @@ impl Session {
         }
         let held_name = items::name_of(u.held_item.id).unwrap_or("");
         let clicked_name = blocks::entry(clicked).map_or("", |e| e.name.as_str());
+        // Minecarts go on rails.
+        if held_name == "minecraft:minecart"
+            && !matches!(self.mode, GameType::Spectator)
+            && crate::minecart::rail_at(&self.server.world, p.x, p.y, p.z).is_some()
+        {
+            self.server.mobs.spawn_minecart(&self.server, (p.x, p.y, p.z));
+            if survival_like(&self.mode) {
+                self.inv.use_one(self.selected_slot as usize);
+                let _ = self.conn.send(&[self.inv.content_packet()]).await;
+            }
+            return;
+        }
         // Boats go on the block clicked, or float on water.
         if let Some(wood) = mobs::boat_wood(held_name)
             && !matches!(self.mode, GameType::Spectator)
@@ -339,6 +351,10 @@ impl Session {
                 self.server.set_block(self.id, x + ox, y + oy, z + oz, block);
                 for ((fx, fy, fz), b) in physics::settle(&self.server.world, (x + ox, y + oy, z + oz)) {
                     self.server.set_block_quiet(self.id, fx, fy, fz, b);
+                }
+                // Rails turn to join the rails around them.
+                for ((rx, ry, rz), b) in crate::minecart::placed(&self.server.world, (x + ox, y + oy, z + oz)) {
+                    self.server.set_block(self.id, rx, ry, rz, b);
                 }
             }
             if let Some(c) = placed_chest {

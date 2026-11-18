@@ -73,7 +73,7 @@ impl Session {
                 self.riding = None;
                 self.server.mobs.dismount(&self.server, self.id);
             } else {
-                self.server.mobs.ride(mount, self.id, pos, rot.1);
+                self.server.mobs.ride(mount, self.id, pos, rot.1, input.move_vector.1 > 0.1);
             }
         }
         // Portals: nether portals after 4 s standing in them (instant in
