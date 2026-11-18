@@ -257,7 +257,6 @@ pub fn use_block(world: &World, p: (i32, i32, i32), c: &Ctx) -> Option<Outcome> 
         return Some(Outcome::new(vec![(p, next)]).sound(s).held(Held::Become(bucket)));
     }
     if short == "end_portal_frame" && held == "minecraft:ender_eye" && int(b, "end_portal_eye_bit") == 0 {
-        // TODO: the end portal doesn't actually open yet
         return Some(Outcome::new(vec![(p, set(b, "end_portal_eye_bit", State::Bool(true)))]).sound("block.end_portal_frame.fill").held(Held::UseOne));
     }
     if short == "respawn_anchor" {
