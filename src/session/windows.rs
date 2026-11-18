@@ -84,6 +84,32 @@ impl Session {
         let _ = self.conn.send(&out).await;
     }
 
+    /// Opens a chest minecart's 27 slots, kept in the container store at `store`.
+    pub(super) async fn open_cart(&mut self, cart: i64, store: (i32, i32, i32)) {
+        if let (Some(pos), Some(slots)) = (self.open_container.take(), self.inv.open.take()) {
+            close_open(&self.server, pos, slots, self.open_pair.take());
+        }
+        if let Some(loot) = crate::loot::take(store, crate::inventory::CHEST_SLOTS) {
+            self.server.containers.put(store, loot);
+        }
+        self.window_id = if self.window_id >= 99 { 2 } else { self.window_id + 1 };
+        self.open_kind = Some((containers::Kind::Chest, ContainerEnumName::LevelEntityContainer));
+        self.open_table = None;
+        let mut slots = self.server.containers.get(store);
+        slots.resize(crate::inventory::CHEST_SLOTS, None);
+        let mut out = vec![Protocol::ContainerOpenPacket(Box::new(ContainerOpenPacket {
+            container_id: ContainerID(self.window_id),
+            container_type: ContainerType::MinecartChest,
+            position: NetworkBlockPosition { x: 0, y: 0, z: 0 },
+            target_actor_id: ActorUniqueID(cart),
+        }))];
+        self.open_pair = None;
+        self.inv.open_container(slots);
+        self.open_container = Some(store);
+        out.extend(self.inv.open_packet(self.window_id as u32, ContainerEnumName::LevelEntityContainer));
+        let _ = self.conn.send(&out).await;
+    }
+
     pub(super) async fn on_open_inventory(&mut self) {
         // Same reply PNX gives: open the player's own inventory (type -1).
         self.window_id = if self.window_id >= 99 { 2 } else { self.window_id + 1 };

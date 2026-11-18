@@ -88,6 +88,7 @@ pub enum Kind {
     Shulker,
     Boat,
     Minecart,
+    ChestMinecart,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -134,6 +135,11 @@ impl Kind {
         matches!(self, Kind::Horse | Kind::Donkey | Kind::Mule)
     }
 
+    /// Minecarts of any kind: they move on rails, not by walking.
+    pub fn cart(self) -> bool {
+        matches!(self, Kind::Minecart | Kind::ChestMinecart)
+    }
+
     /// Mobs a player can sit on. Pigs, striders and camels need a saddle first.
     pub fn rideable(self) -> bool {
         self.horse_like() || matches!(self, Kind::Pig | Kind::Strider | Kind::Camel | Kind::Boat | Kind::Minecart)
@@ -170,7 +176,7 @@ impl Kind {
     }
 
     pub const PASSIVE: [Kind; 4] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken];
-    pub const ALL: [Kind; 73] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken, Kind::Zombie, Kind::Skeleton, Kind::Creeper, Kind::Spider, Kind::Enderman, Kind::Villager, Kind::IronGolem, Kind::Wolf, Kind::Cat, Kind::Squid, Kind::Cod, Kind::Salmon, Kind::Drowned, Kind::Rabbit, Kind::Horse, Kind::Donkey, Kind::Mule, Kind::Llama, Kind::Goat, Kind::Fox, Kind::Panda, Kind::PolarBear, Kind::Mooshroom, Kind::Ocelot, Kind::Turtle, Kind::Armadillo, Kind::Camel, Kind::Sniffer, Kind::Frog, Kind::Axolotl, Kind::GlowSquid, Kind::TropicalFish, Kind::Pufferfish, Kind::Dolphin, Kind::Bat, Kind::Parrot, Kind::Bee, Kind::Allay, Kind::Husk, Kind::Stray, Kind::Bogged, Kind::ZombieVillager, Kind::CaveSpider, Kind::Silverfish, Kind::Witch, Kind::Slime, Kind::Phantom, Kind::Pillager, Kind::Vindicator, Kind::Evoker, Kind::Ravager, Kind::Vex, Kind::Guardian, Kind::ElderGuardian, Kind::Breeze, Kind::Warden, Kind::WitherSkeleton, Kind::Blaze, Kind::Ghast, Kind::MagmaCube, Kind::Piglin, Kind::ZombiePigman, Kind::Hoglin, Kind::Strider, Kind::EnderDragon, Kind::EndCrystal, Kind::Shulker, Kind::Boat, Kind::Minecart];
+    pub const ALL: [Kind; 74] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken, Kind::Zombie, Kind::Skeleton, Kind::Creeper, Kind::Spider, Kind::Enderman, Kind::Villager, Kind::IronGolem, Kind::Wolf, Kind::Cat, Kind::Squid, Kind::Cod, Kind::Salmon, Kind::Drowned, Kind::Rabbit, Kind::Horse, Kind::Donkey, Kind::Mule, Kind::Llama, Kind::Goat, Kind::Fox, Kind::Panda, Kind::PolarBear, Kind::Mooshroom, Kind::Ocelot, Kind::Turtle, Kind::Armadillo, Kind::Camel, Kind::Sniffer, Kind::Frog, Kind::Axolotl, Kind::GlowSquid, Kind::TropicalFish, Kind::Pufferfish, Kind::Dolphin, Kind::Bat, Kind::Parrot, Kind::Bee, Kind::Allay, Kind::Husk, Kind::Stray, Kind::Bogged, Kind::ZombieVillager, Kind::CaveSpider, Kind::Silverfish, Kind::Witch, Kind::Slime, Kind::Phantom, Kind::Pillager, Kind::Vindicator, Kind::Evoker, Kind::Ravager, Kind::Vex, Kind::Guardian, Kind::ElderGuardian, Kind::Breeze, Kind::Warden, Kind::WitherSkeleton, Kind::Blaze, Kind::Ghast, Kind::MagmaCube, Kind::Piglin, Kind::ZombiePigman, Kind::Hoglin, Kind::Strider, Kind::EnderDragon, Kind::EndCrystal, Kind::Shulker, Kind::Boat, Kind::Minecart, Kind::ChestMinecart];
 
     pub fn spec(self) -> &'static Spec {
         match self {
@@ -246,6 +252,7 @@ impl Kind {
             Kind::Shulker => &Spec { id: "minecraft:shulker", display: "Shulker", health: 30.0, size: (1.0, 1.0), speed: 0.0, melee: 0.0, class: Class::Hostile, food: &[], drops: &[("minecraft:shulker_shell", 0, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: Some("minecraft:shulker_bullet"), hit_effect: None },
             Kind::Strider => &Spec { id: "minecraft:strider", display: "Strider", health: 20.0, size: (0.9, 1.7), speed: 0.1, melee: 0.0, class: Class::Passive, food: &["minecraft:warped_fungus"], drops: &[("minecraft:string", 0, 5)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
             Kind::Boat => &Spec { id: "minecraft:boat", display: "Boat", health: 4.0, size: (1.4, 0.455), speed: 0.0, melee: 0.0, class: Class::Passive, food: &[], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::ChestMinecart => &Spec { id: "minecraft:chest_minecart", display: "Minecart with Chest", health: 3.0, size: (0.98, 0.7), speed: 0.0, melee: 0.0, class: Class::Passive, food: &[], drops: &[("minecraft:minecart", 1, 1), ("minecraft:chest", 1, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
             Kind::Minecart => &Spec { id: "minecraft:minecart", display: "Minecart", health: 3.0, size: (0.98, 0.7), speed: 0.0, melee: 0.0, class: Class::Passive, food: &[], drops: &[("minecraft:minecart", 1, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
         }
     }
@@ -392,6 +399,8 @@ pub struct Mob {
     buck: u32,
     /// Minecarts: the rider's yaw while they hold forward.
     push: Option<f32>,
+    /// Chest minecarts: where their items are kept in the container store (see `cart_store`).
+    home: Option<(i32, i32, i32)>,
     /// Memory and current behaviour (passive mobs so far; see `ai`).
     brain: crate::ai::Brain,
 }
@@ -831,7 +840,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: kind.max_health(), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: if baby { GROW } else { 0 }, baby: if baby { GROW } else { 0 },
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, temper: 0, buck: 0, push: None, brain: Default::default(),
+            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
         };
         let size = [1u8, 2, 4][(self.rand() % 3) as usize];
         if kind.spec().splits {
@@ -859,7 +868,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: (size as f32).powi(2), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: 0,
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, temper: 0, buck: 0, push: None, brain: Default::default(),
+            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
         };
         broadcast(server, add_packet(&m));
         if let Some(p) = held_packet(&m) {
@@ -900,6 +909,9 @@ impl Mobs {
             return Use::Nothing;
         }
         use bedrock::protocol::v975::enums::ActorEvent;
+        if m.kind == Kind::ChestMinecart {
+            return m.home.map_or(Use::Nothing, |h| Use::OpenCart(cart_store(h)));
+        }
         if m.kind == Kind::Villager && m.baby == 0 && m.job.as_ref().is_some_and(|j| j.profession != 0) {
             return Use::Trade;
         }
@@ -999,7 +1011,7 @@ impl Mobs {
 
     /// Feet positions of living mobs (for pressure plates).
     pub fn feet(&self) -> Vec<(f32, f32, f32)> {
-        self.mobs.lock().values().filter(|m| m.dying == 0 && !matches!(m.kind, Kind::Boat | Kind::Minecart)).map(|m| m.pos).collect()
+        self.mobs.lock().values().filter(|m| m.dying == 0 && !matches!(m.kind, Kind::Boat | Kind::Minecart | Kind::ChestMinecart)).map(|m| m.pos).collect()
     }
 
     pub fn contains(&self, id: i64) -> bool {
@@ -1184,8 +1196,18 @@ impl Mobs {
         if m.health <= 0.0 {
             m.dying = 10;
             broadcast(server, event(id, ActorEvent::Death));
-            let (kind, pos, baby, slime, captain) = (m.kind, m.pos, m.baby > 0, m.color, m.captain);
+            let (kind, pos, baby, slime, captain, home) = (m.kind, m.pos, m.baby > 0, m.color, m.captain, m.home);
             drop(mobs);
+            // A broken chest minecart spills what's in it (rolling its loot first if never opened).
+            if let Some(h) = home {
+                let store = cart_store(h);
+                if let Some(loot) = crate::loot::take(store, crate::inventory::CHEST_SLOTS) {
+                    server.containers.put(store, loot);
+                }
+                for s in server.containers.remove(store).into_iter().flatten() {
+                    server.entities.drop_item(server, s.item, s.count, (pos.0, pos.1 + 0.5, pos.2));
+                }
+            }
             // Slimes and magma cubes split into 2-4 smaller ones (PNX `EntitySlime.close`).
             if kind.spec().splits && slime > 1 {
                 for i in 0..2 + self.rand() % 3 {
@@ -1206,7 +1228,7 @@ impl Mobs {
             }
             if let Some(p) = attacker && !baby {
                 let points = match kind {
-                    Kind::IronGolem | Kind::Villager | Kind::Boat | Kind::Minecart => 0,
+                    Kind::IronGolem | Kind::Villager | Kind::Boat | Kind::Minecart | Kind::ChestMinecart => 0,
                     k if k.hostile() => 5,
                     _ => 1 + (self.rand() % 3) as i32,
                 };
@@ -1277,7 +1299,7 @@ impl Mobs {
                             }
                         }
                     }
-                    if m.kind == Kind::Minecart {
+                    if m.kind.cart() {
                         self.cart(server, &mut m, &mut out);
                         if let Some(slot) = self.mobs.lock().get_mut(&id) {
                             (slot.pos, slot.vel, slot.yaw, slot.on_ground, slot.sent, slot.rider) = (m.pos, m.vel, m.yaw, m.on_ground, m.sent, m.rider);
@@ -1303,7 +1325,7 @@ impl Mobs {
                     out.push(event(id, ActorEvent::InLoveHearts));
                 }
             }
-            if m.kind == Kind::Minecart && m.rider.is_none() {
+            if m.kind.cart() && m.rider.is_none() {
                 self.cart(server, &mut m, &mut out);
                 if let Some(slot) = self.mobs.lock().get_mut(&id) {
                     (slot.pos, slot.vel, slot.yaw, slot.on_ground, slot.sent) = (m.pos, m.vel, m.yaw, m.on_ground, m.sent);
@@ -1517,6 +1539,16 @@ impl Mobs {
     }
 
     /// Puts a minecart on the rail at `at`.
+    /// Chest minecarts the world generator put in mineshafts, waiting to be spawned.
+    pub fn spawn_chest_carts(&self, server: &Server) {
+        for at in crate::loot::take_carts() {
+            let id = self.spawn(server, Kind::ChestMinecart, (at.0 as f32 + 0.5, at.1 as f32, at.2 as f32 + 0.5));
+            if let Some(m) = self.mobs.lock().get_mut(&id) {
+                (m.baby, m.home) = (0, Some(at));
+            }
+        }
+    }
+
     pub fn spawn_minecart(&self, server: &Server, at: (i32, i32, i32)) -> i64 {
         let id = self.spawn(server, Kind::Minecart, (at.0 as f32 + 0.5, at.1 as f32, at.2 as f32 + 0.5));
         if let Some(m) = self.mobs.lock().get_mut(&id) {
@@ -3028,6 +3060,10 @@ impl Mobs {
                 m.kind.identifier(), m.pos.0, m.pos.1, m.pos.2, m.yaw, m.health, m.baby, m.owner.map_or(0, |o| keys.get(&o).copied().unwrap_or(o)), m.sitting as u8, m.color, m.sheared as u8,
                 m.job.as_ref().map_or("-".to_string(), |j| j.to_text()), m.saddled as u8, m.temper
             );
+            if let Some(h) = m.home {
+                out.pop();
+                let _ = writeln!(out, " {},{},{}", h.0, h.1, h.2);
+            }
         }
         for (x, z) in self.rolled.lock().iter() {
             let _ = writeln!(out, "c {x} {z}");
@@ -3055,6 +3091,10 @@ impl Mobs {
                     let job = extra.first().and_then(|t| crate::villagers::Job::from_text(t)).map(Box::new);
                     let saddled = extra.get(1) == Some(&"1");
                     let temper = extra.get(2).and_then(|t| t.parse().ok()).unwrap_or(0u32).min(100);
+                    let home = extra.get(3).and_then(|t| {
+                        let v: Vec<i32> = t.split(',').filter_map(|n| n.parse().ok()).collect();
+                        (v.len() == 3).then(|| (v[0], v[1], v[2]))
+                    });
                     let num = |s: &str| s.parse::<f32>().ok().filter(|v| v.is_finite());
                     let (Some(kind), Some(x), Some(y), Some(z), Some(yaw), Some(health)) = (Kind::from_name(kind), num(x), num(y), num(z), num(yaw), num(health)) else {
                         continue;
@@ -3066,7 +3106,7 @@ impl Mobs {
                         id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health, on_ground: false, target: None, panic: 0, dying: 0,
                         sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: baby.parse().unwrap_or(0),
                         aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner, sitting: *sitting == "1",
-                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false, rider: None, saddled, temper, buck: 0, push: None, brain: Default::default(),
+                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false, rider: None, saddled, temper, buck: 0, push: None, home, brain: Default::default(),
                     });
                     if let Some(site) = job.and_then(|j| j.site) {
                         crate::villagers::claim(site, id);
@@ -3116,6 +3156,14 @@ pub enum Use {
     Milk,
     /// The player is now riding it.
     Mount,
+    /// A chest minecart: open the chest kept at this container-store key.
+    OpenCart((i32, i32, i32)),
+}
+
+/// Where a chest minecart from mineshaft spot `home` keeps its items: far below the world, so
+/// it can't clash with a real block's container.
+pub fn cart_store(home: (i32, i32, i32)) -> (i32, i32, i32) {
+    (home.0, home.1 - 100_000, home.2)
 }
 
 /// Whether a mob can stand at block `p` (feet there and above free, solid ground below).
@@ -3259,7 +3307,7 @@ mod tests {
         assert!((2..=4).contains(&kids), "split into {kids}");
         assert!(server.mobs.count() >= before + 3);
         assert_eq!(Kind::from_name("cave_spider").map(|k| k.spec().hit_effect), Some(Some((19, 7))));
-        assert_eq!(Kind::ALL.len(), 73);
+        assert_eq!(Kind::ALL.len(), 74);
 
         // An ender pearl thrown straight down lands and teleports its thrower.
         let mut rx = server.events.subscribe();
@@ -3482,4 +3530,24 @@ mod tests {
         assert!(back.values().any(|m| m.kind == Kind::Pig && m.saddled));
         assert!(back.values().any(|m| m.kind == Kind::Horse && m.temper == 5));
     }
+
+    #[test]
+    fn mineshaft_chest_minecarts_spawn_once_with_loot() {
+        crate::blocks::init();
+        let server = Server::new();
+        let at = (900, -60, 900);
+        crate::loot::chest_cart(at);
+        server.mobs.spawn_chest_carts(&server);
+        let carts: Vec<i64> = server.mobs.mobs.lock().values().filter(|m| m.kind == Kind::ChestMinecart && m.home == Some(at)).map(|m| m.id).collect();
+        assert_eq!(carts.len(), 1, "one cart on the rail");
+        // The chunk generates again: no second cart.
+        crate::loot::chest_cart(at);
+        server.mobs.spawn_chest_carts(&server);
+        assert_eq!(server.mobs.mobs.lock().values().filter(|m| m.kind == Kind::ChestMinecart && m.home == Some(at)).count(), 1);
+        // Right-click opens its store, which has mineshaft loot the first time.
+        let Use::OpenCart(store) = server.mobs.interact(&server, carts[0], None, 1) else { panic!("should open") };
+        let loot = crate::loot::take(store, crate::inventory::CHEST_SLOTS).expect("loot on first open");
+        assert!(loot.iter().any(Option::is_some));
+    }
 }
+

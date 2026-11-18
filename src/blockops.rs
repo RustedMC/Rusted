@@ -101,6 +101,11 @@ pub(crate) fn apply_use(server: &players::Server, id: i64, p: (i32, i32, i32), o
 
 /// Closes whatever container a player had open; a double chest goes back as two halves.
 pub(crate) fn close_open(server: &players::Server, pos: (i32, i32, i32), mut slots: Vec<Option<inventory::Stack>>, pair: Option<(i32, i32, i32)>) {
+    // A chest minecart's store isn't a block: just keep the items.
+    if pos.1 < -50_000 {
+        server.containers.put(pos, slots);
+        return;
+    }
     if let Some(other) = pair
         && slots.len() > inventory::CHEST_SLOTS
     {

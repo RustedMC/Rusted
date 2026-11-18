@@ -246,6 +246,47 @@ fn looted_file() -> Option<std::path::PathBuf> {
     Some(std::path::Path::new("worlds").join(&crate::config::get().level_name).join("looted.txt"))
 }
 
+/// Adds `pos` to looted.txt. False if it was already there.
+fn remember(pos: (i32, i32, i32)) -> bool {
+    if !looted().lock().insert(pos) {
+        return false;
+    }
+    if let Some(path) = looted_file() {
+        use std::io::Write;
+        let file = std::fs::OpenOptions::new().create(true).append(true).open(&path);
+        if let Err(e) = file.and_then(|mut f| writeln!(f, "{} {} {}", pos.0, pos.1, pos.2)) {
+            println!("couldn't save looted chest to {}: {e}", path.display());
+        }
+    }
+    true
+}
+
+static CARTS: Mutex<Vec<(i32, i32, i32)>> = Mutex::new(Vec::new());
+
+/// Kept in looted.txt once a mineshaft's chest minecart has spawned, so regenerating the chunk
+/// doesn't spawn it again (far below the world, like the cart's store).
+fn cart_spawned_key(pos: (i32, i32, i32)) -> (i32, i32, i32) {
+    (pos.0, pos.1 - 200_000, pos.2)
+}
+
+/// A mineshaft wants a chest minecart on the rail at `pos` (PNX MineshaftCorridor createChest).
+pub fn chest_cart(pos: (i32, i32, i32)) {
+    // Marked every time (marks aren't saved), so a cart left unopened over a restart keeps its loot.
+    mark(crate::mobs::cart_store(pos), "mineshaft");
+    if looted().lock().contains(&cart_spawned_key(pos)) {
+        return;
+    }
+    let mut carts = CARTS.lock();
+    if !carts.contains(&pos) {
+        carts.push(pos);
+    }
+}
+
+/// Chest minecarts to spawn now; each is only handed out once.
+pub fn take_carts() -> Vec<(i32, i32, i32)> {
+    std::mem::take(&mut *CARTS.lock()).into_iter().filter(|&p| remember(cart_spawned_key(p))).collect()
+}
+
 /// The world generator placed a chest at `pos` as part of `structure`.
 pub fn mark(pos: (i32, i32, i32), structure: &'static str) {
     if table(structure).is_some() && !looted().lock().contains(&pos) {
@@ -257,15 +298,8 @@ pub fn mark(pos: (i32, i32, i32), structure: &'static str) {
 /// chests and chests already looted.
 pub fn take(pos: (i32, i32, i32), slots: usize) -> Option<Vec<Option<Stack>>> {
     let structure = marks().lock().remove(&pos)?;
-    if !looted().lock().insert(pos) {
+    if !remember(pos) {
         return None;
-    }
-    if let Some(path) = looted_file() {
-        use std::io::Write;
-        let file = std::fs::OpenOptions::new().create(true).append(true).open(&path);
-        if let Err(e) = file.and_then(|mut f| writeln!(f, "{} {} {}", pos.0, pos.1, pos.2)) {
-            println!("couldn't save looted chest to {}: {e}", path.display());
-        }
     }
     let seed = (pos.0 as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ (pos.1 as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F) ^ (pos.2 as u64) ^ now_nanos();
     Some(roll(table(structure)?, slots, seed))

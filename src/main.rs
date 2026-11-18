@@ -328,6 +328,7 @@ async fn main() {
                 // Mob physics reads the world (may generate chunks): keep it off the async threads.
                 let _ = tokio::task::spawn_blocking(move || {
                     s.mobs.tick(&s);
+                    s.mobs.spawn_chest_carts(&s);
                     fishing::tick(&s);
                     rockets::tick(&s);
                     beacon::tick(&s);

@@ -41,6 +41,10 @@ impl Session {
                 }
                 true
             }
+            mobs::Use::OpenCart(store) => {
+                self.open_cart(e.actor_runtime_id as i64, store).await;
+                false
+            }
             mobs::Use::Mount => {
                 self.riding = Some(e.actor_runtime_id as i64);
                 false

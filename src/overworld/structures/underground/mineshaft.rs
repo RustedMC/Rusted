@@ -480,8 +480,8 @@ fn cobweb(p: &Base, l: &mut Lvl, cb: &BBox, r: &mut Xoroshiro, prob: i32, x: i32
 fn chest(p: &Base, l: &mut Lvl, cb: &BBox, r: &mut Xoroshiro, x: i32, y: i32, z: i32, k: &Blocks) {
     let (vx, vy, vz) = (p.wx(x, z), p.wy(y), p.wz(x, z));
     if cb.inside(vx, vy, vz) && bl::is(l.get(vx, vy, vz), "air") && !bl::is(l.get(vx, vy - 1, vz), "air") {
-        // TODO: chest minecart entity, only the rail for now.
         p.place(l, if r.next_boolean() { k.rail_ns } else { k.rail_ew }, x, y, z, cb);
+        crate::loot::chest_cart((vx, vy, vz)); // spawned on the rail with mineshaft loot inside
     }
 }
 
