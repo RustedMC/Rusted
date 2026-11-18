@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+**Mobs**
+- Mob speeds and attack timing follow PowerNukkitX.
+- Wolves, cats, iron golems and flying mobs use the mob brain. Pets sit, fight, follow their owner and catch up when left far behind.
+- Skeletons, pillagers, vindicators and piglins hold their weapons.
+
+**Blocks and items**
+- Water and lava flow toward drops and wash away plants, torches and rails, which drop as items. Lava meeting water makes obsidian, cobblestone or stone.
+- Pressure plates feel mobs and items. Weighted plates give a signal by count.
+- Sculk sensors hear footsteps and blocks changing nearby, and give a redstone signal. Shriekers shriek, give Darkness and call a warden on the fourth warning.
+- Firework rockets: craft them, launch them from the ground, fire them from crossbows, and see them while gliding. Bursts with stars hurt what's nearby.
+- Arrows fall at vanilla speed.
+
+**World generation**
+- Nether ruined portals.
+- End city chests have loot.
+- Nether lava springs flow.
+- Mineshafts have chest minecarts with loot. Hoppers empty them, and they keep their items over a restart.
+
+**Commands and plugins**
+- Command replies use vanilla wording.
+- New plugin events: `on_mob_damage`, `on_inventory_action` and `on_chunk_load`. `on_container_open` also fires for chest minecarts.
+
 ## 0.2.0
 
 **Riding and vehicles**

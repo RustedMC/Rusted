@@ -82,6 +82,10 @@ Plugins with the same priority run in load order.
 | `on_block_grow(server, pos, from: &str, to: &str) -> bool` | A block changes by itself: crops, saplings, grass spreading, leaves decaying, ice melting | `false` keeps it as it is |
 | `on_weather_change(server, weather: &str) -> bool` | Weather changing to `"clear"`, `"rain"` or `"thunder"` | `false` keeps it |
 
+| `on_mob_damage(server, mob, kind: &str, damage, from) -> bool` | A mob is hurt by anything but a player: another mob, fire, a fall, an explosion | `false` cancels the damage |
+| `on_inventory_action(server, player, action: &str, container: &str) -> bool` | A player moves items in any screen. `action` is `"take"`, `"place"`, `"swap"`, `"drop"`, `"destroy"`, `"craft"` or `"other"` | `false` undoes the move |
+| `on_chunk_load(server, player, chunk: (i32, i32))` | A chunk is sent to a player as it comes into view | |
+
 Mob positions are `(f32, f32, f32)`.
 
 ## Server

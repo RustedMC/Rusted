@@ -1154,6 +1154,14 @@ impl Mobs {
 
     /// A hit with weapon enchantments: knockback, fire aspect (ticks on fire), looting.
     pub fn hurt_with(&self, server: &Server, id: i64, damage: f32, from: (f32, f32, f32), attacker: Option<i64>, hit: Hit) {
+        // Player hits already went through on_entity_damage; ask about everything else here,
+        // before locking the mob list so the plugin can look at mobs.
+        if attacker.is_none()
+            && let Some(kind) = self.kind_of(id)
+            && !server.plugins.mob_damage(server, id, kind.identifier(), damage, from)
+        {
+            return;
+        }
         let mut mobs = self.mobs.lock();
         let Some(m) = mobs.get_mut(&id) else { return };
         if m.kind == Kind::EndCrystal {
@@ -1777,6 +1785,17 @@ impl Mobs {
             let a = (m.attack_cd as f32 * 0.03) + m.id as f32;
             m.path = vec![((a.cos() * 50.0) as i32, (base + 80.0) as i32, (a.sin() * 50.0) as i32)];
         }
+        // The brain: a target means attacking, a hit sends passive flyers fleeing, otherwise roam.
+        m.brain.memory.target = target.as_ref().map(|p| (p.id, (p.pos.0, p.pos.1 - 1.62, p.pos.2), dist2(p.pos, m.pos)));
+        let facts = crate::ai::Facts { panicking: m.panic > 0 && !m.kind.hostile(), has_path: !m.path.is_empty(), roll: 0, ..Default::default() };
+        if m.brain.decide(&facts).is_some() && m.kind != Kind::EnderDragon {
+            m.path.clear();
+        }
+        m.panic = m.panic.saturating_sub(1);
+        let fleeing = m.brain.doing == crate::ai::Behavior::Panic;
+        if m.brain.doing != crate::ai::Behavior::Attack {
+            target = None;
+        }
         let goal = if let Some(p) = &target {
             let aim = (p.pos.0, p.pos.1 - 0.6, p.pos.2);
             let d2 = dist2(aim, m.pos);
@@ -1793,7 +1812,7 @@ impl Mobs {
             } else {
                 let hit_reach = if m.kind == Kind::EnderDragon { 6.0 } else { 1.8 };
                 if d2 < hit_reach * hit_reach && m.attack_cd == 0 {
-                    m.attack_cd = if m.kind == Kind::EnderDragon { 12 * TPS } else { TPS };
+                    m.attack_cd = if m.kind == Kind::EnderDragon { 12 * TPS } else { MELEE_COOLDOWN };
                     let _ = server.events.send(Event::Damage {
                         to: p.id,
                         damage: crate::health::Damage::Mob(m.kind.melee() * difficulty_scale(), m.kind.display()),
@@ -1806,7 +1825,9 @@ impl Mobs {
             match m.path.first() {
                 Some(&(x, y, z)) if dist2((x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5), m.pos) > 1.0 && !self.rand().is_multiple_of(60) => (x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5),
                 _ => {
-                    let g = (feet.0 + (self.rand() % 15) as i32 - 7, feet.1 + (self.rand() % 7) as i32 - 3, feet.2 + (self.rand() % 15) as i32 - 7);
+                    // Fleeing picks points twice as far off.
+                    let r: i32 = if fleeing { 14 } else { 7 };
+                    let g = (feet.0 + (self.rand() % (2 * r + 1) as u32) as i32 - r, feet.1 + (self.rand() % 7) as i32 - 3, feet.2 + (self.rand() % (2 * r + 1) as u32) as i32 - r);
                     m.path = vec![g];
                     (g.0 as f32 + 0.5, g.1 as f32 + 0.5, g.2 as f32 + 0.5)
                 }
@@ -1814,7 +1835,7 @@ impl Mobs {
         };
         let (dx, dy, dz) = (goal.0 - m.pos.0, goal.1 - m.pos.1, goal.2 - m.pos.2);
         let len = (dx * dx + dy * dy + dz * dz).sqrt().max(0.01);
-        let sp = m.kind.speed();
+        let sp = m.kind.speed() * m.brain.doing.speed();
         m.vel = (m.vel.0 * 0.7 + dx / len * sp * 0.3, m.vel.1 * 0.7 + dy / len * sp * 0.3, m.vel.2 * 0.7 + dz / len * sp * 0.3);
         m.yaw = (-m.vel.0).atan2(m.vel.2).to_degrees();
         if target.is_none() {

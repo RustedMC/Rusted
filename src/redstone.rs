@@ -76,7 +76,7 @@ fn solid(b: i32) -> bool {
 
 fn is_component(b: i32) -> bool {
     let n = name(b);
-    n == "redstone_block" || n == "detector_rail" || n.contains("repeater") || n.contains("comparator") || n == "observer" || n.contains("piston") || n.starts_with("daylight_detector")
+    n == "redstone_block" || n == "detector_rail" || n.contains("repeater") || n.contains("comparator") || n == "observer" || n.contains("piston") || n.starts_with("daylight_detector") || n.ends_with("sculk_sensor")
 }
 
 /// Output side of a repeater/comparator. Its facing (south, west, north, east) is the input
@@ -131,6 +131,7 @@ fn emits(w: &World, src: Pos, to: Pos, comparators: &HashMap<Pos, u8>) -> (u8, b
     let attached = crate::physics::support_of(b).map(|o| add(src, o));
     match n {
         "redstone_block" => (15, false),
+        "sculk_sensor" | "calibrated_sculk_sensor" => (crate::sculk::power(src), false),
         "lever" if int(b, "open_bit") == 1 => (15, attached == Some(to)),
         n if n.ends_with("_button") && int(b, "button_pressed_bit") == 1 => (15, attached == Some(to)),
         n if n.ends_with("pressure_plate") => {

@@ -159,6 +159,9 @@ impl Server {
         if old != id && self.world.set(x, y, z, id) {
             self.fluids.notify((x, y, z)); // nearby water/lava may flow now
             crate::redstone::mark((x, y, z));
+            if effects {
+                crate::sculk::block_changed(self, (x, y, z), old, id); // placing and breaking are heard
+            }
             let _ = self.events.send(Event::Block { x, y, z, id, old, by, effects });
         }
     }

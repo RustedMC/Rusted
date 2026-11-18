@@ -94,6 +94,10 @@ impl Session {
         let rot = input.player_rotation;
         let head = input.player_head_rotation;
         self.server.moved(self.id, pos, rot, head);
+        // Walking (not flying, not standing still) makes vibrations sculk sensors hear.
+        if !self.flying && !matches!(self.mode, GameType::Spectator) && input.move_vector.0.abs() + input.move_vector.1.abs() > 0.1 {
+            crate::sculk::footstep(&self.server, self.id, (pos.0, pos.1 - 1.62, pos.2), self.sneaking);
+        }
         if let Some(mount) = self.riding {
             if self.hp.dead || self.server.mobs.rider_of(mount) != Some(self.id) {
                 // bucked off, the mount died, or we died
@@ -164,6 +168,12 @@ impl Session {
         let (cx, cz) = ((pos.0.floor() as i32) >> 4, (pos.2.floor() as i32) >> 4);
         if self.chunks.update(&mut self.conn, &self.server.world, cx, cz, CHUNK_BATCH).await.is_err() {
             return END;
+        }
+        let loaded = std::mem::take(&mut self.chunks.just_sent);
+        if !loaded.is_empty() && let Some(me) = self.server.get(self.id) {
+            for c in loaded {
+                self.server.plugins.chunk_load(&self.server, &me, c);
+            }
         }
         GO
     }

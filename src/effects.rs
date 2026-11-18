@@ -27,6 +27,7 @@ pub const FATAL_POISON: i32 = 25;
 pub const SLOW_FALLING: i32 = 27;
 pub const BAD_OMEN: i32 = 28;
 pub const HERO_OF_THE_VILLAGE: i32 = 29;
+pub const DARKNESS: i32 = 30;
 
 /// Bedrock identifiers for /effect.
 pub const NAMES: [(&str, i32); 30] = [

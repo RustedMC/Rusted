@@ -273,6 +273,22 @@ pub trait Plugin: Send + Sync {
         true
     }
 
+    /// Mob `mob` of `kind` is about to take `damage` from something that isn't a player: another
+    /// mob, fire, a fall, an explosion. `from` is where it came from. Return false to cancel.
+    fn on_mob_damage(&self, _server: &Server, _mob: i64, _kind: &str, _damage: f32, _from: (f32, f32, f32)) -> bool {
+        true
+    }
+
+    /// Player is moving items in a screen. `action` is "take", "place", "swap", "drop",
+    /// "destroy", "craft" or "other"; `container` is the screen's slot group, e.g.
+    /// "LevelEntityContainer" for a chest. Return false to undo it.
+    fn on_inventory_action(&self, _server: &Server, _player: &PlayerInfo, _action: &str, _container: &str) -> bool {
+        true
+    }
+
+    /// Chunk (cx, cz) was sent to the player (it came into their view).
+    fn on_chunk_load(&self, _server: &Server, _player: &PlayerInfo, _chunk: (i32, i32)) {}
+
     /// (name, description) of commands this plugin handles, for autocomplete.
     fn commands(&self) -> Vec<(&'static str, &'static str)> {
         vec![]
@@ -422,6 +438,18 @@ impl Plugins {
 
     pub fn item_drop(&self, s: &Server, p: &PlayerInfo, item: &str, count: i8) {
         self.each(|pl| pl.on_item_drop(s, p, item, count));
+    }
+
+    pub fn mob_damage(&self, s: &Server, mob: i64, kind: &str, damage: f32, from: (f32, f32, f32)) -> bool {
+        self.cancellable(|pl| pl.on_mob_damage(s, mob, kind, damage, from))
+    }
+
+    pub fn inventory_action(&self, s: &Server, p: &PlayerInfo, action: &str, container: &str) -> bool {
+        self.cancellable(|pl| pl.on_inventory_action(s, p, action, container))
+    }
+
+    pub fn chunk_load(&self, s: &Server, p: &PlayerInfo, chunk: (i32, i32)) {
+        self.each(|pl| pl.on_chunk_load(s, p, chunk));
     }
 
     pub fn entity_damage(&self, s: &Server, p: &PlayerInfo, mob: i64, kind: &str, damage: f32) -> bool {

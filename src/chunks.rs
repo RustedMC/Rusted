@@ -13,6 +13,8 @@ pub(crate) struct ChunkTracker {
     /// Nearest first, sent in batches.
     pub(crate) pending: std::collections::VecDeque<(i32, i32)>,
     pub(crate) last_batch: Option<std::time::Instant>,
+    /// Chunks the last `update` sent, for the chunk-load plugin event.
+    pub(crate) just_sent: Vec<(i32, i32)>,
 }
 
 impl ChunkTracker {
@@ -64,6 +66,7 @@ impl ChunkTracker {
         self.last_batch = Some(std::time::Instant::now());
         let n = limit.min(self.pending.len());
         let coords: Vec<(i32, i32)> = self.pending.drain(..n).collect();
+        self.just_sent.extend(&coords);
         // Generate on blocking threads so no connection loop stalls on terrain.
         let mut sign_data = signs::in_chunks(&coords);
         sign_data.extend(chest_pairs_in(world, &coords));

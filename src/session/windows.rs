@@ -250,6 +250,25 @@ impl Session {
                 {
                     return inventory::reject(req).0;
                 }
+                // Plugins can undo any move in a screen.
+                if let Some(me) = self.server.get(self.id) {
+                    use bedrock::protocol::v2225::enums::ItemStackRequestActionType as A;
+                    for a in &req.actions {
+                        let (action, slot) = match a {
+                            A::Take { source, .. } => ("take", Some(source)),
+                            A::Place { destination, .. } => ("place", Some(destination)),
+                            A::Swap { source, .. } => ("swap", Some(source)),
+                            A::Drop { source, .. } => ("drop", Some(source)),
+                            A::Destroy { source, .. } => ("destroy", Some(source)),
+                            A::CraftRecipe { .. } | A::CraftRecipeAuto { .. } | A::CraftCreative { .. } => ("craft", None),
+                            _ => ("other", None),
+                        };
+                        let container = slot.map(|s| format!("{:?}", s.container_name.container)).unwrap_or_default();
+                        if !self.server.plugins.inventory_action(&self.server, &me, action, &container) {
+                            return inventory::reject(req).0;
+                        }
+                    }
+                }
                 let r = self.inv.handle(req, items::creative_item);
                 thrown.append(&mut self.inv.dropped);
                 if let (Some((primary, secondary)), Some(pos)) = (self.inv.beacon.take(), self.open_table)

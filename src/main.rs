@@ -20,6 +20,7 @@ mod entities;
 mod hunger;
 mod fishing;
 mod rockets;
+mod sculk;
 mod lectern;
 mod loot;
 mod minecart;
@@ -331,6 +332,7 @@ async fn main() {
                     s.mobs.spawn_chest_carts(&s);
                     fishing::tick(&s);
                     rockets::tick(&s);
+                    sculk::tick(&s);
                     beacon::tick(&s);
                     s.entities.tick(&s);
                     if turn % 20 == 0 {
@@ -453,7 +455,7 @@ fn strip_colors(s: &str) -> String {
 
 impl Default for ChunkTracker {
     fn default() -> Self {
-        Self { sent: Default::default(), center: None, radius: VIEW_RADIUS.min(config::get().view_distance), pending: Default::default(), last_batch: None }
+        Self { sent: Default::default(), center: None, radius: VIEW_RADIUS.min(config::get().view_distance), pending: Default::default(), last_batch: None, just_sent: vec![] }
     }
 }
 
