@@ -3,7 +3,7 @@
 //! and CraftRecipeActionProcessor). Levels at 0/10/70/150/250 trade XP.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use crate::trades::{self, Trade};
 
@@ -70,7 +70,7 @@ static CLAIMED: Mutex<Option<HashMap<(i32, i32, i32), i64>>> = Mutex::new(None);
 
 /// Grabs a free job block within 16 blocks (PNX WorkExecutor / setProfessionBlock).
 pub fn find_job(world: &crate::world::World, villager: i64, at: (i32, i32, i32)) -> Option<((i32, i32, i32), i32)> {
-    let claimed = CLAIMED.lock().unwrap().clone().unwrap_or_default();
+    let claimed = CLAIMED.lock().clone().unwrap_or_default();
     for r in 1..=16i32 {
         for dx in -r..=r {
             for dz in -r..=r {
@@ -83,7 +83,7 @@ pub fn find_job(world: &crate::world::World, villager: i64, at: (i32, i32, i32))
                     if let Some(prof) = trades::profession_for_block(name)
                         && claimed.get(&p).is_none_or(|v| *v == villager)
                     {
-                        CLAIMED.lock().unwrap().get_or_insert_with(HashMap::new).insert(p, villager);
+                        CLAIMED.lock().get_or_insert_with(HashMap::new).insert(p, villager);
                         return Some((p, prof.index));
                     }
                 }
@@ -95,13 +95,13 @@ pub fn find_job(world: &crate::world::World, villager: i64, at: (i32, i32, i32))
 
 /// Villager died or lost its job.
 pub fn release(villager: i64) {
-    if let Some(c) = CLAIMED.lock().unwrap().as_mut() {
+    if let Some(c) = CLAIMED.lock().as_mut() {
         c.retain(|_, v| *v != villager);
     }
 }
 
 pub fn claim(p: (i32, i32, i32), villager: i64) {
-    CLAIMED.lock().unwrap().get_or_insert_with(HashMap::new).insert(p, villager);
+    CLAIMED.lock().get_or_insert_with(HashMap::new).insert(p, villager);
 }
 
 /// net id -> (villager, offer index). PNX starts at 50000.
@@ -117,7 +117,7 @@ pub struct OpenOffer {
 
 /// Stable for as long as the server runs.
 fn net_ids(villager: i64, n: usize) -> Vec<u32> {
-    let mut g = NET.lock().unwrap();
+    let mut g = NET.lock();
     let (next, map) = g.get_or_insert_with(|| (50_000, HashMap::new()));
     (0..n)
         .map(|i| {

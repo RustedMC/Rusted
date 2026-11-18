@@ -256,7 +256,7 @@ pub struct Overworld {
     router: Router,
     clay_bands: [i32; 192],
     /// Undecorated terrain, shared by neighbouring chunks' decoration.
-    terrain: std::sync::Mutex<HashMap<(i32, i32), std::sync::Arc<Chunk>>>,
+    terrain: parking_lot::Mutex<HashMap<(i32, i32), std::sync::Arc<Chunk>>>,
     /// Built structures, shared by every chunk they reach.
     structures: structures::Cache,
 }
@@ -293,11 +293,11 @@ impl Overworld {
     }
 
     fn terrain_chunk(&self, cx: i32, cz: i32) -> std::sync::Arc<Chunk> {
-        if let Some(c) = self.terrain.lock().unwrap().get(&(cx, cz)) {
+        if let Some(c) = self.terrain.lock().get(&(cx, cz)) {
             return c.clone();
         }
         let c = std::sync::Arc::new(self.generate_terrain(cx, cz));
-        let mut m = self.terrain.lock().unwrap();
+        let mut m = self.terrain.lock();
         if m.len() >= TERRAIN_CACHE_LIMIT {
             // TODO: drops half at the cap, switch to LRU if regen shows up in profiles.
             let keys: Vec<_> = m.keys().copied().step_by(2).collect();

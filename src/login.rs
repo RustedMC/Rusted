@@ -91,7 +91,7 @@ pub(crate) async fn handle_login(unknown_conn: Connection<Unknown>, server: play
     let lists = commands::lists();
     let refuse = if lists.banned.contains(&display_name) {
         Some((players::Kick::Kicked, "You are banned from this server"))
-    } else if *lists.whitelist_on.lock().unwrap() && !lists.whitelist.contains(&display_name) && !lists.ops.contains(&display_name) {
+    } else if *lists.whitelist_on.lock() && !lists.whitelist.contains(&display_name) && !lists.ops.contains(&display_name) {
         Some((players::Kick::Kicked, "You are not white-listed on this server"))
     } else if server.find_by_name(&display_name).is_none() && server.all().len() >= config::get().max_players as usize {
         Some((players::Kick::Full, "The server is full"))
@@ -202,7 +202,7 @@ pub(crate) async fn handle_login(unknown_conn: Connection<Unknown>, server: play
         }
     }
     // Rules changed with /gamerule since startup override the vanilla defaults.
-    let changed = server.game_rules.lock().unwrap().clone();
+    let changed = server.game_rules.lock().clone();
     if !changed.is_empty() {
         let _ = conn.send(&[game_rules_packet(changed)]).await;
     }
@@ -284,7 +284,7 @@ pub(crate) fn level_settings(time: i32, spawn: (f32, f32, f32), seed: u64, mode:
         generator_type: GeneratorType::Overworld,
         game_type: mode,
         is_hardcore_enabled: false,
-        game_difficulty: match *commands::DIFFICULTY.lock().unwrap() {
+        game_difficulty: match *commands::DIFFICULTY.lock() {
             0 => Difficulty::Peaceful,
             1 => Difficulty::Easy,
             3 => Difficulty::Hard,

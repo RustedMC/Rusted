@@ -2,7 +2,8 @@
 //! sideways on solid ground, and drain without a source. Lava runs 6x slower than water.
 
 use std::collections::HashSet;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
+use parking_lot::Mutex;
 
 use crate::blocks::{State, any_state, with};
 use crate::world::{AIR, World};
@@ -158,7 +159,7 @@ const PER_TICK: usize = 4096;
 impl Fluids {
     /// Queue `p` and its neighbours.
     pub fn notify(&self, (x, y, z): (i32, i32, i32)) {
-        let mut p = self.pending.lock().unwrap();
+        let mut p = self.pending.lock();
         for (dx, dy, dz) in [(0, 0, 0), (1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)] {
             p.insert((x + dx, y + dy, z + dz));
         }
@@ -168,7 +169,7 @@ impl Fluids {
     /// which queues the next step.
     pub fn tick(&self, world: &World, lava_turn: bool) -> Vec<((i32, i32, i32), i32)> {
         let batch: Vec<_> = {
-            let mut p = self.pending.lock().unwrap();
+            let mut p = self.pending.lock();
             let take: Vec<_> = p.iter().take(PER_TICK).copied().collect();
             for q in &take {
                 p.remove(q);
@@ -189,14 +190,14 @@ impl Fluids {
             }
         }
         if !later.is_empty() {
-            self.pending.lock().unwrap().extend(later);
+            self.pending.lock().extend(later);
         }
         changes
     }
 
     #[cfg(test)]
     pub fn is_idle(&self) -> bool {
-        self.pending.lock().unwrap().is_empty()
+        self.pending.lock().is_empty()
     }
 }
 

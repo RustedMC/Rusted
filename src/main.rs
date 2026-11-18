@@ -144,7 +144,7 @@ async fn main() {
 
     let cfg = config::get();
     commands::started();
-    *commands::DIFFICULTY.lock().unwrap() = commands::difficulty_from(&cfg.difficulty).unwrap_or(2);
+    *commands::DIFFICULTY.lock() = commands::difficulty_from(&cfg.difficulty).unwrap_or(2);
     // RUSTED_PORT overrides server-port, handy for running next to PNX.
     let port = cfg.port;
     let addr: std::net::SocketAddr = ([0, 0, 0, 0], port).into();
@@ -213,7 +213,7 @@ async fn main() {
     blocks::init();
     server.plugins.server_start(&server);
     // Hoppers players placed keep working after a restart.
-    server.containers.hoppers.lock().unwrap().extend(server.world.placed(|b| containers::kind(b) == Some(containers::Kind::Hopper)));
+    server.containers.hoppers.lock().extend(server.world.placed(|b| containers::kind(b) == Some(containers::Kind::Hopper)));
     let mobs_path = level_dir.join("mobs.txt");
     let loaded = server.mobs.load(&mobs_path, &HashMap::new());
     if loaded > 0 {
@@ -230,7 +230,7 @@ async fn main() {
             for turn in 0u64..=u64::MAX {
                 tick.tick().await;
                 if game_rule_on(&server, "doWeatherCycle", true) {
-                    let now = *commands::WEATHER.lock().unwrap();
+                    let now = *commands::WEATHER.lock();
                     let mut r = rng;
                     let next = weather.step(5, now, |lo, hi| {
                         r ^= r << 13;
@@ -253,7 +253,7 @@ async fn main() {
                 if turn % 6 == 0 {
                     fire_ticks(&server, &mut rng);
                 }
-                if *commands::WEATHER.lock().unwrap() == commands::Weather::Thunder {
+                if *commands::WEATHER.lock() == commands::Weather::Thunder {
                     lightning(&server, &mut rng);
                 }
                 if turn % 2 == 0 {
@@ -480,7 +480,7 @@ fn survival_like(mode: &GameType) -> bool {
 /// A boolean game rule's current value (`default` if never changed).
 fn game_rule_on(server: &players::Server, rule: &str, default: bool) -> bool {
     use bedrock::protocol::v844::types::Type;
-    server.game_rules.lock().unwrap().iter().find(|r| r.rule_name == rule).map_or(default, |r| matches!(r.rule_type, Type::Bool(true)))
+    server.game_rules.lock().iter().find(|r| r.rule_name == rule).map_or(default, |r| matches!(r.rule_type, Type::Bool(true)))
 }
 
 #[cfg(test)]

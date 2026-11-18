@@ -2,7 +2,7 @@
 //! and despawn after 5 minutes.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::time::{Duration, Instant};
 
 use bedrock::protocol::v662::packets::{RemoveActorPacket, TakeItemActorPacket};
@@ -102,7 +102,7 @@ impl Entities {
     /// Items popping out of broken blocks, chests, mob loot. Motion from PNX Level.dropItem
     /// (random +-0.1 sideways, 0.2 up), pickup after 10 ticks.
     pub fn drop_item(&self, server: &Server, item: NetworkItemStackDescriptorV2, count: i8, pos: (f32, f32, f32)) {
-        let h = (pos.0 * 73.1 + pos.1 * 19.7 + pos.2 * 37.3 + self.items.lock().unwrap().len() as f32 * 11.0).sin() * 43_758.547;
+        let h = (pos.0 * 73.1 + pos.1 * 19.7 + pos.2 * 37.3 + self.items.lock().len() as f32 * 11.0).sin() * 43_758.547;
         let (a, b) = (h.fract().abs(), (h * 1.618).fract().abs());
         self.spawn(server, item, count, pos, (a * 0.2 - 0.1, 0.2, b * 0.2 - 0.1), Duration::from_millis(500));
     }
@@ -118,7 +118,7 @@ impl Entities {
         }
         let _ = resting;
         let max = crate::items::max_stack(item.id);
-        let mut items = self.items.lock().unwrap();
+        let mut items = self.items.lock();
         let near = items
             .values()
             .find(|e| same(&e.item, &item) && e.count + count <= max && dist2(e.pos, pos) < 1.0)
@@ -140,7 +140,7 @@ impl Entities {
         let w = &server.world;
         let mut moved = Vec::new();
         {
-            let mut items = self.items.lock().unwrap();
+            let mut items = self.items.lock();
             for e in items.values_mut() {
                 if e.resting {
                     // block below got removed, fall again
@@ -219,12 +219,12 @@ impl Entities {
 
     /// For a player who just joined.
     pub fn spawn_packets(&self) -> Vec<Protocol> {
-        self.items.lock().unwrap().values().map(add_packet).collect()
+        self.items.lock().values().map(add_packet).collect()
     }
 
     /// True if the inventory changed.
     pub fn pickup(&self, server: &Server, player: i64, feet: (f32, f32, f32), inv: &mut crate::inventory::Inventory) -> bool {
-        let mut items = self.items.lock().unwrap();
+        let mut items = self.items.lock();
         let now = Instant::now();
         let ready: Vec<i64> = items
             .values()
@@ -262,7 +262,7 @@ impl Entities {
 
     /// Offers items sitting in the block above a hopper to `put`, which returns the leftover.
     pub fn suck(&self, server: &Server, h: (i32, i32, i32), mut put: impl FnMut(&crate::inventory::Stack) -> i8) {
-        let mut items = self.items.lock().unwrap();
+        let mut items = self.items.lock();
         let now = Instant::now();
         let ids: Vec<i64> = items
             .values()
@@ -290,7 +290,7 @@ impl Entities {
 
     /// Despawn after 5 minutes.
     pub fn despawn_old(&self, server: &Server) {
-        let mut items = self.items.lock().unwrap();
+        let mut items = self.items.lock();
         let old: Vec<i64> = items.values().filter(|e| e.born.elapsed() >= DESPAWN).map(|e| e.id).collect();
         for id in old {
             items.remove(&id);
@@ -300,7 +300,7 @@ impl Entities {
 
     #[cfg(test)]
     pub fn count(&self) -> usize {
-        self.items.lock().unwrap().len()
+        self.items.lock().len()
     }
 }
 
@@ -323,12 +323,12 @@ mod tests {
         for _ in 0..40 {
             server.entities.tick(&server);
         }
-        let e = server.entities.items.lock().unwrap().values().next().unwrap().clone();
+        let e = server.entities.items.lock().values().next().unwrap().clone();
         assert_eq!(e.count, 5);
         assert!(e.resting && (e.pos.1 - -60.0).abs() < 0.01, "fell and rests on the grass: {:?}", e.pos);
         let mut inv = crate::inventory::Inventory::default();
         assert!(!server.entities.pickup(&server, 1, (e.pos.0, -60.0, e.pos.2), &mut inv), "pickup delay");
-        server.entities.items.lock().unwrap().values_mut().for_each(|e| e.born -= PICKUP_DELAY);
+        server.entities.items.lock().values_mut().for_each(|e| e.born -= PICKUP_DELAY);
         assert!(server.entities.pickup(&server, 1, (e.pos.0, -60.0, e.pos.2), &mut inv));
         assert_eq!(server.entities.count(), 0);
         assert_eq!(inv.slots[0].as_ref().unwrap().count, 5);

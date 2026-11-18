@@ -15,7 +15,8 @@ use bedrock::protocol::v662::packets::{
 };
 use bedrock::protocol::{ProtoVersion, V2225};
 use std::io::Write;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 type Protocol = V2225;
 type Log = Arc<Mutex<std::fs::File>>;
@@ -32,7 +33,7 @@ fn log_batch(log: &Log, section: &Mutex<String>, dir: &str, batch: &[u8]) {
         batch.to_vec(), None, None, usize::MAX, bedrock::network::codec::UnreadBytes::Warn,
     );
     let Ok(packets) = decoded else { return };
-    let mut out = log.lock().unwrap();
+    let mut out = log.lock();
     for (header, packet) in packets {
         let text = match &packet {
             Ok(p) => format!("{p:?}"),
@@ -46,11 +47,11 @@ fn log_batch(log: &Log, section: &Mutex<String>, dir: &str, batch: &[u8]) {
             let msg = format!("{:?}", t.message_type);
             if let Some(i) = msg.find("message: \"#") {
                 let marker: String = msg[i + 10..].chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '#').collect();
-                *section.lock().unwrap() = marker;
+                *section.lock() = marker;
             }
         }
         let short: String = text.chars().take(400).collect();
-        let _ = writeln!(out, "{}	{dir}	{name}	{short}", section.lock().unwrap());
+        let _ = writeln!(out, "{}	{dir}	{name}	{short}", section.lock());
     }
 }
 

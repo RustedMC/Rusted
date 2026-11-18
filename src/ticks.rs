@@ -11,10 +11,10 @@ pub(crate) fn random_ticks(server: &players::Server, rng: &mut u64) {
         *rng ^= *rng << 17;
         *rng as u32
     };
-    let raining = *commands::WEATHER.lock().unwrap() != commands::Weather::Clear;
+    let raining = *commands::WEATHER.lock() != commands::Weather::Clear;
     let speed = {
         use bedrock::protocol::v844::types::Type;
-        server.game_rules.lock().unwrap().iter().find(|r| r.rule_name == "randomTickSpeed").map_or(1, |r| match r.rule_type {
+        server.game_rules.lock().iter().find(|r| r.rule_name == "randomTickSpeed").map_or(1, |r| match r.rule_type {
             Type::Int(n) => n.clamp(0, 4096),
             _ => 1,
         })
@@ -43,7 +43,7 @@ pub(crate) fn random_ticks(server: &players::Server, rng: &mut u64) {
                             }
                             server.set_block_quiet(0, bx, by, bz, b);
                             if blocks::entry(b).is_some_and(|e| e.name == "minecraft:fire") {
-                                growth::FIRES.lock().unwrap().push((bx, by, bz));
+                                growth::FIRES.lock().push((bx, by, bz));
                             }
                         }
                     }
@@ -158,7 +158,7 @@ pub(crate) fn dispense(server: &players::Server, p: (i32, i32, i32)) {
         "minecraft:flint_and_steel" | "minecraft:fire_charge" if server.world.get(front.0, front.1, front.2) == world::AIR => {
             if let Some(f) = blocks::any_state("minecraft:fire") {
                 server.set_block(0, front.0, front.1, front.2, f);
-                growth::FIRES.lock().unwrap().push(front);
+                growth::FIRES.lock().push(front);
             }
             if name == "minecraft:flint_and_steel" {
                 back(name); // TODO: dispensers should wear out flint and steel
@@ -181,7 +181,7 @@ pub(crate) fn dispense(server: &players::Server, p: (i32, i32, i32)) {
 /// Hoppers move items, then each pulls in items lying on top of it.
 pub(crate) fn hopper_ticks(server: &players::Server) {
     server.containers.tick_hoppers(&server.world);
-    let hoppers: Vec<_> = server.containers.hoppers.lock().unwrap().iter().copied().collect();
+    let hoppers: Vec<_> = server.containers.hoppers.lock().iter().copied().collect();
     for h in hoppers {
         server.entities.suck(server, h, |stack| server.containers.hopper_insert(h, stack));
     }
@@ -239,15 +239,15 @@ pub(crate) fn lightning(server: &players::Server, rng: &mut u64) {
             && let Some(fire) = blocks::any_state("minecraft:fire")
         {
             server.set_block_quiet(0, x, y + 1, z, fire);
-            growth::FIRES.lock().unwrap().push((x, y + 1, z));
+            growth::FIRES.lock().push((x, y + 1, z));
         }
     }
 }
 
 /// Fire spread, roughly every 30 game ticks like PNX.
 pub(crate) fn fire_ticks(server: &players::Server, rng: &mut u64) {
-    let fires = std::mem::take(&mut *growth::FIRES.lock().unwrap());
-    let raining = *commands::WEATHER.lock().unwrap() != commands::Weather::Clear;
+    let fires = std::mem::take(&mut *growth::FIRES.lock());
+    let raining = *commands::WEATHER.lock() != commands::Weather::Clear;
     let tick = game_rule_on(server, "doFireTick", true);
     let mut keep = Vec::new();
     for p in fires {
@@ -281,5 +281,5 @@ pub(crate) fn fire_ticks(server: &players::Server, rng: &mut u64) {
     }
     keep.sort_unstable();
     keep.dedup();
-    growth::FIRES.lock().unwrap().extend(keep);
+    growth::FIRES.lock().extend(keep);
 }

@@ -2,7 +2,8 @@
 //! data, and we save it in worlds/<level>/signs.txt and show it to everyone.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
+use parking_lot::Mutex;
 
 use bedrock::protocol::v662::packets::{BlockActorDataPacket, OpenSignPacket};
 use bedrock::protocol::v944::types::NetworkBlockPosition;
@@ -120,14 +121,14 @@ pub fn edited(world: &crate::world::World, p: Pos, tags: &HashMap<String, nbtx::
     }
     let (front, back) = (text_of(tags, "FrontText"), text_of(tags, "BackText"));
     let packet = data_packet(p, &front, &back);
-    let mut map = all().lock().unwrap();
+    let mut map = all().lock();
     map.insert(p, (front, back));
     save(&map);
     Some(packet)
 }
 
 pub fn removed(p: Pos) {
-    let mut map = all().lock().unwrap();
+    let mut map = all().lock();
     if map.remove(&p).is_some() {
         save(&map);
     }
@@ -135,7 +136,7 @@ pub fn removed(p: Pos) {
 
 /// Sign data for these chunks, sent after the chunks.
 pub fn in_chunks(chunks: &[(i32, i32)]) -> Vec<Protocol> {
-    let map = all().lock().unwrap();
+    let map = all().lock();
     map.iter()
         .filter(|(p, _)| chunks.contains(&(p.0 >> 4, p.2 >> 4)))
         .map(|(p, (f, b))| data_packet(*p, f, b))

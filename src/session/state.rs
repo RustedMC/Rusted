@@ -71,8 +71,8 @@ impl Session {
         let events = server.events.subscribe();
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<(String, Option<i64>)>();
         // Show everyone already online (and ourselves in the player list), then announce us.
-        let mut intro = vec![available_commands(&server.plugins), player_list_add(&me), commands::difficulty_packet(*commands::DIFFICULTY.lock().unwrap())];
-        intro.extend(commands::weather_packets(*commands::WEATHER.lock().unwrap()));
+        let mut intro = vec![available_commands(&server.plugins), player_list_add(&me), commands::difficulty_packet(*commands::DIFFICULTY.lock())];
+        intro.extend(commands::weather_packets(*commands::WEATHER.lock()));
         intro.extend(server.entities.spawn_packets());
         intro.extend(server.mobs.spawn_packets());
         intro.extend(ui::join_packets());
@@ -92,7 +92,7 @@ impl Session {
             return None;
         }
         if commands::is_op(&name) {
-            commands::op_ids().lock().unwrap().insert(id);
+            commands::op_ids().lock().insert(id);
         }
         server.mobs.set_targetable(id, survival_like(&mode));
         server.mobs.owner_joined(mobs::owner_key(&name), id);
@@ -225,7 +225,7 @@ impl Session {
             ui::left(self.id);
         }
         self.server.leave(self.id);
-        commands::op_ids().lock().unwrap().remove(&self.id);
+        commands::op_ids().lock().remove(&self.id);
         self.server.mobs.set_held(self.id, None);
         self.server.mobs.set_targetable(self.id, false);
         self.server.mobs.owner_left(self.id, mobs::owner_key(&self.name));

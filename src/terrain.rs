@@ -2,7 +2,8 @@
 //! Heights, biomes and features are cached per chunk, single blocks are cheap rules after that.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
+use parking_lot::Mutex;
 
 pub const SEA_LEVEL: i32 = 62;
 const MIN_Y: i32 = -64;
@@ -352,11 +353,11 @@ const CACHE_LIMIT: usize = 4096;
 
 impl Cache {
     pub fn get(&self, seed: u64, cx: i32, cz: i32) -> std::sync::Arc<ChunkGen> {
-        if let Some(g) = self.chunks.lock().unwrap().get(&(cx, cz)) {
+        if let Some(g) = self.chunks.lock().get(&(cx, cz)) {
             return g.clone();
         }
         let g = std::sync::Arc::new(generate_chunk(seed, cx, cz)); // generated outside the lock
-        let mut chunks = self.chunks.lock().unwrap();
+        let mut chunks = self.chunks.lock();
         if chunks.len() >= CACHE_LIMIT {
             chunks.clear(); // TODO: LRU instead of clearing everything, if it shows up in profiles
         }

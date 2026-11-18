@@ -2,7 +2,8 @@
 //! approximated from block names since Rusted has no per-block classes.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
+use parking_lot::Mutex;
 
 use crate::blocks::State;
 
@@ -11,13 +12,13 @@ use crate::blocks::State;
 pub fn id(name: &str) -> i32 {
     static C: OnceLock<Mutex<HashMap<String, i32>>> = OnceLock::new();
     let c = C.get_or_init(Default::default);
-    if let Some(v) = c.lock().unwrap().get(name) {
+    if let Some(v) = c.lock().get(name) {
         return *v;
     }
     let full = if name.contains(':') { name.to_string() } else { format!("minecraft:{name}") };
     let v = crate::blocks::any_state(&full).unwrap_or_else(|| panic!("unknown block {full}"));
     let v = default_state(v);
-    c.lock().unwrap().insert(name.to_string(), v);
+    c.lock().insert(name.to_string(), v);
     v
 }
 

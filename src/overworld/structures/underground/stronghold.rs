@@ -2,7 +2,8 @@
 //! PNX `StrongholdPopulator`, `StrongholdPlacement` and `StrongholdPieces`.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
+use parking_lot::Mutex;
 
 use super::super::super::feature::blocks as bl;
 use super::super::{Placement, Spread, StructWorld, Xoroshiro};
@@ -57,7 +58,7 @@ fn village_biome(id: u16) -> bool {
 /// The three village-anchored strongholds (PNX `createInitialStrongholds`), cached per seed.
 fn initial(seed: i64) -> Arc<Vec<(i32, i32)>> {
     static C: OnceLock<Mutex<HashMap<i64, Arc<Vec<(i32, i32)>>>>> = OnceLock::new();
-    let mut m = C.get_or_init(Default::default).lock().unwrap();
+    let mut m = C.get_or_init(Default::default).lock();
     if let Some(v) = m.get(&seed) {
         return v.clone();
     }

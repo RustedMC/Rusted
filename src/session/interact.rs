@@ -160,7 +160,7 @@ impl Session {
             }
             if self.server.world.get(at.0, at.1, at.2) == world::AIR && let Some(fire) = blocks::any_state("minecraft:fire") {
                 self.server.set_block(self.id, at.0, at.1, at.2, fire);
-                growth::FIRES.lock().unwrap().push(at);
+                growth::FIRES.lock().push(at);
                 wear(&mut self.conn, &self.server, self.id, &mut self.inv, self.selected_slot as usize, 1, &self.mode).await;
                 let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(play_sound("fire.ignite", (at.0 as f32 + 0.5, at.1 as f32 + 0.5, at.2 as f32 + 0.5))) });
             }
@@ -231,7 +231,7 @@ impl Session {
         let t = self.server.time().rem_euclid(24_000);
         let msg = if (12_542..23_460).contains(&t) {
             // Sleeping: once everyone online has lain down, skip to morning.
-            let mut sleepers = sleepers().lock().unwrap();
+            let mut sleepers = sleepers().lock();
             sleepers.insert(self.id, Instant::now());
             sleepers.retain(|_, at| at.elapsed() < std::time::Duration::from_secs(8));
             let all = self.server.all();
@@ -241,7 +241,7 @@ impl Session {
                 self.server.set_time(morning);
                 let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(clock_packet(morning)) });
                 let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(time_packet(morning)) });
-                *commands::WEATHER.lock().unwrap() = commands::Weather::Clear;
+                *commands::WEATHER.lock() = commands::Weather::Clear;
                 for w in commands::weather_packets(commands::Weather::Clear) {
                     let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(w) });
                 }
@@ -320,7 +320,7 @@ impl Session {
                     self.server.containers.put((x + ox, y + oy, z + oz), c);
                 }
                 if containers::kind(block) == Some(containers::Kind::Hopper) {
-                    self.server.containers.hoppers.lock().unwrap().insert((x + ox, y + oy, z + oz));
+                    self.server.containers.hoppers.lock().insert((x + ox, y + oy, z + oz));
                 }
                 self.server.set_block(self.id, x + ox, y + oy, z + oz, block);
                 for ((fx, fy, fz), b) in physics::settle(&self.server.world, (x + ox, y + oy, z + oz)) {

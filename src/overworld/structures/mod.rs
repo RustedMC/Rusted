@@ -12,7 +12,8 @@ mod underground;
 pub use placement::{Placement, Spread};
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
+use parking_lot::Mutex;
 
 use super::Overworld;
 use super::density::FxMap;
@@ -125,12 +126,12 @@ pub(super) fn apply(ow: &Overworld, chunk: &mut super::Chunk, cx: i32, cz: i32) 
                 if !(t.hint)(ow.seed, sx, sz) {
                     continue;
                 }
-                let cached = ow.structures.0.lock().unwrap().get(&(ti, sx, sz)).cloned();
+                let cached = ow.structures.0.lock().get(&(ti, sx, sz)).cloned();
                 let built = match cached {
                     Some(b) => b,
                     None => {
                         let b = Arc::new(build(ow, t, sx, sz)); // outside the lock
-                        let mut m = ow.structures.0.lock().unwrap();
+                        let mut m = ow.structures.0.lock();
                         if m.len() >= CACHE_LIMIT {
                             m.clear(); // TODO: LRU if rebuilding shows up in profiles
                         }

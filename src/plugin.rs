@@ -230,7 +230,7 @@ struct Task {
 /// on the tick thread one after another, so keep tasks short.
 #[derive(Default)]
 pub struct Scheduler {
-    tasks: std::sync::Mutex<Vec<Task>>,
+    tasks: parking_lot::Mutex<Vec<Task>>,
     tick: std::sync::atomic::AtomicU64,
     next_id: std::sync::atomic::AtomicU64,
 }
@@ -240,7 +240,7 @@ impl Scheduler {
         use std::sync::atomic::Ordering::Relaxed;
         let id = self.next_id.fetch_add(1, Relaxed) + 1;
         let due = self.tick.load(Relaxed) + delay.max(1);
-        self.tasks.lock().unwrap().push(Task { id, due, every, job });
+        self.tasks.lock().push(Task { id, due, every, job });
         id
     }
 
@@ -261,7 +261,7 @@ impl Scheduler {
     }
 
     pub fn cancel(&self, id: u64) {
-        self.tasks.lock().unwrap().retain(|t| t.id != id);
+        self.tasks.lock().retain(|t| t.id != id);
     }
 
     /// Runs whatever is due this tick.
@@ -269,7 +269,7 @@ impl Scheduler {
         use std::sync::atomic::Ordering::Relaxed;
         let now = self.tick.fetch_add(1, Relaxed) + 1;
         let due: Vec<Task> = {
-            let mut t = self.tasks.lock().unwrap();
+            let mut t = self.tasks.lock();
             let (due, rest): (Vec<Task>, Vec<Task>) = t.drain(..).partition(|t| t.due <= now);
             *t = rest;
             due
@@ -278,7 +278,7 @@ impl Scheduler {
             let again = (task.job)(server);
             if let (true, Some(every)) = (again, task.every) {
                 task.due = now + every;
-                self.tasks.lock().unwrap().push(task);
+                self.tasks.lock().push(task);
             }
         }
     }

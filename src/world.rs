@@ -2,7 +2,8 @@
 //! get saved, terrain comes back from the seed.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
+use parking_lot::Mutex;
 
 // Block network ids are FNV hashes of the state (StartGame sets block_network_ids_are_hashes).
 // Values from kaooot/bedrock-network-data block_palette.nbt (1.26.60).
@@ -40,11 +41,11 @@ static GENERATORS: Mutex<Vec<(String, Factory)>> = Mutex::new(Vec::new());
 /// `make` gets the world seed.
 #[allow(dead_code)] // plugin API
 pub fn register_generator(name: &str, make: Factory) {
-    GENERATORS.lock().unwrap().push((name.to_lowercase(), make));
+    GENERATORS.lock().push((name.to_lowercase(), make));
 }
 
 fn find_generator(name: &str) -> Option<Factory> {
-    GENERATORS.lock().unwrap().iter().find(|(n, _)| n == name).map(|(_, f)| *f)
+    GENERATORS.lock().iter().find(|(n, _)| n == name).map(|(_, f)| *f)
 }
 
 pub enum Generator {
@@ -76,11 +77,11 @@ pub struct Dims {
 impl Dims {
     fn column(&self, dim: u8, cx: i32, cz: i32) -> Option<Arc<dyn Column>> {
         let g = self.gens.get(dim as usize - 1)?.get()?;
-        if let Some(c) = self.cache.lock().unwrap().get(&(dim, cx, cz)) {
+        if let Some(c) = self.cache.lock().get(&(dim, cx, cz)) {
             return Some(c.clone());
         }
         let c = g.column(cx, cz); // outside the lock, in parallel
-        let mut m = self.cache.lock().unwrap();
+        let mut m = self.cache.lock();
         if m.len() >= VANILLA_CACHE_LIMIT {
             let keys: Vec<_> = m.keys().copied().step_by(2).collect();
             for k in keys {
@@ -138,11 +139,11 @@ fn load_or_generate(ow: &crate::overworld::Overworld, cx: i32, cz: i32) -> crate
 
 impl VanillaCache {
     fn get(&self, ow: &crate::overworld::Overworld, cx: i32, cz: i32) -> Arc<crate::overworld::Chunk> {
-        if let Some(c) = self.0.lock().unwrap().get(&(cx, cz)) {
+        if let Some(c) = self.0.lock().get(&(cx, cz)) {
             return c.clone();
         }
         let c = Arc::new(load_or_generate(ow, cx, cz)); // outside the lock, in parallel
-        let mut m = self.0.lock().unwrap();
+        let mut m = self.0.lock();
         if m.len() >= VANILLA_CACHE_LIMIT {
             // TODO: dropping a random half at the cap is crude, switch to LRU if regen shows up in profiles
             let keys: Vec<_> = m.keys().copied().step_by(2).collect();
@@ -246,21 +247,20 @@ impl World {
     pub fn edits_in(&self, cx: i32, cz: i32) -> Vec<((i32, i32, i32), i32)> {
         self.changes
             .lock()
-            .unwrap()
             .get(&(cx, cz))
             .map(|c| c.iter().map(|(&(lx, y, lz), &id)| ((cx * 16 + lx, y, cz * 16 + lz), id)).collect())
             .unwrap_or_default()
     }
 
     pub fn placed(&self, f: impl Fn(i32) -> bool) -> Vec<(i32, i32, i32)> {
-        let all = self.changes.lock().unwrap();
+        let all = self.changes.lock();
         all.iter()
             .flat_map(|(&(cx, cz), col)| col.iter().filter(|(_, id)| f(**id)).map(move |(&(lx, y, lz), _)| (cx * 16 + lx, y, cz * 16 + lz)))
             .collect()
     }
 
     pub fn edited_chunks(&self) -> usize {
-        self.changes.lock().unwrap().len()
+        self.changes.lock().len()
     }
 
     /// 0 for flat worlds
@@ -318,7 +318,7 @@ impl World {
         if !(lo..=hi).contains(&y) {
             return false;
         }
-        let mut all = self.changes.lock().unwrap();
+        let mut all = self.changes.lock();
         let col = all.entry((x >> 4, z >> 4)).or_default();
         let local = (x & 15, y, z & 15);
         if self.generated_at(x, y, z) == id {
@@ -338,7 +338,7 @@ impl World {
         }
         let mut buf = Vec::new();
         {
-            let all = self.changes.lock().unwrap();
+            let all = self.changes.lock();
             let count: usize = all.values().map(HashMap::len).sum();
             buf.extend(SAVE_MAGIC);
             buf.extend(SAVE_VERSION.to_le_bytes());
@@ -439,7 +439,6 @@ impl World {
     pub fn get(&self, x: i32, y: i32, z: i32) -> i32 {
         self.changes
             .lock()
-            .unwrap()
             .get(&(x >> 4, z >> 4))
             .and_then(|c| c.get(&(x & 15, y, z & 15)).copied())
             .unwrap_or_else(|| self.generated_at(x, y, z))
@@ -452,7 +451,7 @@ impl World {
             return self.chunk_payload(cx, cz);
         }
         let (lo, hi) = crate::dims::range(dim);
-        let edits = self.changes.lock().unwrap().get(&(cx, cz)).cloned().unwrap_or_default();
+        let edits = self.changes.lock().get(&(cx, cz)).cloned().unwrap_or_default();
         let col = self.dims.column(dim, cx, cz);
         // edits are stored `lo` blocks up
         let local: HashMap<(i32, i32, i32), i32> = edits.into_iter().filter(|((_, y, _), _)| (lo..=hi).contains(y)).map(|((x, y, z), b)| ((x, y - lo, z), b)).collect();
@@ -467,7 +466,7 @@ impl World {
     }
 
     pub fn chunk_payload(&self, cx: i32, cz: i32) -> (Vec<u8>, u32) {
-        let edits = self.changes.lock().unwrap().get(&(cx, cz)).cloned().unwrap_or_default();
+        let edits = self.changes.lock().get(&(cx, cz)).cloned().unwrap_or_default();
         match &*self.generator {
             Generator::Flat { layers, chunk } => {
                 let flat = |_: i32, y: i32, _: i32| layer(layers, y);

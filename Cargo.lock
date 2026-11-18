@@ -2550,6 +2550,7 @@ dependencies = [
  "bedrock",
  "flate2",
  "nbtx",
+ "parking_lot",
  "serde_json",
  "tokio",
  "tracing-subscriber",

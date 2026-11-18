@@ -4,7 +4,7 @@
 //! Dust networks are solved in one go, diodes switch after their vanilla delay.
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use crate::blocks::{State, any_state, entry, state, with};
 use crate::world::{AIR, World};
@@ -26,7 +26,7 @@ fn neg(a: Pos) -> Pos {
 pub static DIRTY: Mutex<Vec<Pos>> = Mutex::new(Vec::new());
 
 pub fn mark(p: Pos) {
-    DIRTY.lock().unwrap().push(p);
+    DIRTY.lock().push(p);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -488,7 +488,7 @@ fn evaluate(w: &World, e: &mut Engine, p: Pos, wired: &mut HashSet<Pos>, step: &
 /// One redstone tick. Reads `w`, returns what to change. `fill` gives a container's
 /// comparator reading (0-15), None if there isn't one.
 pub fn tick(w: &World, fill: &dyn Fn(Pos) -> Option<u8>) -> Step {
-    let mut guard = ENGINE.lock().unwrap();
+    let mut guard = ENGINE.lock();
     let e = guard.get_or_insert_with(Engine::default);
     e.tick += 1;
     let mut step = Step::default();
@@ -518,7 +518,7 @@ pub fn tick(w: &World, fill: &dyn Fn(Pos) -> Option<u8>) -> Step {
         }
     }
 
-    let dirty: Vec<Pos> = std::mem::take(&mut *DIRTY.lock().unwrap());
+    let dirty: Vec<Pos> = std::mem::take(&mut *DIRTY.lock());
     let mut area: HashSet<Pos> = HashSet::new();
     for &p in &dirty {
         // observers watching this block fire
@@ -578,7 +578,7 @@ mod tests {
     }
 
     /// The engine is global, so tests that tick it can't run in parallel.
-    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static SERIAL: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
     fn run(w: &World, ticks: usize) {
         for _ in 0..ticks {
@@ -592,7 +592,7 @@ mod tests {
 
     #[test]
     fn dust_lamp_repeater_and_torch() {
-        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let _serial = SERIAL.lock();
         crate::blocks::init();
         let w = World::default(); // flat, grass at -61
         let y = -60;
@@ -642,7 +642,7 @@ mod tests {
 
     #[test]
     fn piston_pushes_and_sticky_pulls() {
-        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let _serial = SERIAL.lock();
         crate::blocks::init();
         let w = World::default();
         let y = -60;

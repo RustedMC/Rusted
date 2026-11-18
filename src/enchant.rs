@@ -189,7 +189,7 @@ pub fn fortune(lvl: i16, roll: u32) -> i8 {
 }
 
 /// Queued /enchant: (player id, enchantment, level).
-pub static QUEUE: std::sync::Mutex<Vec<(i64, i16, i16)>> = std::sync::Mutex::new(Vec::new());
+pub static QUEUE: parking_lot::Mutex<Vec<(i64, i16, i16)>> = parking_lot::Mutex::new(Vec::new());
 
 pub fn add(data: &[u8], id: i16, lvl: i16) -> Vec<u8> {
     let mut d = ItemData::read(data);

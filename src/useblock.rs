@@ -2,7 +2,7 @@
 //! onActivate/onInteract methods in PNX's block classes. Returns an [`Outcome`] for the session.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use crate::blocks::{State, any_state, entry, state, with};
 use crate::physics::Change;
@@ -290,7 +290,7 @@ pub fn use_block(world: &World, p: (i32, i32, i32), c: &Ctx) -> Option<Outcome> 
         return Some(o);
     }
     if short == "jukebox" {
-        let mut discs = DISCS.lock().unwrap();
+        let mut discs = DISCS.lock();
         let discs = discs.get_or_insert_with(HashMap::new);
         if let Some(disc) = discs.remove(&p) {
             let mut o = Outcome::new(vec![]).drop(disc, 1);
@@ -311,7 +311,7 @@ pub fn use_block(world: &World, p: (i32, i32, i32), c: &Ctx) -> Option<Outcome> 
     }
     match short {
         "noteblock" => {
-            let mut notes = NOTES.lock().unwrap();
+            let mut notes = NOTES.lock();
             let pitch = notes.get_or_insert_with(HashMap::new).entry(p).or_insert(-1);
             *pitch = (*pitch + 1) % 25;
             let (sound, inst) = instrument(name(world.get(p.0, p.1 - 1, p.2)));
@@ -386,7 +386,7 @@ pub fn use_block(world: &World, p: (i32, i32, i32), c: &Ctx) -> Option<Outcome> 
 
 /// Redstone hit, play the current note.
 pub fn play_note(world: &World, p: (i32, i32, i32)) -> Outcome {
-    let pitch = NOTES.lock().unwrap().as_ref().and_then(|n| n.get(&p).copied()).unwrap_or(0);
+    let pitch = NOTES.lock().as_ref().and_then(|n| n.get(&p).copied()).unwrap_or(0);
     let (sound, inst) = instrument(name(world.get(p.0, p.1 - 1, p.2)));
     let mut o = Outcome::new(vec![]);
     o.sound = Some((sound.into(), 2f32.powf((pitch - 12) as f32 / 12.0)));
@@ -401,10 +401,10 @@ pub fn unlit_ore(b: i32) -> Option<i32> {
 
 /// Clears per-block data on break. Returns a disc to drop and its sound.
 pub fn removed(p: (i32, i32, i32)) -> Option<(&'static str, String)> {
-    if let Some(n) = NOTES.lock().unwrap().as_mut() {
+    if let Some(n) = NOTES.lock().as_mut() {
         n.remove(&p);
     }
-    let disc = DISCS.lock().unwrap().as_mut()?.remove(&p)?;
+    let disc = DISCS.lock().as_mut()?.remove(&p)?;
     Some((disc, record(disc)?))
 }
 

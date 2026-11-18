@@ -3,7 +3,8 @@
 //! simplex, `noise/f`) and the vanilla-style `SimplexNoise` (`noise/minecraft/simplex`).
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
+use parking_lot::Mutex;
 
 use super::super::{java_hash, NukkitRandom, Xoroshiro};
 
@@ -272,7 +273,7 @@ pub(crate) struct Holder {
 pub(crate) fn holder(seed: i64) -> Arc<Holder> {
     static C: OnceLock<Mutex<HashMap<i64, Arc<Holder>>>> = OnceLock::new();
     let c = C.get_or_init(Default::default);
-    if let Some(h) = c.lock().unwrap().get(&seed) {
+    if let Some(h) = c.lock().get(&seed) {
         return h.clone();
     }
     // Every holder noise takes `identical()` of the root provider, i.e. a fresh Xoroshiro(seed).
@@ -281,6 +282,6 @@ pub(crate) fn holder(seed: i64) -> Arc<Holder> {
     let moss_ceiling = SimplexF::new(&mut id(), 2.0, 2.0 / 4.0, 1.0 / 30.0);
     let kelp = SimplexNoise::new(&mut id(), -7, &[1.0]);
     let h = Arc::new(Holder { kelp, clay_dripleaves, moss_ceiling });
-    c.lock().unwrap().insert(seed, h.clone());
+    c.lock().insert(seed, h.clone());
     h
 }

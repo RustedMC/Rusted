@@ -15,7 +15,8 @@ mod terrain;
 mod tests;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
+use parking_lot::Mutex;
 
 use crate::overworld::feature::blocks as bl;
 
@@ -173,11 +174,11 @@ impl Nether {
     }
 
     fn terrain_chunk(&self, cx: i32, cz: i32) -> Arc<NetherChunk> {
-        if let Some(c) = self.terrain_cache.lock().unwrap().get(&(cx, cz)) {
+        if let Some(c) = self.terrain_cache.lock().get(&(cx, cz)) {
             return c.clone();
         }
         let c = Arc::new(self.terrain.generate(self.seed, cx, cz));
-        let mut m = self.terrain_cache.lock().unwrap();
+        let mut m = self.terrain_cache.lock();
         if m.len() >= TERRAIN_CACHE_LIMIT {
             // TODO: just drops half at the cap, maybe LRU later
             let keys: Vec<_> = m.keys().copied().step_by(2).collect();

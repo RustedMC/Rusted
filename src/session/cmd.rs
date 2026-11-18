@@ -112,12 +112,12 @@ impl Session {
                 match (target, rest) {
                     (None, _) => format!("§cNo player named {who}"),
                     (Some(t), ["clear"]) => {
-                        effects::QUEUE.lock().unwrap().push((t, effects::Queued::Clear));
+                        effects::QUEUE.lock().push((t, effects::Queued::Clear));
                         format!("Took all effects from {who}")
                     }
                     (Some(t), args) => match effects::parse(args) {
                         Some((e, x)) => {
-                            effects::QUEUE.lock().unwrap().push((t, effects::Queued::Give(e, x)));
+                            effects::QUEUE.lock().push((t, effects::Queued::Give(e, x)));
                             format!("Gave {} * {} to {who} for {} seconds", args[0], x.amplifier, x.ticks / 20)
                         }
                         None => "§cUse /effect <player> <effect> [seconds] [amplifier] [hideParticles] or /effect <player> clear".into(),
@@ -133,7 +133,7 @@ impl Session {
                     (_, _, None) => "§cUse /enchant <player> <enchantment> [level]".into(),
                     (_, Some((_, max)), Some(l)) if l < 1 || l > max => format!("§cLevel {l} is not supported by that enchantment (max {max})"),
                     (Some(t), Some((e, _)), Some(l)) => {
-                        enchant::QUEUE.lock().unwrap().push((t, e, l));
+                        enchant::QUEUE.lock().push((t, e, l));
                         format!("Enchanting held item of {who}")
                     }
                 }
@@ -377,7 +377,7 @@ impl Session {
                 }
             }
             ["toggledownfall"] => {
-                let now = *commands::WEATHER.lock().unwrap();
+                let now = *commands::WEATHER.lock();
                 let next = if now == commands::Weather::Clear { commands::Weather::Rain } else { commands::Weather::Clear };
                 commands::set_weather(&self.server, next);
                 "Toggled downfall".into()
@@ -388,7 +388,7 @@ impl Session {
                 if let Some(mut r) = vanilla::game_rules().into_iter().find(|r| r.rule_name == "doDaylightCycle") {
                     r.rule_type = Type::Bool(!lock);
                     {
-                        let mut rules = self.server.game_rules.lock().unwrap();
+                        let mut rules = self.server.game_rules.lock();
                         rules.retain(|c| c.rule_name != r.rule_name);
                         rules.push(r.clone());
                     }
@@ -498,7 +498,7 @@ impl Session {
                 match (known, rest.first()) {
                     (None, _) => format!("§cUnknown game rule: {rule}"),
                     (Some(r), None) => {
-                        let current = self.server.game_rules.lock().unwrap().iter().find(|c| c.rule_name == r.rule_name).cloned().unwrap_or(r);
+                        let current = self.server.game_rules.lock().iter().find(|c| c.rule_name == r.rule_name).cloned().unwrap_or(r);
                         format!("{} = {:?}", current.rule_name, current.rule_type)
                     }
                     (Some(mut r), Some(value)) => {
@@ -512,7 +512,7 @@ impl Session {
                             Some(v) => {
                                 r.rule_type = v;
                                 {
-                                    let mut rules = self.server.game_rules.lock().unwrap();
+                                    let mut rules = self.server.game_rules.lock();
                                     rules.retain(|c| c.rule_name != r.rule_name);
                                     rules.push(r.clone());
                                 }

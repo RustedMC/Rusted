@@ -2,7 +2,8 @@
 //! plus ops, whitelist, bans, weather and difficulty.
 
 use std::collections::BTreeSet;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
+use parking_lot::Mutex;
 
 use crate::players::{Event, Kick, Server};
 
@@ -26,12 +27,12 @@ impl NameList {
     }
 
     pub fn contains(&self, name: &str) -> bool {
-        self.names.lock().unwrap().contains(&name.to_lowercase())
+        self.names.lock().contains(&name.to_lowercase())
     }
 
     /// false if nothing changed
     pub fn set(&self, name: &str, present: bool) -> bool {
-        let mut names = self.names.lock().unwrap();
+        let mut names = self.names.lock();
         let changed = if present { names.insert(name.to_lowercase()) } else { names.remove(&name.to_lowercase()) };
         if changed {
             let text: String = names.iter().map(|n| format!("{n}\n")).collect();
@@ -43,7 +44,7 @@ impl NameList {
     }
 
     pub fn all(&self) -> Vec<String> {
-        self.names.lock().unwrap().iter().cloned().collect()
+        self.names.lock().iter().cloned().collect()
     }
 }
 
@@ -102,7 +103,7 @@ pub fn set_weather(server: &crate::players::Server, new: Weather) {
     if !server.plugins.weather_change(server, &format!("{new:?}").to_lowercase()) {
         return;
     }
-    *WEATHER.lock().unwrap() = new;
+    *WEATHER.lock() = new;
     for p in weather_packets(new) {
         let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(p) });
     }
@@ -383,7 +384,7 @@ fn spawn_file() -> std::path::PathBuf {
 
 /// Set a player's spawn (None = world spawn) from an eye position.
 pub fn set_spawn(player: Option<&str>, pos: (f32, f32, f32)) {
-    let mut s = spawns().lock().unwrap();
+    let mut s = spawns().lock();
     s.insert(player.map_or("*".into(), str::to_lowercase), pos);
     let text: String = s.iter().map(|(n, p)| format!("{n} {} {} {}
 ", p.0, p.1, p.2)).collect();
@@ -393,12 +394,12 @@ pub fn set_spawn(player: Option<&str>, pos: (f32, f32, f32)) {
 }
 
 pub fn world_spawn(server: &Server) -> (f32, f32, f32) {
-    spawns().lock().unwrap().get("*").copied().unwrap_or_else(|| server.world.spawn())
+    spawns().lock().get("*").copied().unwrap_or_else(|| server.world.spawn())
 }
 
 /// Their /spawnpoint, or the world spawn.
 pub fn spawn_of(name: &str, server: &Server) -> (f32, f32, f32) {
-    let own = spawns().lock().unwrap().get(&name.to_lowercase()).copied();
+    let own = spawns().lock().get(&name.to_lowercase()).copied();
     // respawning always lands in the overworld, so only those count
     own.filter(|p| crate::dims::of_f(p.1) == crate::dims::OVERWORLD).unwrap_or_else(|| world_spawn(server))
 }
@@ -443,7 +444,7 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
         ["op", who] => {
             l.ops.set(who, true);
             if let Some(t) = server.find_by_name(who) {
-                op_ids().lock().unwrap().insert(t);
+                op_ids().lock().insert(t);
                 server.tell(t, "§eYou are now op!");
             }
             format!("Opped: {who}")
@@ -451,7 +452,7 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
         ["deop", who] => {
             l.ops.set(who, false);
             if let Some(t) = server.find_by_name(who) {
-                op_ids().lock().unwrap().remove(&t);
+                op_ids().lock().remove(&t);
                 server.tell(t, "§eYou are no longer op!");
             }
             format!("De-opped: {who}")
@@ -469,11 +470,11 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
         }
         ["banlist"] => format!("Banned players: {}", l.banned.all().join(", ")),
         ["whitelist", "on"] => {
-            *l.whitelist_on.lock().unwrap() = true;
+            *l.whitelist_on.lock() = true;
             "Turned on the allowlist".into()
         }
         ["whitelist", "off"] => {
-            *l.whitelist_on.lock().unwrap() = false;
+            *l.whitelist_on.lock() = false;
             "Turned off the allowlist".into()
         }
         ["whitelist", "add", who] => {
@@ -495,10 +496,10 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
             set_weather(server, new);
             format!("Changing to {} weather", format!("{new:?}").to_lowercase())
         }
-        ["difficulty"] => format!("Difficulty: {}", ["peaceful", "easy", "normal", "hard"][*DIFFICULTY.lock().unwrap() as usize]),
+        ["difficulty"] => format!("Difficulty: {}", ["peaceful", "easy", "normal", "hard"][*DIFFICULTY.lock() as usize]),
         ["difficulty", d] => match difficulty_from(d) {
             Some(d) => {
-                *DIFFICULTY.lock().unwrap() = d;
+                *DIFFICULTY.lock() = d;
                 let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(difficulty_packet(d)) });
                 format!("Set game difficulty to {}", ["peaceful", "easy", "normal", "hard"][d as usize])
             }

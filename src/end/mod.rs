@@ -14,7 +14,8 @@ mod noise;
 mod templates;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use crate::blocks::State;
 use crate::overworld::feature::blocks as bl;
@@ -336,11 +337,11 @@ impl End {
 
     fn terrain_of(&self, cx: i32, cz: i32) -> Arc<Terrain> {
         let k = chunk_hash(cx, cz);
-        if let Some(t) = self.terrain.lock().unwrap().get(&k) {
+        if let Some(t) = self.terrain.lock().get(&k) {
             return t.clone();
         }
         let t = Arc::new(self.build_terrain(cx, cz));
-        let mut m = self.terrain.lock().unwrap();
+        let mut m = self.terrain.lock();
         if m.len() >= 4096 {
             m.clear();
         }
@@ -657,11 +658,11 @@ impl End {
 
     fn city(&self, sx: i32, sz: i32) -> Arc<City> {
         let k = chunk_hash(sx, sz);
-        if let Some(c) = self.cities.lock().unwrap().get(&k) {
+        if let Some(c) = self.cities.lock().get(&k) {
             return c.clone();
         }
         let c = Arc::new(self.build_city(sx, sz));
-        self.cities.lock().unwrap().entry(k).or_insert(c).clone()
+        self.cities.lock().entry(k).or_insert(c).clone()
     }
 
     /// PNX `EndCityPopulator.apply` + `EndCityPieces.place` (blocks only).

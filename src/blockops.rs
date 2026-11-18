@@ -19,8 +19,8 @@ pub(crate) fn bookshelves(w: &world::World, (x, y, z): (i32, i32, i32)) -> i32 {
 }
 
 /// Players who used a bed at night recently (all of them = skip the night).
-pub(crate) fn sleepers() -> &'static std::sync::Mutex<HashMap<i64, Instant>> {
-    static S: std::sync::OnceLock<std::sync::Mutex<HashMap<i64, Instant>>> = std::sync::OnceLock::new();
+pub(crate) fn sleepers() -> &'static parking_lot::Mutex<HashMap<i64, Instant>> {
+    static S: std::sync::OnceLock<parking_lot::Mutex<HashMap<i64, Instant>>> = std::sync::OnceLock::new();
     S.get_or_init(Default::default)
 }
 

@@ -2,7 +2,7 @@
 //! Pillager patrols and raids (from PNX VillageRaid). Patrols start on day 5, killing the
 //! captain gives Bad Omen, and bringing that to a village starts a raid.
 
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use crate::mobs::Kind;
 use crate::players::{Event, Server};
@@ -42,11 +42,11 @@ pub fn village_near(server: &Server, at: (f32, f32, f32)) -> Option<(f32, f32, f
 
 /// Starts a raid when a Bad Omen player reaches a village (unless one's already going).
 pub fn start(server: &Server, center: (f32, f32, f32)) -> bool {
-    let mut raids = RAIDS.lock().unwrap();
+    let mut raids = RAIDS.lock();
     if raids.iter().any(|r| (r.center.0 - center.0).powi(2) + (r.center.2 - center.2).powi(2) < 96.0 * 96.0) {
         return false;
     }
-    let waves = match *crate::commands::DIFFICULTY.lock().unwrap() {
+    let waves = match *crate::commands::DIFFICULTY.lock() {
         0 => return false,
         1 => 3,
         2 => 5,
@@ -61,7 +61,7 @@ pub fn start(server: &Server, center: (f32, f32, f32)) -> bool {
 /// Every second. Patrols, waves, boss bars, win/lose.
 pub fn tick(server: &Server, roll: u32) {
     patrols(server, roll);
-    let mut raids = RAIDS.lock().unwrap();
+    let mut raids = RAIDS.lock();
     let alive: std::collections::HashSet<i64> = Kind::ALL
         .iter()
         .filter(|k| matches!(k, Kind::Pillager | Kind::Vindicator | Kind::Ravager | Kind::Witch | Kind::Evoker))
@@ -125,7 +125,7 @@ pub fn tick(server: &Server, roll: u32) {
 
 /// Vanilla patrols: from day 5, every so often, 24-48 blocks from a player.
 fn patrols(server: &Server, roll: u32) {
-    if server.time() / 24_000 < 5 || !roll.is_multiple_of(1200) || *crate::commands::DIFFICULTY.lock().unwrap() == 0 {
+    if server.time() / 24_000 < 5 || !roll.is_multiple_of(1200) || *crate::commands::DIFFICULTY.lock() == 0 {
         return;
     }
     let Some(p) = server.all().into_iter().find(|p| crate::dims::of_f(p.pos.1) == crate::dims::OVERWORLD) else { return };
@@ -158,6 +158,6 @@ mod tests {
             tick(&server, 1);
         }
         assert!(!server.mobs.of_kind(Kind::Pillager).is_empty(), "first wave of pillagers");
-        RAIDS.lock().unwrap().clear();
+        RAIDS.lock().clear();
     }
 }

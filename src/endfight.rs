@@ -2,7 +2,8 @@
 //! Dragon fight (from PNX EndDragonFight). Dragon and crystals show up when someone
 //! enters the End, killing it opens the exit portal and a gateway.
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
+use parking_lot::Mutex;
 
 use crate::dims;
 use crate::mobs::Kind;
@@ -19,7 +20,7 @@ fn path() -> std::path::PathBuf {
 }
 
 fn state() -> (bool, usize) {
-    let mut s = STATE.lock().unwrap();
+    let mut s = STATE.lock();
     *s.get_or_insert_with(|| {
         let t = std::fs::read_to_string(path()).unwrap_or_default();
         let mut it = t.split_whitespace().map(|v| v.parse::<usize>().unwrap_or(0));
@@ -28,7 +29,7 @@ fn state() -> (bool, usize) {
 }
 
 fn save(v: (bool, usize)) {
-    *STATE.lock().unwrap() = Some(v);
+    *STATE.lock() = Some(v);
     let _ = std::fs::write(path(), format!("{} {}", v.0 as u8, v.1));
 }
 
@@ -79,7 +80,7 @@ fn spawn_shulkers(server: &Server) {
         for cx in pcx - 3..=pcx + 3 {
             for cz in pcz - 3..=pcz + 3 {
                 // TODO: remember which chunks already spawned, right now a restart spawns them again
-                if !DONE.lock().unwrap().get_or_insert_with(Default::default).insert((cx, cz)) {
+                if !DONE.lock().get_or_insert_with(Default::default).insert((cx, cz)) {
                     continue;
                 }
                 for (id, at) in end.entities(cx, cz) {

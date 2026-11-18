@@ -2,7 +2,7 @@
 //! the results.
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 pub const SPEED: i32 = 1;
 pub const SLOWNESS: i32 = 2;

@@ -128,7 +128,7 @@ pub fn can_build(mode: &bedrock::protocol::v662::enums::GameType) -> bool {
 }
 
 pub fn abilities(id: i64, mode: &bedrock::protocol::v662::enums::GameType) -> Protocol {
-    let op = crate::commands::op_ids().lock().unwrap().contains(&id);
+    let op = crate::commands::op_ids().lock().contains(&id);
     use bedrock::protocol::v662::enums::GameType;
     let bits: &[u32] = match mode {
         GameType::Creative => &[BUILD, MINE, DOORS, CONTAINERS, ATTACK_PLAYERS, ATTACK_MOBS, INVULNERABLE, MAY_FLY, INSTABUILD],

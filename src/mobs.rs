@@ -2,7 +2,7 @@
 //! 10 ticks a second, and every player sees every mob (fine at a few hundred).
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use bedrock::protocol::v662::packets::RemoveActorPacket;
 use bedrock::protocol::v662::types::{ActorRuntimeID, ActorUniqueID, DataItem, PropertySyncData};
@@ -416,7 +416,7 @@ pub fn throw(server: &Server, kind: Throw, owner: i64, eye: (f32, f32, f32), rot
     }));
     let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(add) });
     let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(sound("throw", pos)) });
-    THROWN.lock().unwrap().push(Thrown { id, pos, vel, kind, owner, life: 30 * TPS });
+    THROWN.lock().push(Thrown { id, pos, vel, kind, owner, life: 30 * TPS });
 }
 
 struct Arrow {
@@ -633,7 +633,7 @@ fn walkable(b: i32) -> bool {
 
 impl Mobs {
     fn rand(&self) -> u32 {
-        let mut s = self.rng.lock().unwrap();
+        let mut s = self.rng.lock();
         if *s == 0 {
             *s = 0x2545_F491_4F6C_DD1D ^ std::process::id() as u64;
         }
@@ -648,7 +648,7 @@ impl Mobs {
     }
 
     pub fn count(&self) -> usize {
-        self.mobs.lock().unwrap().len()
+        self.mobs.lock().len()
     }
 
     pub fn spawn(&self, server: &Server, kind: Kind, pos: (f32, f32, f32)) -> i64 {
@@ -678,7 +678,7 @@ impl Mobs {
             m
         };
         broadcast(server, add_packet(&m));
-        self.mobs.lock().unwrap().insert(id, m);
+        self.mobs.lock().insert(id, m);
         id
     }
 
@@ -693,17 +693,17 @@ impl Mobs {
             color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false,
         };
         broadcast(server, add_packet(&m));
-        self.mobs.lock().unwrap().insert(id, m);
+        self.mobs.lock().insert(id, m);
         id
     }
 
     pub fn spawn_packets(&self) -> Vec<Protocol> {
-        self.mobs.lock().unwrap().values().filter(|m| m.dying == 0).map(add_packet).collect()
+        self.mobs.lock().values().filter(|m| m.dying == 0).map(add_packet).collect()
     }
 
     /// A player's held item changed (tempting).
     pub fn set_held(&self, player: i64, item: Option<&str>) {
-        let mut h = self.held.lock().unwrap();
+        let mut h = self.held.lock();
         match item {
             Some(i) => {
                 h.insert(player, i.to_string());
@@ -716,7 +716,7 @@ impl Mobs {
 
     /// A player right-clicked mob `id` holding `held`. Returns what to do with the held item.
     pub fn interact(&self, server: &Server, id: i64, held: Option<&str>, player: i64) -> Use {
-        let mut mobs = self.mobs.lock().unwrap();
+        let mut mobs = self.mobs.lock();
         let Some(m) = mobs.get_mut(&id) else { return Use::Nothing };
         let held = held.unwrap_or("");
         if m.dying > 0 {
@@ -790,12 +790,12 @@ impl Mobs {
     }
 
     pub fn contains(&self, id: i64) -> bool {
-        self.mobs.lock().unwrap().contains_key(&id)
+        self.mobs.lock().contains_key(&id)
     }
 
     /// Whether hostiles may target this player (call on join and game mode changes).
     pub fn set_targetable(&self, player: i64, yes: bool) {
-        let mut t = self.targetable.lock().unwrap();
+        let mut t = self.targetable.lock();
         if yes {
             t.insert(player);
         } else {
@@ -809,12 +809,12 @@ impl Mobs {
 
     /// Kills every mob (of one type if given), for /kill @e. Returns how many.
     pub fn kill_all(&self, server: &Server, kind: Option<&str>) -> usize {
-        let ids: Vec<i64> = self.mobs.lock().unwrap().values()
+        let ids: Vec<i64> = self.mobs.lock().values()
             .filter(|m| m.dying == 0 && kind.is_none_or(|k| m.kind.identifier().trim_start_matches("minecraft:") == k || Kind::from_name(k) == Some(m.kind)))
             .map(|m| m.id)
             .collect();
         for &id in &ids {
-            if let Some(m) = self.mobs.lock().unwrap().get_mut(&id) {
+            if let Some(m) = self.mobs.lock().get_mut(&id) {
                 m.hurt_at = None;
                 m.health = 0.0;
             }
@@ -825,32 +825,32 @@ impl Mobs {
 
     /// Living mobs of one kind: (id, position, health).
     pub fn of_kind(&self, kind: Kind) -> Vec<(i64, (f32, f32, f32), f32)> {
-        self.mobs.lock().unwrap().values().filter(|m| m.kind == kind && m.dying == 0).map(|m| (m.id, m.pos, m.health)).collect()
+        self.mobs.lock().values().filter(|m| m.kind == kind && m.dying == 0).map(|m| (m.id, m.pos, m.health)).collect()
     }
 
     /// Heals mob `id` by `n` (up to its max).
     pub fn heal(&self, id: i64, n: f32) {
-        if let Some(m) = self.mobs.lock().unwrap().get_mut(&id) {
+        if let Some(m) = self.mobs.lock().get_mut(&id) {
             m.health = (m.health + n).min(m.kind.max_health());
         }
     }
 
     /// Makes mob `id` a patrol captain.
     pub fn set_captain(&self, id: i64) {
-        if let Some(m) = self.mobs.lock().unwrap().get_mut(&id) {
+        if let Some(m) = self.mobs.lock().get_mut(&id) {
             m.captain = true;
         }
     }
 
     /// A villager's job (for the trade screen).
     pub fn job_of(&self, id: i64) -> Option<crate::villagers::Job> {
-        self.mobs.lock().unwrap().get(&id).and_then(|m| m.job.as_deref().cloned())
+        self.mobs.lock().get(&id).and_then(|m| m.job.as_deref().cloned())
     }
 
     /// A trade happened: offer `index` used `n` times; the villager gains XP and may level up.
     /// Returns the updated job.
     pub fn traded(&self, server: &Server, id: i64, index: usize, n: i32, trader_exp: i32) -> Option<crate::villagers::Job> {
-        let mut mobs = self.mobs.lock().unwrap();
+        let mut mobs = self.mobs.lock();
         let m = mobs.get_mut(&id)?;
         let j = m.job.as_mut()?;
         if j.uses.len() <= index {
@@ -872,12 +872,12 @@ impl Mobs {
 
     /// The kind of mob `id`, if it exists.
     pub fn kind_of(&self, id: i64) -> Option<Kind> {
-        self.mobs.lock().unwrap().get(&id).map(|m| m.kind)
+        self.mobs.lock().get(&id).map(|m| m.kind)
     }
 
     /// A hit with weapon enchantments: knockback, fire aspect (ticks on fire), looting.
     pub fn hurt_with(&self, server: &Server, id: i64, damage: f32, from: (f32, f32, f32), attacker: Option<i64>, hit: Hit) {
-        let mut mobs = self.mobs.lock().unwrap();
+        let mut mobs = self.mobs.lock();
         let Some(m) = mobs.get_mut(&id) else { return };
         if m.kind == Kind::EndCrystal {
             let at = m.pos;
@@ -980,16 +980,16 @@ impl Mobs {
     pub fn tick(&self, server: &Server) {
         tick_tnt(server);
         let mut out = Vec::new();
-        let ids: Vec<i64> = self.mobs.lock().unwrap().keys().copied().collect();
+        let ids: Vec<i64> = self.mobs.lock().keys().copied().collect();
         for id in ids {
-            let Some(mut m) = self.mobs.lock().unwrap().get(&id).cloned() else { continue };
+            let Some(mut m) = self.mobs.lock().get(&id).cloned() else { continue };
             if m.dying > 0 {
                 m.dying -= 1;
                 if m.dying == 0 {
-                    self.mobs.lock().unwrap().remove(&id);
+                    self.mobs.lock().remove(&id);
                     out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
                 } else {
-                    self.mobs.lock().unwrap().insert(id, m);
+                    self.mobs.lock().insert(id, m);
                 }
                 continue;
             }
@@ -1015,7 +1015,7 @@ impl Mobs {
                 m.curing -= 1;
                 if m.curing == 0 {
                     // Cured: the zombie villager becomes a villager (PNX EntityZombieVillager).
-                    self.mobs.lock().unwrap().remove(&id);
+                    self.mobs.lock().remove(&id);
                     out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
                     let pos = m.pos;
                     out.push(sound("mob.zombie.unfect", pos));
@@ -1027,14 +1027,14 @@ impl Mobs {
             if m.kind.flies() {
                 self.fly(server, &mut m, &mut out);
                 if (m.kind.hostile() || m.kind == Kind::Bat) && self.despawn(server, &m) {
-                    self.mobs.lock().unwrap().remove(&id);
+                    self.mobs.lock().remove(&id);
                     out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
                     continue;
                 }
             } else if (m.kind.hostile() && !m.kind.aquatic()) || (m.kind.neutral() && m.aggro.is_some()) {
                 if self.hostile(server, &mut m, &mut out) {
                     // Exploded: gone without the death animation.
-                    self.mobs.lock().unwrap().remove(&id);
+                    self.mobs.lock().remove(&id);
                     out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
                     continue;
                 }
@@ -1042,17 +1042,17 @@ impl Mobs {
                     use bedrock::protocol::v975::enums::ActorEvent;
                     m.dying = 10;
                     out.push(event(id, ActorEvent::Death));
-                    self.mobs.lock().unwrap().insert(id, m);
+                    self.mobs.lock().insert(id, m);
                     continue;
                 }
                 if m.kind.hostile() && self.despawn(server, &m) {
-                    self.mobs.lock().unwrap().remove(&id);
+                    self.mobs.lock().remove(&id);
                     out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
                     continue;
                 }
             } else if m.kind.aquatic() {
                 if self.despawn(server, &m) {
-                    self.mobs.lock().unwrap().remove(&id);
+                    self.mobs.lock().remove(&id);
                     out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
                     continue;
                 }
@@ -1078,7 +1078,7 @@ impl Mobs {
                 use bedrock::protocol::v975::enums::ActorEvent;
                 m.dying = 10;
                 out.push(event(id, ActorEvent::Death));
-                self.mobs.lock().unwrap().insert(id, m);
+                self.mobs.lock().insert(id, m);
                 continue;
             }
             if m.kind.flies() {
@@ -1094,11 +1094,11 @@ impl Mobs {
                 out.push(move_packet(&m));
             }
             if m.pos.1 < -100.0 {
-                self.mobs.lock().unwrap().remove(&id);
+                self.mobs.lock().remove(&id);
                 out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
                 continue;
             }
-            if let Some(slot) = self.mobs.lock().unwrap().get_mut(&id) {
+            if let Some(slot) = self.mobs.lock().get_mut(&id) {
                 *slot = m;
             }
         }
@@ -1134,7 +1134,7 @@ impl Mobs {
         }
         // Target: nearest targetable player in range. Spiders are peaceful in daylight and
         // endermen until provoked (provoking sets `aggro` in `hurt`).
-        let targets = self.targetable.lock().unwrap().clone();
+        let targets = self.targetable.lock().clone();
         let aggressive = match m.kind {
             Kind::Spider => !day || !open_sky,
             Kind::Enderman => false,
@@ -1254,7 +1254,7 @@ impl Mobs {
         if burning && self.rand().is_multiple_of(TPS) {
             m.health -= 1.0;
         }
-        let targets = self.targetable.lock().unwrap().clone();
+        let targets = self.targetable.lock().clone();
         let reach = if m.kind == Kind::EnderDragon { 150.0 } else { 24.0 };
         let mut target = m.kind.hostile().then(|| {
             server.all().into_iter().filter(|p| targets.contains(&p.id)).map(|p| (dist2(p.pos, m.pos), p)).filter(|(d, _)| *d < reach * reach).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, p)| p)
@@ -1332,7 +1332,7 @@ impl Mobs {
         if m.attack_cd > 0 {
             return;
         }
-        let targets = self.targetable.lock().unwrap().clone();
+        let targets = self.targetable.lock().clone();
         if let Some(p) = server.all().into_iter().find(|p| targets.contains(&p.id) && dist2(p.pos, m.pos) < 14.0 * 14.0) {
             m.attack_cd = 3 * TPS;
             let _ = server.events.send(Event::Damage { to: p.id, damage: crate::health::Damage::Mob(m.kind.melee() * difficulty_scale(), m.kind.display()), knock: (0.0, 0.0, 0.0) });
@@ -1346,7 +1346,6 @@ impl Mobs {
     fn nearest(&self, m: &Mob, range: f32, f: impl Fn(&Mob) -> bool) -> Option<(i64, (f32, f32, f32))> {
         self.mobs
             .lock()
-            .unwrap()
             .values()
             .filter(|o| o.id != m.id && o.dying == 0 && f(o))
             .map(|o| (o.id, o.pos, dist2(o.pos, m.pos)))
@@ -1384,7 +1383,7 @@ impl Mobs {
         }
         // Current prey still alive?
         if let Some(prey) = m.prey {
-            let at = self.mobs.lock().unwrap().get(&prey).filter(|o| o.dying == 0).map(|o| o.pos);
+            let at = self.mobs.lock().get(&prey).filter(|o| o.dying == 0).map(|o| o.pos);
             match at {
                 Some(at) if dist2(at, m.pos) < 24.0 * 24.0 => return self.chase_and_hit(server, m, prey, at),
                 _ => m.prey = None,
@@ -1396,7 +1395,7 @@ impl Mobs {
         // Angry at a player (hit a golem/untamed wolf, or a villager near a golem).
         if let Some(pid) = m.aggro
             && let Some(p) = server.get(pid)
-            && self.targetable.lock().unwrap().contains(&pid)
+            && self.targetable.lock().contains(&pid)
         {
             let feet_p = (p.pos.0, p.pos.1 - 1.62, p.pos.2);
             let reach = 1.6 + m.kind.size().0 / 2.0;
@@ -1589,10 +1588,10 @@ impl Mobs {
         }
         let players = server.all();
         if players.is_empty() {
-            return *crate::commands::DIFFICULTY.lock().unwrap() == 0; // nobody online: keep them
+            return *crate::commands::DIFFICULTY.lock() == 0; // nobody online: keep them
         }
         let nearest = players.iter().map(|p| dist2(p.pos, m.pos)).fold(f32::MAX, f32::min);
-        nearest > 128.0 * 128.0 || (nearest > 32.0 * 32.0 && self.rand().is_multiple_of(800)) || *crate::commands::DIFFICULTY.lock().unwrap() == 0
+        nearest > 128.0 * 128.0 || (nearest > 32.0 * 32.0 && self.rand().is_multiple_of(800)) || *crate::commands::DIFFICULTY.lock() == 0
     }
 
     fn shoot(&self, server: &Server, m: &Mob, at: (f32, f32, f32), out: &mut Vec<Protocol>) {
@@ -1624,7 +1623,7 @@ impl Mobs {
         })));
         out.push(sound("bow", from));
         let _ = server;
-        self.arrows.lock().unwrap().push(Arrow { id, pos: from, vel, shooter: m.kind, life: 60 * TPS, stuck: false, by: None });
+        self.arrows.lock().push(Arrow { id, pos: from, vel, shooter: m.kind, life: 60 * TPS, stuck: false, by: None });
     }
 
     /// Thrown items: snowballs knock back, eggs hatch a chick 1 in 8 (PNX EntityEgg),
@@ -1632,7 +1631,7 @@ impl Mobs {
     fn tick_thrown(&self, server: &Server, out: &mut Vec<Protocol>) {
         let players = server.all();
         let mut hits = Vec::new();
-        THROWN.lock().unwrap().retain_mut(|t| {
+        THROWN.lock().retain_mut(|t| {
             t.life = t.life.saturating_sub(1);
             if t.life == 0 {
                 out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(t.id) })));
@@ -1645,7 +1644,7 @@ impl Mobs {
                     let (fx, fy, fz) = (p.pos.0, p.pos.1 - 1.62, p.pos.2);
                     p.id != t.owner && (next.0 - fx).abs() < 0.45 && (next.2 - fz).abs() < 0.45 && next.1 > fy && next.1 < fy + 1.85
                 });
-                let mob = self.mobs.lock().unwrap().values().find(|m| {
+                let mob = self.mobs.lock().values().find(|m| {
                     let (w, h) = m.kind.size();
                     (next.0 - m.pos.0).abs() < w / 2.0 + 0.15 && (next.2 - m.pos.2).abs() < w / 2.0 + 0.15 && next.1 > m.pos.1 && next.1 < m.pos.1 + h
                 }).map(|m| m.id);
@@ -1686,7 +1685,7 @@ impl Mobs {
                 Throw::Snowball => {}
                 Throw::Potion(aux) => {
                     if crate::effects::potion(aux).iter().any(|e| e.0 == crate::effects::WEAKNESS) {
-                        for m in self.mobs.lock().unwrap().values_mut() {
+                        for m in self.mobs.lock().values_mut() {
                             if m.kind == Kind::ZombieVillager && dist2(m.pos, pos) < 16.0 {
                                 m.weak = 90 * TPS;
                             }
@@ -1746,16 +1745,16 @@ impl Mobs {
         })));
         broadcast(server, sound(if trident { "item.trident.throw" } else { "bow" }, from));
         let by = PlayerShot { owner, damage: trident.then_some(8.0), power, punch, flame, drop };
-        self.arrows.lock().unwrap().push(Arrow { id, pos: from, vel, shooter: Kind::Skeleton, life: 60 * TPS, stuck: false, by: Some(by) });
+        self.arrows.lock().push(Arrow { id, pos: from, vel, shooter: Kind::Skeleton, life: 60 * TPS, stuck: false, by: Some(by) });
     }
 
     fn tick_arrows(&self, server: &Server, out: &mut Vec<Protocol>) {
         let players = server.all();
-        let targets = self.targetable.lock().unwrap().clone();
+        let targets = self.targetable.lock().clone();
         let mut mob_hits: Vec<(i64, f32, (f32, f32, f32), PlayerShot)> = Vec::new();
         let mut drops = Vec::new();
-        let boxes: Vec<(i64, (f32, f32, f32), (f32, f32))> = self.mobs.lock().unwrap().values().filter(|m| m.dying == 0).map(|m| (m.id, m.pos, m.kind.size())).collect();
-        let mut arrows = self.arrows.lock().unwrap();
+        let boxes: Vec<(i64, (f32, f32, f32), (f32, f32))> = self.mobs.lock().values().filter(|m| m.dying == 0).map(|m| (m.id, m.pos, m.kind.size())).collect();
+        let mut arrows = self.arrows.lock();
         arrows.retain_mut(|a| {
             a.life = a.life.saturating_sub(1);
             if a.life == 0 {
@@ -1873,7 +1872,7 @@ impl Mobs {
         let mut partner_ready = None;
         // Nearest player, and whether they're holding this mob's food.
         let players = server.all();
-        let held = self.held.lock().unwrap().clone();
+        let held = self.held.lock().clone();
         let nearest = players
             .iter()
             .map(|p| (p, (p.pos.0 - m.pos.0).powi(2) + (p.pos.1 - 1.62 - m.pos.1).powi(2) + (p.pos.2 - m.pos.2).powi(2)))
@@ -1890,7 +1889,6 @@ impl Mobs {
             let mate = self
                 .mobs
                 .lock()
-                .unwrap()
                 .values()
                 .filter(|o| o.id != m.id && o.kind == m.kind && o.love > 0 && o.dying == 0)
                 .map(|o| (o.id, o.pos, (o.pos.0 - m.pos.0).powi(2) + (o.pos.2 - m.pos.2).powi(2)))
@@ -1954,7 +1952,7 @@ impl Mobs {
 
     /// Two animals in love met: both cool down and a baby appears between them.
     fn breed(&self, server: &Server, m: &mut Mob, partner: i64, out: &mut Vec<Protocol>) {
-        let Some(p) = self.mobs.lock().unwrap().get_mut(&partner).map(|p| {
+        let Some(p) = self.mobs.lock().get_mut(&partner).map(|p| {
             p.love = 0;
             p.cooldown = BREED_COOLDOWN;
             p.pos
@@ -2034,10 +2032,10 @@ impl Mobs {
     /// Hostile spawns 24-48 blocks around each player: at night on the surface, anytime in caves.
     // TODO: real light levels. "Dark" is just no sky above for now, so torches do nothing.
     fn spawn_hostiles(&self, server: &Server) {
-        if *crate::commands::DIFFICULTY.lock().unwrap() == 0 {
+        if *crate::commands::DIFFICULTY.lock() == 0 {
             return;
         }
-        let hostiles = self.mobs.lock().unwrap().values().filter(|m| m.kind.hostile()).count();
+        let hostiles = self.mobs.lock().values().filter(|m| m.kind.hostile()).count();
         if hostiles >= HOSTILE_CAP {
             return;
         }
@@ -2178,7 +2176,7 @@ impl Mobs {
             let (pcx, pcz) = ((p.pos.0.floor() as i32) >> 4, (p.pos.2.floor() as i32) >> 4);
             for _ in 0..4 {
                 let (cx, cz) = (pcx + (self.rand() % 13) as i32 - 6, pcz + (self.rand() % 13) as i32 - 6);
-                if !self.rolled.lock().unwrap().insert((cx, cz)) {
+                if !self.rolled.lock().insert((cx, cz)) {
                     continue;
                 }
                 if self.populate_village(server, cx, cz) {
@@ -2212,7 +2210,7 @@ fn dist2(a: (f32, f32, f32), b: (f32, f32, f32)) -> f32 {
 
 /// Mob damage multiplier: easy 2/3, normal 1, hard 1.5.
 fn difficulty_scale() -> f32 {
-    match *crate::commands::DIFFICULTY.lock().unwrap() {
+    match *crate::commands::DIFFICULTY.lock() {
         0 => 0.0,
         1 => 2.0 / 3.0,
         3 => 1.5,
@@ -2265,13 +2263,13 @@ pub fn ignite_tnt(server: &Server, p: (i32, i32, i32), fuse: u32) {
     }));
     let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(packet) });
     let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(sound("fuse", pos)) });
-    PRIMED.lock().unwrap().push((id, pos, fuse));
+    PRIMED.lock().push((id, pos, fuse));
 }
 
 /// Counts down lit TNT and sets it off.
 fn tick_tnt(server: &Server) {
     let mut due = Vec::new();
-    PRIMED.lock().unwrap().retain_mut(|(id, pos, fuse)| {
+    PRIMED.lock().retain_mut(|(id, pos, fuse)| {
         *fuse = fuse.saturating_sub(1);
         if *fuse == 0 {
             due.push((*id, *pos));
@@ -2346,7 +2344,7 @@ pub fn explode(server: &Server, at: (f32, f32, f32), power: f32, by: &'static st
 impl Mobs {
     /// Fish schools and squid in deep-enough water near players.
     fn spawn_water(&self, server: &Server) {
-        let aquatic = self.mobs.lock().unwrap().values().filter(|m| m.kind.aquatic()).count();
+        let aquatic = self.mobs.lock().values().filter(|m| m.kind.aquatic()).count();
         if aquatic >= WATER_CAP {
             return;
         }
@@ -2432,7 +2430,7 @@ impl Mobs {
     pub fn save(&self, path: &std::path::Path, keys: &HashMap<i64, i64>) -> std::io::Result<()> {
         use std::fmt::Write;
         let mut out = String::from("# Rusted mobs v1: kind x y z yaw health baby owner sitting color sheared\n");
-        for m in self.mobs.lock().unwrap().values() {
+        for m in self.mobs.lock().values() {
             if m.dying > 0 || (m.kind.hostile() || m.kind.aquatic()) && m.owner.is_none() {
                 continue;
             }
@@ -2443,7 +2441,7 @@ impl Mobs {
                 m.job.as_ref().map_or("-".to_string(), |j| j.to_text())
             );
         }
-        for (x, z) in self.rolled.lock().unwrap().iter() {
+        for (x, z) in self.rolled.lock().iter() {
             let _ = writeln!(out, "c {x} {z}");
         }
         let tmp = path.with_extension("tmp");
@@ -2456,13 +2454,13 @@ impl Mobs {
         let Ok(text) = std::fs::read_to_string(path) else { return 0 };
         let _ = owners;
         let mut n = 0;
-        let mut mobs = self.mobs.lock().unwrap();
+        let mut mobs = self.mobs.lock();
         for line in text.lines() {
             let f: Vec<&str> = line.split_whitespace().collect();
             match f.as_slice() {
                 ["c", x, z] => {
                     if let (Ok(x), Ok(z)) = (x.parse(), z.parse()) {
-                        self.rolled.lock().unwrap().insert((x, z));
+                        self.rolled.lock().insert((x, z));
                     }
                 }
                 ["m", kind, x, y, z, yaw, health, baby, owner, sitting, color, sheared, extra @ ..] => {
@@ -2493,7 +2491,7 @@ impl Mobs {
 
     /// A player (re)joined: pets saved with their old owner key follow them again.
     pub fn owner_joined(&self, old_key: i64, new_id: i64) {
-        for m in self.mobs.lock().unwrap().values_mut() {
+        for m in self.mobs.lock().values_mut() {
             if m.owner == Some(old_key) {
                 m.owner = Some(new_id);
             }
@@ -2502,7 +2500,7 @@ impl Mobs {
 
     /// Before saving: pets point at a stable per-name key instead of a session id.
     pub fn owner_left(&self, id: i64, key: i64) {
-        for m in self.mobs.lock().unwrap().values_mut() {
+        for m in self.mobs.lock().values_mut() {
             if m.owner == Some(id) {
                 m.owner = Some(key);
             }
@@ -2619,12 +2617,12 @@ mod tests {
         for _ in 0..40 {
             server.mobs.tick(&server);
         }
-        let y = server.mobs.mobs.lock().unwrap()[&id].pos.1;
+        let y = server.mobs.mobs.lock()[&id].pos.1;
         assert!((y - -60.0).abs() < 0.01, "landed on the grass: {y}");
         server.mobs.hurt(&server, id, 4.0, (2.0, -60.0, 0.5), None);
         assert!(server.mobs.contains(id));
         server.mobs.hurt(&server, id, 20.0, (2.0, -60.0, 0.5), None);
-        assert_eq!(server.mobs.mobs.lock().unwrap()[&id].dying, 0, "second hit inside 0.5 s is ignored");
+        assert_eq!(server.mobs.mobs.lock()[&id].dying, 0, "second hit inside 0.5 s is ignored");
         std::thread::sleep(std::time::Duration::from_millis(520));
         server.mobs.hurt(&server, id, 20.0, (2.0, -60.0, 0.5), None);
         for _ in 0..12 {
@@ -2665,7 +2663,7 @@ mod tests {
         let before = server.mobs.count();
         let slime = server.mobs.spawn_slime(&server, Kind::Slime, (120.5, -60.0, 120.5), 4);
         server.mobs.hurt(&server, slime, 100.0, (121.5, -60.0, 120.5), None);
-        let kids = server.mobs.mobs.lock().unwrap().values().filter(|m| m.kind == Kind::Slime && m.color == 2).count();
+        let kids = server.mobs.mobs.lock().values().filter(|m| m.kind == Kind::Slime && m.color == 2).count();
         assert!((2..=4).contains(&kids), "split into {kids}");
         assert!(server.mobs.count() >= before + 3);
         assert_eq!(Kind::from_name("cave_spider").map(|k| k.spec().hit_effect), Some(Some((19, 7))));
@@ -2696,12 +2694,12 @@ mod tests {
         // Zombies burn under the noon sun and eventually die.
         server.set_time(6000);
         let z = server.mobs.spawn(&server, Kind::Zombie, (40.5, -60.0, 40.5));
-        server.mobs.mobs.lock().unwrap().get_mut(&z).unwrap().baby = 0; // 1 in 20 spawn as babies, which don't burn
+        server.mobs.mobs.lock().get_mut(&z).unwrap().baby = 0; // 1 in 20 spawn as babies, which don't burn
         // Burn damage is 1-in-10 per tick; 30 ticks missed it ~4% of runs.
         for _ in 0..100 {
             server.mobs.tick(&server);
         }
-        let hp = server.mobs.mobs.lock().unwrap().get(&z).map(|m| (m.health, m.burning));
+        let hp = server.mobs.mobs.lock().get(&z).map(|m| (m.health, m.burning));
         assert!(hp.is_some_and(|(h, b)| b && h < 20.0), "burning in daylight: {hp:?}");
 
         // A golem goes after a zombie and hurts it.
@@ -2711,18 +2709,18 @@ mod tests {
         for _ in 0..60 {
             server.mobs.tick(&server);
         }
-        let zh = server.mobs.mobs.lock().unwrap().get(&zombie).map(|m| m.health);
+        let zh = server.mobs.mobs.lock().get(&zombie).map(|m| m.health);
         assert!(zh.is_none_or(|h| h < 20.0), "golem fought the zombie: {zh:?}");
 
         // Shearing drops wool once; taming a wolf eventually works.
         let sheep = server.mobs.spawn(&server, Kind::Sheep, (80.5, -60.0, 80.5));
         server.mobs.interact(&server, sheep, Some("minecraft:shears"), 1);
-        assert!(server.mobs.mobs.lock().unwrap()[&sheep].sheared);
+        assert!(server.mobs.mobs.lock()[&sheep].sheared);
         let wolf = server.mobs.spawn(&server, Kind::Wolf, (90.5, -60.0, 90.5));
         for _ in 0..50 {
             server.mobs.interact(&server, wolf, Some("minecraft:bone"), 7);
         }
-        assert_eq!(server.mobs.mobs.lock().unwrap()[&wolf].owner, Some(7), "tamed");
+        assert_eq!(server.mobs.mobs.lock()[&wolf].owner, Some(7), "tamed");
 
         // Saved mobs come back (hostiles don't); the tamed wolf keeps its owner key.
         let file = std::env::temp_dir().join(format!("rusted_mobs_{}.txt", std::process::id()));
@@ -2731,9 +2729,9 @@ mod tests {
         let again = Mobs::default();
         let n = again.load(&file, &HashMap::new());
         std::fs::remove_file(&file).ok();
-        let saved: Vec<Kind> = again.mobs.lock().unwrap().values().map(|m| m.kind).collect();
+        let saved: Vec<Kind> = again.mobs.lock().values().map(|m| m.kind).collect();
         assert!(n > 0 && !saved.iter().any(|k| k.hostile()), "{saved:?}");
-        assert!(again.mobs.lock().unwrap().values().any(|m| m.kind == Kind::Wolf && m.owner == Some(owner_key("Steve"))));
+        assert!(again.mobs.lock().values().any(|m| m.kind == Kind::Wolf && m.owner == Some(owner_key("Steve"))));
         assert_eq!(attack_damage(Some("minecraft:diamond_sword")), 8.0);
     }
 }

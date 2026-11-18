@@ -2,7 +2,8 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use base64::Engine;
 use bedrock::auth::client_data::ClientData;
@@ -116,18 +117,18 @@ impl Server {
 
     pub fn join(&self, info: PlayerInfo) {
         let id = info.id;
-        self.players.lock().unwrap().insert(id, info);
+        self.players.lock().insert(id, info);
         let _ = self.events.send(Event::Join(id));
     }
 
     pub fn leave(&self, id: i64) {
-        if let Some(info) = self.players.lock().unwrap().remove(&id) {
+        if let Some(info) = self.players.lock().remove(&id) {
             let _ = self.events.send(Event::Leave { id, uuid: info.uuid });
         }
     }
 
     pub fn moved(&self, id: i64, pos: (f32, f32, f32), rot: (f32, f32), head_yaw: f32) {
-        if let Some(p) = self.players.lock().unwrap().get_mut(&id) {
+        if let Some(p) = self.players.lock().get_mut(&id) {
             if p.pos == pos && p.rot == rot && p.head_yaw == head_yaw {
                 return; // standing still: don't spam everyone
             }
@@ -163,7 +164,7 @@ impl Server {
         const HEIGHT: f32 = 1.8;
         const EYE: f32 = 1.62;
         let (bx, by, bz) = (x as f32, y as f32, z as f32);
-        self.players.lock().unwrap().values().any(|p| {
+        self.players.lock().values().any(|p| {
             let (px, feet, pz) = (p.pos.0, p.pos.1 - EYE, p.pos.2);
             px + HALF_WIDTH > bx && px - HALF_WIDTH < bx + 1.0
                 && feet + HEIGHT > by && feet < by + 1.0
@@ -181,25 +182,25 @@ impl Server {
 
     /// 24000 per day
     pub fn time(&self) -> i32 {
-        let (base, since) = *self.clock.lock().unwrap();
+        let (base, since) = *self.clock.lock();
         base.wrapping_add((since.elapsed().as_millis() / 50) as i32)
     }
 
     pub fn set_time(&self, ticks: i32) {
-        *self.clock.lock().unwrap() = (ticks, std::time::Instant::now());
+        *self.clock.lock() = (ticks, std::time::Instant::now());
     }
 
     /// Players only, not NPCs.
     pub fn find_by_name(&self, name: &str) -> Option<i64> {
-        self.players.lock().unwrap().values().find(|p| p.name == name).map(|p| p.id)
+        self.players.lock().values().find(|p| p.name == name).map(|p| p.id)
     }
 
     pub fn get(&self, id: i64) -> Option<PlayerInfo> {
-        self.players.lock().unwrap().get(&id).cloned()
+        self.players.lock().get(&id).cloned()
     }
 
     pub fn all(&self) -> Vec<PlayerInfo> {
-        self.players.lock().unwrap().values().cloned().collect()
+        self.players.lock().values().cloned().collect()
     }
 }
 
@@ -366,7 +367,7 @@ pub(crate) mod tests {
         let s = Server::new();
         let mut p = sample(1);
         p.pos = (0.5, -60.0 + 1.62, 0.5); // standing on grass at block (0, -61, 0)
-        s.players.lock().unwrap().insert(1, p);
+        s.players.lock().insert(1, p);
         assert!(s.occupied(0, -60, 0), "feet block");
         assert!(s.occupied(0, -59, 0), "head block");
         assert!(!s.occupied(0, -61, 0), "block underfoot");
@@ -401,7 +402,7 @@ pub(crate) mod tests {
     fn moves_only_broadcast_on_change() {
         let s = Server::new();
         let mut rx = s.events.subscribe();
-        s.players.lock().unwrap().insert(
+        s.players.lock().insert(
             7,
             PlayerInfo {
                 id: 7,

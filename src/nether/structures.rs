@@ -5,7 +5,8 @@
 //! (one per 30x30 chunk region), fossils use `StructurePlacement`. Built once and cached.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use super::fortress::{self, BBox, Lvl};
 use super::rng::{BedrockRandom, NukkitRandom};
@@ -75,11 +76,11 @@ pub struct Cache(Mutex<HashMap<(u8, i32, i32), Arc<Built>>>);
 const CACHE_LIMIT: usize = 1024;
 
 fn cached(n: &Nether, kind: u8, sx: i32, sz: i32, build: impl FnOnce() -> Built) -> Arc<Built> {
-    if let Some(b) = n.structures.0.lock().unwrap().get(&(kind, sx, sz)) {
+    if let Some(b) = n.structures.0.lock().get(&(kind, sx, sz)) {
         return b.clone();
     }
     let b = Arc::new(build()); // outside the lock
-    let mut m = n.structures.0.lock().unwrap();
+    let mut m = n.structures.0.lock();
     if m.len() >= CACHE_LIMIT {
         m.clear(); // TODO: rebuilds on demand, maybe LRU
     }

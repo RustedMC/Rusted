@@ -3,7 +3,7 @@
 #![allow(dead_code)] // plugin API: plugins call these, the server itself may not
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use serde_json::{Value, json};
 
@@ -95,12 +95,12 @@ static NEXT_FORM: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::n
 pub fn show(server: &Server, to: i64, form: Form, then: impl FnOnce(&Server, &PlayerInfo, Response) + Send + 'static) {
     let id = NEXT_FORM.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let packet = Protocol::ModalFormRequestPacket(Box::new(bedrock::protocol::v662::packets::ModalFormRequestPacket { form_id: id, form_ui_json: form.json() }));
-    FORMS.lock().unwrap().get_or_insert_with(HashMap::new).insert((to, id), (form, Box::new(then)));
+    FORMS.lock().get_or_insert_with(HashMap::new).insert((to, id), (form, Box::new(then)));
     let _ = server.events.send(Event::Packet { to, packet: Box::new(packet) });
 }
 
 pub fn answered(server: &Server, player: i64, form_id: u32, answer: Option<&str>) {
-    let Some((form, then)) = FORMS.lock().unwrap().as_mut().and_then(|f| f.remove(&(player, form_id))) else { return };
+    let Some((form, then)) = FORMS.lock().as_mut().and_then(|f| f.remove(&(player, form_id))) else { return };
     if let Some(p) = server.get(player) {
         then(server, &p, form.parse(answer));
     }
@@ -108,7 +108,7 @@ pub fn answered(server: &Server, player: i64, form_id: u32, answer: Option<&str>
 
 /// Drop open forms when a player leaves.
 pub fn left(player: i64) {
-    if let Some(f) = FORMS.lock().unwrap().as_mut() {
+    if let Some(f) = FORMS.lock().as_mut() {
         f.retain(|(p, _), _| *p != player);
     }
 }
@@ -136,7 +136,7 @@ fn board_path() -> std::path::PathBuf {
 }
 
 fn with_board<T>(f: impl FnOnce(&mut Board) -> T) -> T {
-    let mut b = BOARD.lock().unwrap();
+    let mut b = BOARD.lock();
     let b = b.get_or_insert_with(|| load(&std::fs::read_to_string(board_path()).unwrap_or_default()));
     f(b)
 }

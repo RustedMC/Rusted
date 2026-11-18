@@ -6,7 +6,7 @@ use players::Event;
 impl Session {
     pub async fn every_second(&mut self) {
         self.regen_ticks += 1;
-        let rule_on = !self.server.game_rules.lock().unwrap().iter().any(|r| {
+        let rule_on = !self.server.game_rules.lock().iter().any(|r| {
             r.rule_name == "naturalRegeneration" && matches!(r.rule_type, bedrock::protocol::v844::types::Type::Bool(false))
         });
         let _ = self.regen_ticks;
@@ -42,13 +42,13 @@ impl Session {
         }
         // /effect for us, then a second of effects.
         let queued: Vec<effects::Queued> = {
-            let mut q = effects::QUEUE.lock().unwrap();
+            let mut q = effects::QUEUE.lock();
             let (mine, rest): (Vec<_>, Vec<_>) = q.drain(..).partition(|(who, _)| *who == self.id);
             *q = rest;
             mine.into_iter().map(|(_, c)| c).collect()
         };
         let enchants: Vec<(i16, i16)> = {
-            let mut q = enchant::QUEUE.lock().unwrap();
+            let mut q = enchant::QUEUE.lock();
             let (mine, rest): (Vec<_>, Vec<_>) = q.drain(..).partition(|(who, ..)| *who == self.id);
             *q = rest;
             mine.into_iter().map(|(_, e, l)| (e, l)).collect()
@@ -131,7 +131,7 @@ impl Session {
         }
         if survival_like(&self.mode) && !self.hp.dead {
             let before = (self.food.food, self.food.saturation, self.food.exhaustion);
-            let difficulty = *commands::DIFFICULTY.lock().unwrap();
+            let difficulty = *commands::DIFFICULTY.lock();
             match self.food.tick(difficulty, self.hp.health, rule_on) {
                 hunger::Step::Heal if self.hp.regenerate() => {
                     let _ = self.conn.send(&[spawn::health_packet(self.id, self.hp.health)]).await;

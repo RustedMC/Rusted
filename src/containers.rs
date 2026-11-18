@@ -2,7 +2,7 @@
 //! Format: "RSTC", version u32, count u32, then x y z (i32) + `CHEST_SLOTS` slots each.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::inventory::{CHEST_SLOTS, Stack, decode_slots, encode_slots};
@@ -172,8 +172,8 @@ pub fn is_container(block: i32) -> bool {
 impl Containers {
     /// Contents at `pos`. Furnaces smelt the time since they were closed first.
     pub fn get(&self, pos: (i32, i32, i32)) -> Vec<Option<Stack>> {
-        let mut slots = self.map.lock().unwrap().get(&pos).cloned().unwrap_or_else(|| vec![None; CHEST_SLOTS]);
-        if let Some((f, since)) = self.furnaces.lock().unwrap().get_mut(&pos) {
+        let mut slots = self.map.lock().get(&pos).cloned().unwrap_or_else(|| vec![None; CHEST_SLOTS]);
+        if let Some((f, since)) = self.furnaces.lock().get_mut(&pos) {
             f.catch_up(&mut slots, since.elapsed().as_secs_f32());
             *since = std::time::Instant::now();
         }
@@ -190,7 +190,7 @@ impl Containers {
         match kind(world.get(pos.0, pos.1, pos.2)) {
             Some(Kind::Brewing) => self.track_brewing(pos),
             Some(Kind::Hopper) => {
-                self.hoppers.lock().unwrap().insert(pos);
+                self.hoppers.lock().insert(pos);
             }
             _ => {}
         }
@@ -204,7 +204,7 @@ impl Containers {
     /// One second of smelting for an open furnace. Returns (cook, lit, lit duration) ticks.
     /// +1 on open, -1 on close. Returns how many have it open now.
     pub fn viewers(&self, pos: (i32, i32, i32), delta: i32) -> u32 {
-        let mut v = self.viewers.lock().unwrap();
+        let mut v = self.viewers.lock();
         let n = v.entry(pos).or_insert(0);
         *n = (*n as i32 + delta).max(0) as u32;
         let left = *n;
@@ -216,9 +216,9 @@ impl Containers {
 
     /// Smelts closed furnaces for `secs`, returns positions and whether each is lit.
     pub fn tick_closed(&self, secs: f32) -> Vec<((i32, i32, i32), bool)> {
-        let viewers = self.viewers.lock().unwrap().clone();
-        let mut f = self.furnaces.lock().unwrap();
-        let mut map = self.map.lock().unwrap();
+        let viewers = self.viewers.lock().clone();
+        let mut f = self.furnaces.lock();
+        let mut map = self.map.lock();
         let mut out = Vec::new();
         for (pos, (state, since)) in f.iter_mut() {
             if viewers.contains_key(pos) {
@@ -240,7 +240,7 @@ impl Containers {
     }
 
     pub fn tick_open(&self, oven: crate::recipes::Oven, pos: (i32, i32, i32), slots: &mut [Option<Stack>], secs: f32) -> (i32, i32, i32) {
-        let mut f = self.furnaces.lock().unwrap();
+        let mut f = self.furnaces.lock();
         let (state, since) = f.entry(pos).or_insert_with(|| (crate::recipes::Furnace { kind: oven, ..Default::default() }, std::time::Instant::now()));
         state.kind = oven;
         state.catch_up(slots, secs);
@@ -251,7 +251,7 @@ impl Containers {
 
     /// Furnace closed, start smelting from now.
     pub fn put_furnace(&self, pos: (i32, i32, i32), slots: Vec<Option<Stack>>, oven: crate::recipes::Oven) {
-        let mut f = self.furnaces.lock().unwrap();
+        let mut f = self.furnaces.lock();
         let e = f.entry(pos).or_insert_with(|| (Default::default(), std::time::Instant::now()));
         e.0.kind = oven;
         e.1 = std::time::Instant::now();
@@ -262,7 +262,7 @@ impl Containers {
     pub fn put(&self, pos: (i32, i32, i32), mut slots: Vec<Option<Stack>>) {
         // furnaces only use 3 slots, but the save format is always CHEST_SLOTS wide
         slots.resize(CHEST_SLOTS, None);
-        let mut map = self.map.lock().unwrap();
+        let mut map = self.map.lock();
         if slots.iter().all(Option::is_none) {
             map.remove(&pos);
         } else {
@@ -273,7 +273,7 @@ impl Containers {
 
     /// One second for an open brewing stand. Returns (brew left, fuel left, fuel total, finished).
     pub fn tick_open_brew(&self, pos: (i32, i32, i32), slots: &mut [Option<Stack>]) -> ((i32, i32, i32), bool) {
-        let mut b = self.brewing.lock().unwrap();
+        let mut b = self.brewing.lock();
         let st = b.entry(pos).or_default();
         let done = brew(st, slots, 20);
         ((st.ticks, st.fuel, BREW_FUEL), done)
@@ -281,9 +281,9 @@ impl Containers {
 
     /// Ticks closed brewing stands, returns the ones that finished.
     pub fn tick_closed_brew(&self) -> Vec<(i32, i32, i32)> {
-        let viewers = self.viewers.lock().unwrap().clone();
-        let mut b = self.brewing.lock().unwrap();
-        let mut map = self.map.lock().unwrap();
+        let viewers = self.viewers.lock().clone();
+        let mut b = self.brewing.lock();
+        let mut map = self.map.lock();
         let mut done = Vec::new();
         for (pos, st) in b.iter_mut() {
             if viewers.contains_key(pos) {
@@ -300,12 +300,12 @@ impl Containers {
     }
 
     pub fn track_brewing(&self, pos: (i32, i32, i32)) {
-        self.brewing.lock().unwrap().entry(pos).or_default();
+        self.brewing.lock().entry(pos).or_default();
     }
 
     /// Moves one item between containers (PNX hopper transfer), true if anything moved.
     fn move_one(&self, from: (i32, i32, i32), from_slots: std::ops::Range<usize>, to: (i32, i32, i32), to_slots: std::ops::Range<usize>) -> bool {
-        let mut map = self.map.lock().unwrap();
+        let mut map = self.map.lock();
         let src = map.get(&from).cloned().unwrap_or_else(|| vec![None; CHEST_SLOTS]);
         let mut dst = map.get(&to).cloned().unwrap_or_else(|| vec![None; CHEST_SLOTS]);
         let mut src = src;
@@ -335,7 +335,7 @@ impl Containers {
 
     /// Takes one item from a random filled dispenser/dropper slot, like PNX.
     pub fn take_one(&self, pos: (i32, i32, i32), roll: u32) -> Option<Stack> {
-        let mut map = self.map.lock().unwrap();
+        let mut map = self.map.lock();
         let slots = map.get_mut(&pos)?;
         let filled: Vec<usize> = (0..9).filter(|&i| slots[i].is_some()).collect();
         let i = *filled.get(roll as usize % filled.len().max(1))?;
@@ -353,7 +353,7 @@ impl Containers {
     pub fn put_one(&self, world: &crate::world::World, pos: (i32, i32, i32), item: &Stack) -> bool {
         let Some(k) = kind(world.get(pos.0, pos.1, pos.2)).filter(|k| !ui_only(*k)) else { return false };
         let n = open_slots(k);
-        let mut map = self.map.lock().unwrap();
+        let mut map = self.map.lock();
         let slots = map.entry(pos).or_insert_with(|| vec![None; CHEST_SLOTS]);
         let max = crate::items::max_stack(item.item.id);
         let at = (0..n)
@@ -371,8 +371,8 @@ impl Containers {
     /// Hopper tick (PNX BlockEntityHopper): push one item forward, pull one from above.
     /// Skips containers someone has open since their slots live in that player's UI.
     pub fn tick_hoppers(&self, world: &crate::world::World) {
-        let hoppers: Vec<_> = self.hoppers.lock().unwrap().iter().copied().collect();
-        let viewers = self.viewers.lock().unwrap().clone();
+        let hoppers: Vec<_> = self.hoppers.lock().iter().copied().collect();
+        let viewers = self.viewers.lock().clone();
         let mut gone = Vec::new();
         for h in hoppers {
             let b = world.get(h.0, h.1, h.2);
@@ -417,7 +417,7 @@ impl Containers {
                 }
             }
         }
-        let mut hs = self.hoppers.lock().unwrap();
+        let mut hs = self.hoppers.lock();
         for g in gone {
             hs.remove(&g);
         }
@@ -425,7 +425,7 @@ impl Containers {
 
     /// Returns how many didn't fit.
     pub fn hopper_insert(&self, h: (i32, i32, i32), item: &crate::inventory::Stack) -> i8 {
-        let mut map = self.map.lock().unwrap();
+        let mut map = self.map.lock();
         let slots = map.entry(h).or_insert_with(|| vec![None; CHEST_SLOTS]);
         let max = crate::items::max_stack(item.item.id);
         let mut left = item.count;
@@ -454,7 +454,7 @@ impl Containers {
     pub fn comparator(&self, world: &crate::world::World, pos: (i32, i32, i32)) -> Option<u8> {
         let k = kind(world.get(pos.0, pos.1, pos.2)).filter(|k| !ui_only(*k))?;
         let n = open_slots(k);
-        let map = self.map.lock().unwrap();
+        let map = self.map.lock();
         let Some(slots) = map.get(&pos) else { return Some(0) };
         let full: f32 = slots.iter().take(n).flatten().map(|s| s.count as f32 / crate::items::max_stack(s.item.id) as f32).sum();
         Some(if full <= 0.0 { 0 } else { 1 + (full / n as f32 * 14.0) as u8 })
@@ -462,10 +462,10 @@ impl Containers {
 
     /// Container got broken, hand back its items to drop.
     pub fn remove(&self, pos: (i32, i32, i32)) -> Vec<Option<Stack>> {
-        self.brewing.lock().unwrap().remove(&pos);
-        self.hoppers.lock().unwrap().remove(&pos);
-        let furnace = self.furnaces.lock().unwrap().remove(&pos);
-        let mut taken = self.map.lock().unwrap().remove(&pos);
+        self.brewing.lock().remove(&pos);
+        self.hoppers.lock().remove(&pos);
+        let furnace = self.furnaces.lock().remove(&pos);
+        let mut taken = self.map.lock().remove(&pos);
         // let it finish smelting what it had time for
         if let (Some(slots), Some((mut f, since))) = (taken.as_mut(), furnace) {
             f.catch_up(slots, since.elapsed().as_secs_f32());
@@ -482,7 +482,7 @@ impl Containers {
         }
         let mut b = Vec::new();
         {
-            let map = self.map.lock().unwrap();
+            let map = self.map.lock();
             b.extend(MAGIC);
             b.extend(VERSION.to_le_bytes());
             b.extend((map.len() as u32).to_le_bytes());
@@ -551,7 +551,7 @@ mod tests {
         let mut top = vec![None; CHEST_SLOTS];
         top[0] = Some(Stack { item, count: 3, net_id: 0 });
         c.put((0, -59, 0), top);
-        c.hoppers.lock().unwrap().insert((0, -60, 0));
+        c.hoppers.lock().insert((0, -60, 0));
         for _ in 0..6 {
             c.tick_hoppers(&w);
         }

@@ -197,7 +197,7 @@ pub fn random_tick(world: &World, p: (i32, i32, i32), roll: u32, raining: bool, 
 }
 
 /// Fires being ticked. PNX schedules each one every 30-40 ticks.
-pub static FIRES: std::sync::Mutex<Vec<(i32, i32, i32)>> = std::sync::Mutex::new(Vec::new());
+pub static FIRES: parking_lot::Mutex<Vec<(i32, i32, i32)>> = parking_lot::Mutex::new(Vec::new());
 
 /// (catch chance, burn-away chance) from PNX BlockFire. 0 = fireproof.
 fn flammability(b: i32) -> (u32, u32) {
