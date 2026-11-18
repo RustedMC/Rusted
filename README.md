@@ -6,6 +6,7 @@
   <a href="https://github.com/RustedMC/Rusted/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/RustedMC/Rusted/build.yml?style=for-the-badge&label=build&color=b7410e" alt="build"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-LGPL--3.0-8b2e0c?style=for-the-badge" alt="license"></a>
   <img src="https://img.shields.io/badge/bedrock-1.26.60-de6e28?style=for-the-badge" alt="bedrock version">
+  <a href="https://discord.gg/gpgFFtCc6N"><img src="https://img.shields.io/badge/discord-join-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="discord"></a>
 </p>
 
 A Minecraft: Bedrock Edition server written in Rust, ported from
@@ -96,6 +97,7 @@ Then add it to `plugin::all()` in [`src/plugin.rs`](src/plugin.rs), which lists 
 ## Contributing
 
 Issues and pull requests are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
+Questions or just want to hang out? Join the [Discord](https://discord.gg/gpgFFtCc6N).
 
 ## License
 
