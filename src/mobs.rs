@@ -2696,6 +2696,7 @@ mod tests {
         // Zombies burn under the noon sun and eventually die.
         server.set_time(6000);
         let z = server.mobs.spawn(&server, Kind::Zombie, (40.5, -60.0, 40.5));
+        server.mobs.mobs.lock().unwrap().get_mut(&z).unwrap().baby = 0; // 1 in 20 spawn as babies, which don't burn
         // Burn damage is 1-in-10 per tick; 30 ticks missed it ~4% of runs.
         for _ in 0..100 {
             server.mobs.tick(&server);
