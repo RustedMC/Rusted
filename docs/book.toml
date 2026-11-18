@@ -1,0 +1,18 @@
+[book]
+title = "Rusted"
+description = "Docs for Rusted, a Minecraft: Bedrock server written in Rust."
+authors = ["RustedMC"]
+language = "en"
+src = "src"
+
+[output.html]
+default-theme = "coal"
+preferred-dark-theme = "coal"
+git-repository-url = "https://github.com/RustedMC/Rusted"
+edit-url-template = "https://github.com/RustedMC/Rusted/edit/main/docs/{path}"
+site-url = "/Rusted/"
+additional-css = ["theme/rusted.css"]
+no-section-label = true
+
+[output.html.search]
+enable = true

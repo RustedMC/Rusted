@@ -1,0 +1,18 @@
+/* Rusted colours on top of the built-in themes */
+:root {
+  --rust: #de6e28;
+  --rust-dark: #b7410e;
+}
+.coal, .navy, .ayu {
+  --links: #e8894a;
+  --sidebar-active: #e8894a;
+  --inline-code-color: #f0a46e;
+}
+.light, .rust {
+  --links: #b7410e;
+  --sidebar-active: #b7410e;
+}
+.menu-title { font-weight: 800; letter-spacing: .02em; }
+.content h1 { border-bottom: 2px solid var(--rust-dark); padding-bottom: .3em; }
+blockquote { border-inline-start-color: var(--rust); }
+table thead { background: rgba(222, 110, 40, .15); }
