@@ -37,6 +37,7 @@ Plugins with the same priority run in load order.
 | `on_player_death(server, player, message: &mut String)` | Player died | Edit the death message, empty hides it |
 | `on_player_respawn(server, player)` | Player respawned | |
 | `on_player_interact(server, player, pos, item: &str) -> bool` | Right-clicking a block holding `item` | `false` means nothing happens |
+| `on_item_use(server, player, item: &Stack) -> bool` | Right-click with an item in hand, in the air or on a block | `false` cancels the normal use |
 | `on_gamemode_change(server, player, mode: &str) -> bool` | Game mode about to change to `"survival"`, `"creative"`... | `false` keeps the old mode |
 | `on_item_drop(server, player, item: &str, count: i8)` | Player threw items out of their inventory | |
 

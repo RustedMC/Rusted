@@ -93,7 +93,57 @@ impl Session {
         }))]).await;
     }
 
+    /// Shows the plugin menu from `ui::menu`: a chest only this player sees, under their feet,
+    /// opened with the menu's items. Called again when the menu changes.
+    pub(super) async fn open_menu(&mut self) {
+        let Some((title, slots)) = ui::menu_view(self.id) else { return };
+        if self.menu_at.is_some() {
+            // Already open: just swap the items.
+            self.inv.open_container(slots);
+            let packets = self.inv.open_packet(self.window_id as u32, ContainerEnumName::LevelEntityContainer);
+            let _ = self.conn.send(packets.as_slice()).await;
+            return;
+        }
+        if let (Some(pos), Some(slots)) = (self.open_container.take(), self.inv.open.take()) {
+            close_open(&self.server, pos, slots, self.open_pair.take());
+        }
+        let Some(me) = self.server.get(self.id) else { return };
+        let pos = (me.pos.0.floor() as i32, (me.pos.1 - 1.62).floor() as i32 - 2, me.pos.2.floor() as i32);
+        let real = self.server.world.get(pos.0, pos.1, pos.2);
+        let Some(chest) = blocks::any_state("minecraft:chest") else { return };
+        let _ = self.conn.send(&[update_block(pos.0, pos.1, pos.2, chest), named_chest(pos, &title)]).await;
+        // The client needs the chest in place before it can open it.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        self.window_id = if self.window_id >= 99 { 2 } else { self.window_id + 1 };
+        self.inv.open_container(slots);
+        self.open_kind = Some((containers::Kind::Chest, ContainerEnumName::LevelEntityContainer));
+        self.menu_at = Some((pos, real));
+        let mut out = vec![Protocol::ContainerOpenPacket(Box::new(ContainerOpenPacket {
+            container_id: ContainerID(self.window_id),
+            container_type: ContainerType::Container,
+            position: NetworkBlockPosition { x: pos.0, y: pos.1, z: pos.2 },
+            target_actor_id: ActorUniqueID(-1),
+        }))];
+        out.extend(self.inv.open_packet(self.window_id as u32, ContainerEnumName::LevelEntityContainer));
+        let _ = self.conn.send(&out).await;
+    }
+
+    /// The fake chest goes away and the menu is forgotten.
+    async fn end_menu(&mut self) {
+        if let Some((pos, real)) = self.menu_at.take() {
+            ui::menu_closed(self.id);
+            self.inv.open = None;
+            self.open_kind = None;
+            let _ = self.conn.send(&[update_block(pos.0, pos.1, pos.2, real), self.inv.content_packet()]).await;
+        }
+    }
+
     pub(super) async fn on_container_close(&mut self, c: Box<ContainerClose>) {
+        if self.menu_at.is_some() {
+            self.end_menu().await;
+            let _ = self.conn.send(&[Protocol::ContainerClosePacket(c)]).await;
+            return;
+        }
         // A closing chest keeps its contents on the server.
         if let (Some(pos), Some(slots)) = (self.open_container.take(), self.inv.open.take()) {
             close_open(&self.server, pos, slots, self.open_pair.take());
@@ -116,6 +166,31 @@ impl Session {
     }
 
     pub(super) async fn on_stack_request(&mut self, r: &StackRequest) {
+        // In a plugin menu nothing moves: refuse every request and pass the clicks on.
+        if self.menu_at.is_some() {
+            let (responses, clicks): (Vec<_>, Vec<_>) = r.requests.iter().map(inventory::reject).unzip();
+            let _ = self.conn.send(&[Protocol::ItemStackResponsePacket(Box::new(ItemStackResponsePacket { responses }))]).await;
+            let mut keep = true;
+            if let Some(me) = self.server.get(self.id) {
+                for slot in clicks.into_iter().flatten() {
+                    keep &= ui::menu_click(&self.server, &me, slot);
+                }
+            }
+            if keep {
+                // Undo what the client already moved on its side.
+                self.open_menu().await;
+                let _ = self.conn.send(&[self.inv.content_packet()]).await;
+            } else {
+                let close = Protocol::ContainerClosePacket(Box::new(ContainerClose {
+                    container_id: ContainerID(self.window_id),
+                    container_type: ContainerType::Container,
+                    server_initiated_close: true,
+                }));
+                let _ = self.conn.send(&[close]).await;
+                self.end_menu().await;
+            }
+            return;
+        }
         let mut thrown = Vec::new();
         let responses = r
             .requests

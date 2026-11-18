@@ -46,6 +46,11 @@ pub enum Event {
     Teleport { id: i64, feet: (f32, f32, f32) },
     /// kick `id` (0 = everyone) after saving
     Kick { id: i64, message: String, reason: Kick },
+    /// put this exact item (custom name, lore, plugin tags) in a player's inventory
+    #[allow(dead_code)] // sent by plugins
+    Give { to: i64, item: Box<crate::inventory::Stack> },
+    /// a plugin menu for `to` was opened or changed (see `ui::menu`)
+    Menu { to: i64 },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -210,6 +215,65 @@ fn b64(s: &str) -> Vec<u8> {
 
 fn b64_text(s: &str) -> String {
     String::from_utf8(b64(s)).unwrap_or_default()
+}
+
+
+/// Player control for plugins (and anything else that wants it).
+#[allow(dead_code)] // plugin API: plugins call these, the server itself may not
+impl Server {
+    /// Runs a command as if `id` typed it, without the op check. Any vanilla command works,
+    /// so this reaches everything a player can be made to do.
+    pub fn run_as(&self, id: i64, command: &str) {
+        let _ = self.events.send(Event::RunAs { to: id, line: command.trim_start_matches('/').to_string(), reply_to: 0 });
+    }
+
+    /// Gives `item` (from `plugin::item`) to a player; what doesn't fit drops at their feet.
+    pub fn give(&self, id: i64, item: crate::inventory::Stack) {
+        let _ = self.events.send(Event::Give { to: id, item: Box::new(item) });
+    }
+
+    pub fn teleport(&self, id: i64, feet: (f32, f32, f32)) {
+        let _ = self.events.send(Event::Teleport { id, feet });
+    }
+
+    /// Big title text, with an optional smaller line under it.
+    pub fn title(&self, id: i64, title: &str, subtitle: &str) {
+        if !subtitle.is_empty() {
+            self.run_as(id, &format!("title @s subtitle {subtitle}"));
+        }
+        self.run_as(id, &format!("title @s title {title}"));
+    }
+
+    /// Text above the hotbar.
+    pub fn actionbar(&self, id: i64, text: &str) {
+        self.run_as(id, &format!("title @s actionbar {text}"));
+    }
+
+    /// `survival`, `creative`, `adventure` or `spectator`.
+    pub fn set_gamemode(&self, id: i64, mode: &str) {
+        self.run_as(id, &format!("gamemode {mode}"));
+    }
+
+    /// Effect id (see `effects`), amplifier 0 = level I, for `seconds`.
+    pub fn effect(&self, id: i64, effect: i32, amplifier: i32, seconds: i32) {
+        let _ = self.events.send(Event::Effect { to: id, effect, amplifier, ticks: seconds * 20 });
+    }
+
+    /// Plays a sound only that player hears, at their position.
+    pub fn sound(&self, id: i64, sound: &str) {
+        if let Some(p) = self.get(id) {
+            let _ = self.events.send(Event::Packet { to: id, packet: Box::new(crate::packets::play_sound(sound, p.pos)) });
+        }
+    }
+
+    pub fn kick(&self, id: i64, message: &str) {
+        let _ = self.events.send(Event::Kick { id, message: message.into(), reason: Kick::Kicked });
+    }
+
+    /// Sends the player to another server (a lobby, a minigame), like a proxy hop.
+    pub fn transfer(&self, id: i64, address: &str, port: u16) {
+        self.run_as(id, &format!("transfer {address} {port}"));
+    }
 }
 
 /// Login skin converted to what other clients expect.

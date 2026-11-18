@@ -242,6 +242,20 @@ pub(crate) fn chest_data(pos: (i32, i32, i32), pair: Option<(i32, i32, i32)>) ->
     }))
 }
 
+/// A chest's block-entity data with a custom title (plugin menus).
+pub(crate) fn named_chest(pos: (i32, i32, i32), title: &str) -> Protocol {
+    let mut tags = HashMap::new();
+    tags.insert("id".to_string(), nbtx::Value::String("Chest".into()));
+    tags.insert("x".to_string(), nbtx::Value::Int(pos.0));
+    tags.insert("y".to_string(), nbtx::Value::Int(pos.1));
+    tags.insert("z".to_string(), nbtx::Value::Int(pos.2));
+    tags.insert("CustomName".to_string(), nbtx::Value::String(title.into()));
+    Protocol::BlockActorDataPacket(Box::new(bedrock::protocol::v662::packets::BlockActorDataPacket {
+        block_position: NetworkBlockPosition { x: pos.0, y: pos.1, z: pos.2 },
+        actor_data_tags: tags,
+    }))
+}
+
 /// MobEffectPacket: add/update (`Some`) or remove (`None`) effect `e` on player `id`.
 pub(crate) fn effect_packet(id: i64, e: i32, x: Option<effects::Effect>) -> Protocol {
     use bedrock::protocol::v898::packets::{MobEffectEvent, MobEffectPacket};

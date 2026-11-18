@@ -180,6 +180,17 @@ impl Session {
                 return GO;
             }
             Ok(Event::Packet { to, packet }) if to == self.id => vec![*packet],
+            Ok(Event::Give { to, item }) if to == self.id => {
+                let left = self.inv.add(item.item.clone(), item.count);
+                if left > 0 && let Some(me) = self.server.get(self.id) {
+                    self.server.entities.drop_item(&self.server, item.item, left, (me.pos.0, me.pos.1 - 1.0, me.pos.2));
+                }
+                vec![self.inv.content_packet()]
+            }
+            Ok(Event::Menu { to }) if to == self.id => {
+                self.open_menu().await;
+                return GO;
+            }
             Ok(Event::RunAs { to, line, reply_to }) if to == self.id => {
                 let _ = self.cmd_tx.send((line, Some(reply_to)));
                 return GO;

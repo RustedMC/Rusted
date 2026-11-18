@@ -117,6 +117,20 @@ impl Default for Inventory {
     }
 }
 
+/// A click inside a plugin menu: refuse it (nothing moves) and report the menu slot it touched.
+pub fn reject(req: &RequestsEntry<Protocol>) -> (ItemStackResponseInfo<Protocol>, Option<usize>) {
+    use ItemStackRequestActionType as A;
+    let menu = |i: &ItemStackRequestSlotInfo<Protocol>| {
+        matches!(i.container_name.container, ContainerEnumName::LevelEntityContainer).then(|| usize::try_from(i.slot).ok()).flatten()
+    };
+    let slot = req.actions.iter().find_map(|a| match a {
+        A::Take { source, destination, .. } | A::Place { source, destination, .. } | A::Swap { source, destination } => menu(source).or_else(|| menu(destination)),
+        A::Drop { source, .. } => menu(source),
+        _ => None,
+    });
+    (ItemStackResponseInfo { result: ItemStackNetResult::Error, client_request_id: req.client_request_id, containers: None }, slot)
+}
+
 fn place_of(info: &ItemStackRequestSlotInfo<Protocol>) -> Option<Place> {
     let slot = usize::try_from(info.slot).ok()?;
     match info.container_name.container {

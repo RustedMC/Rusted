@@ -18,6 +18,7 @@
 - [Permissions](plugins/permissions.md)
 - [Scheduler](plugins/scheduler.md)
 - [Config files](plugins/config.md)
+- [Items, menus and player control](plugins/items-and-menus.md)
 - [Forms, scoreboards and boss bars](plugins/ui.md)
 
 # Project

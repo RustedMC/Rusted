@@ -457,6 +457,58 @@ pub fn remove_boss_bar(server: &Server, to: i64) {
     let _ = server.events.send(Event::Packet { to, packet: Box::new(p) });
 }
 
+// ---- chest menus
+
+/// Called with the clicked slot; return false to close the menu.
+type MenuClick = Box<dyn FnMut(&Server, &PlayerInfo, usize) -> bool + Send>;
+
+struct Menu {
+    title: String,
+    slots: Vec<Option<crate::inventory::Stack>>,
+    on_click: Option<MenuClick>,
+}
+
+static MENUS: Mutex<Option<HashMap<i64, Menu>>> = Mutex::new(None);
+
+/// Opens a chest menu for `to` with these items (27 slots, extra are cut). Players can't take
+/// anything out; each click calls `on_click` with the slot, which returns false to close it.
+/// Opening another menu while one is open swaps it (multi-page menus).
+pub fn menu(
+    server: &Server,
+    to: i64,
+    title: &str,
+    mut items: Vec<Option<crate::inventory::Stack>>,
+    on_click: impl FnMut(&Server, &PlayerInfo, usize) -> bool + Send + 'static,
+) {
+    items.resize(crate::inventory::CHEST_SLOTS, None);
+    MENUS.lock().get_or_insert_with(HashMap::new).insert(to, Menu { title: title.into(), slots: items, on_click: Some(Box::new(on_click)) });
+    let _ = server.events.send(Event::Menu { to });
+}
+
+/// The open menu's title and items, for the session to show.
+pub fn menu_view(player: i64) -> Option<(String, Vec<Option<crate::inventory::Stack>>)> {
+    MENUS.lock().as_ref()?.get(&player).map(|m| (m.title.clone(), m.slots.clone()))
+}
+
+/// A click in `player`'s menu. False if the menu should close.
+pub fn menu_click(server: &Server, player: &PlayerInfo, slot: usize) -> bool {
+    let Some(mut f) = MENUS.lock().as_mut().and_then(|m| m.get_mut(&player.id)).and_then(|m| m.on_click.take()) else { return false };
+    let keep = f(server, player, slot);
+    // The callback may have opened a new menu; only give the handler back to the same one.
+    if let Some(m) = MENUS.lock().as_mut().and_then(|m| m.get_mut(&player.id))
+        && m.on_click.is_none()
+    {
+        m.on_click = Some(f);
+    }
+    keep
+}
+
+pub fn menu_closed(player: i64) {
+    if let Some(m) = MENUS.lock().as_mut() {
+        m.remove(&player);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -485,3 +537,4 @@ mod tests {
         assert_ne!(line_id("kills", "Steve"), line_id("kills", "Alex"));
     }
 }
+

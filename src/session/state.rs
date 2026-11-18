@@ -59,6 +59,8 @@ pub(crate) struct Session {
     pub riding: Option<i64>,
     /// Gliding with an elytra.
     pub gliding: bool,
+    /// A plugin menu is open: the fake chest's position and the real block there.
+    pub menu_at: Option<((i32, i32, i32), i32)>,
 }
 
 impl Session {
@@ -148,6 +150,7 @@ impl Session {
             portal_done: Instant::now(),
             riding: None,
             gliding: false,
+            menu_at: None,
         })
     }
 

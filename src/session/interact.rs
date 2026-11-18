@@ -25,6 +25,20 @@ impl Session {
                 let _ = self.conn.send(&[update_block(p.x, p.y, p.z, self.server.world.get(p.x, p.y, p.z))]).await;
             }
         }
+        // Plugins see every use of a held item first, and can cancel it.
+        if let InventoryTransactionData::ItemUse(u) = &t.data
+            && matches!(u.action_type, 0 | 1)
+            && let Some(st) = self.inv.held(self.selected_slot as usize).cloned()
+            && let Some(me) = self.server.get(self.id)
+            && !self.server.plugins.item_use(&self.server, &me, &st)
+        {
+            if u.action_type == 0 {
+                let p = &u.block_position;
+                let _ = self.conn.send(&[update_block(p.x, p.y, p.z, self.server.world.get(p.x, p.y, p.z))]).await;
+            }
+            let _ = self.conn.send(&[self.inv.content_packet()]).await;
+            return;
+        }
         // Use in the air (action 1) with a bow or trident: start drawing it.
         if let InventoryTransactionData::ItemUse(u) = &t.data
             && u.action_type == 1

@@ -159,6 +159,12 @@ pub trait Plugin: Send + Sync {
         true
     }
 
+    /// Player used (right-clicked) the item in their hand, in the air or on a block. Return
+    /// false to cancel the normal use. Pair with `plugin::tag` to find your custom items.
+    fn on_item_use(&self, _server: &Server, _player: &PlayerInfo, _item: &crate::inventory::Stack) -> bool {
+        true
+    }
+
     /// (name, description) of commands this plugin handles, for autocomplete.
     fn commands(&self) -> Vec<(&'static str, &'static str)> {
         vec![]
@@ -328,6 +334,10 @@ impl Plugins {
 
     pub fn weather_change(&self, s: &Server, weather: &str) -> bool {
         self.cancellable(|pl| pl.on_weather_change(s, weather))
+    }
+
+    pub fn item_use(&self, s: &Server, p: &PlayerInfo, item: &crate::inventory::Stack) -> bool {
+        self.cancellable(|pl| pl.on_item_use(s, p, item))
     }
 
     pub fn names(&self) -> Vec<String> {
@@ -751,5 +761,93 @@ mod tests {
             server.scheduler.tick(&server);
         }
         assert_eq!(reps.load(Ordering::Relaxed), 5);
+    }
+}
+
+/// Builds an item for plugins: custom name, lore lines and hidden tags that survive in the
+/// player's inventory. `plugin::item("minecraft:compass")?.name("§aServers").tag("menu", "servers").build()`
+pub struct ItemBuilder {
+    stack: crate::inventory::Stack,
+    nbt: crate::itemdata::ItemData,
+}
+
+/// Starts an item from its name (`minecraft:diamond_sword` or `diamond_sword`).
+pub fn item(name: &str) -> Option<ItemBuilder> {
+    let item = crate::items::item_by_name(name)?;
+    let nbt = crate::itemdata::ItemData::read(&item.user_data_buffer);
+    Some(ItemBuilder { stack: crate::inventory::Stack { item, count: 1, net_id: 0 }, nbt })
+}
+
+impl ItemBuilder {
+    fn display(&mut self) -> Vec<(String, crate::itemdata::Tag)> {
+        match self.nbt.get("display") {
+            Some(crate::itemdata::Tag::Compound(d)) => d.clone(),
+            _ => vec![],
+        }
+    }
+
+    fn set_display(&mut self, key: &str, v: crate::itemdata::Tag) {
+        let mut d = self.display();
+        d.retain(|(k, _)| k != key);
+        d.push((key.into(), v));
+        self.nbt.set("display", crate::itemdata::Tag::Compound(d));
+    }
+
+    pub fn name(mut self, name: &str) -> Self {
+        self.set_display("Name", crate::itemdata::Tag::String(name.into()));
+        self
+    }
+
+    pub fn lore(mut self, lines: &[&str]) -> Self {
+        let lines = lines.iter().map(|l| crate::itemdata::Tag::String((*l).into())).collect();
+        self.set_display("Lore", crate::itemdata::Tag::List(8, lines));
+        self
+    }
+
+    /// A hidden key = value only plugins see, e.g. which menu a compass opens.
+    pub fn tag(mut self, key: &str, value: &str) -> Self {
+        let mut tags = match self.nbt.get("rusted") {
+            Some(crate::itemdata::Tag::Compound(t)) => t.clone(),
+            _ => vec![],
+        };
+        tags.retain(|(k, _)| k != key);
+        tags.push((key.into(), crate::itemdata::Tag::String(value.into())));
+        self.nbt.set("rusted", crate::itemdata::Tag::Compound(tags));
+        self
+    }
+
+    pub fn count(mut self, n: i8) -> Self {
+        self.stack.count = n.max(1);
+        self
+    }
+
+    pub fn build(mut self) -> crate::inventory::Stack {
+        self.stack.item.user_data_buffer = self.nbt.write();
+        self.stack
+    }
+}
+
+/// A hidden plugin tag on an item (set with `ItemBuilder::tag`).
+pub fn tag(item: &crate::inventory::Stack, key: &str) -> Option<String> {
+    match crate::itemdata::ItemData::read(&item.item.user_data_buffer).get("rusted") {
+        Some(crate::itemdata::Tag::Compound(t)) => t.iter().find(|(k, _)| k == key).and_then(|(_, v)| match v {
+            crate::itemdata::Tag::String(s) => Some(s.clone()),
+            _ => None,
+        }),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod item_tests {
+    #[test]
+    fn built_items_keep_name_lore_and_tags() {
+        crate::blocks::init();
+        let it = super::item("compass").unwrap().name("§aServers").lore(&["Right-click to pick"]).tag("menu", "servers").count(2).build();
+        assert_eq!(it.count, 2);
+        assert_eq!(super::tag(&it, "menu").as_deref(), Some("servers"));
+        assert_eq!(super::tag(&it, "other"), None);
+        let nbt = crate::itemdata::ItemData::read(&it.item.user_data_buffer);
+        assert!(matches!(nbt.get("display"), Some(crate::itemdata::Tag::Compound(d)) if d.iter().any(|(k, _)| k == "Name") && d.iter().any(|(k, _)| k == "Lore")));
     }
 }
