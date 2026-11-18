@@ -753,7 +753,7 @@ impl Inventory {
                 }
                 ItemStackRequestActionType::CraftRecipe { recipe_network_id, number_of_requested_crafts }
                 | ItemStackRequestActionType::CraftRecipeAuto { recipe_network_id, number_of_requested_crafts, .. } => {
-                    match crate::recipes::get().crafted(*recipe_network_id) {
+                    match crate::recipes::get().crafted(*recipe_network_id).or_else(|| firework(&self.craft)) {
                         Some((item, n)) => {
                             let net_id = self.fresh_id();
                             let count = (n as i16 * (*number_of_requested_crafts).max(1) as i16).min(64) as i8;
@@ -1003,4 +1003,32 @@ mod totem_tests {
         inv.sneaking = true;
         assert_eq!(inv.shield(), Some(OFFHAND));
     }
+}
+
+/// The firework rocket special recipe (vanilla multi recipe): 1 paper, 1-3 gunpowder and any
+/// firework stars make 3 rockets that fly 1-3 and carry the stars' explosions.
+fn firework(grid: &[Option<Stack>]) -> Option<(NetworkItemStackDescriptorV2, i8)> {
+    use crate::itemdata::{ItemData, Tag};
+    let (mut paper, mut powder, mut other) = (0, 0, 0);
+    let mut explosions = Vec::new();
+    for s in grid.iter().flatten() {
+        match crate::items::name_of(s.item.id) {
+            Some("minecraft:paper") => paper += 1,
+            Some("minecraft:gunpowder") => powder += 1,
+            Some("minecraft:firework_star") => {
+                if let Some(Tag::Compound(e)) = ItemData::read(&s.item.user_data_buffer).get("FireworksItem") {
+                    explosions.push(Tag::Compound(e.clone()));
+                }
+            }
+            _ => other += 1,
+        }
+    }
+    if paper != 1 || !(1..=3).contains(&powder) || other > 0 {
+        return None;
+    }
+    let mut item = crate::items::item_by_name("minecraft:firework_rocket")?;
+    let mut d = ItemData::read(&item.user_data_buffer);
+    d.set("Fireworks", Tag::Compound(vec![("Explosions".into(), Tag::List(10, explosions)), ("Flight".into(), Tag::Byte(powder))]));
+    item.user_data_buffer = d.write();
+    Some((item, 3))
 }

@@ -19,6 +19,7 @@ mod drops;
 mod entities;
 mod hunger;
 mod fishing;
+mod rockets;
 mod lectern;
 mod loot;
 mod minecart;
@@ -251,6 +252,13 @@ async fn main() {
                     }
                 }
                 for ((x, y, z), b) in server.fluids.tick(&server.world, turn % 6 == 0) {
+                    // A torch, flower or rail the water washed away drops as an item.
+                    let old = server.world.get(x, y, z);
+                    if old != world::AIR && !fluids::is_fluid(old) && fluids::is_fluid(b) {
+                        for (item, n) in drops::drops(old, (x, y, z), None) {
+                            server.entities.drop_item(&server, item, n, (x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5));
+                        }
+                    }
                     server.set_block_quiet(0, x, y, z, b);
                 }
                 if turn % 16 == 0 {
@@ -321,6 +329,7 @@ async fn main() {
                 let _ = tokio::task::spawn_blocking(move || {
                     s.mobs.tick(&s);
                     fishing::tick(&s);
+                    rockets::tick(&s);
                     beacon::tick(&s);
                     s.entities.tick(&s);
                     if turn % 20 == 0 {

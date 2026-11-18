@@ -16,7 +16,7 @@ pub fn is_book(name: &str) -> bool {
 }
 
 /// Rusted's item NBT to the protocol's NBT value.
-fn value(t: &Tag) -> nbtx::Value {
+pub(crate) fn value(t: &Tag) -> nbtx::Value {
     use nbtx::{Value as V, ValueList as L};
     match t {
         Tag::Byte(v) => V::Byte(*v),

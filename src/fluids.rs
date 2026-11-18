@@ -90,6 +90,11 @@ fn read(id: i32) -> Option<(Kind, Level)> {
     None
 }
 
+/// Water or lava, flowing or still.
+pub fn is_fluid(id: i32) -> bool {
+    read(id).is_some()
+}
+
 fn solid(id: i32) -> bool {
     id != AIR && read(id).is_none() && !washable(id)
 }
@@ -153,6 +158,10 @@ fn flow_dirs(world: &World, p: (i32, i32, i32), kind: Kind) -> [bool; 4] {
 fn next_state(world: &World, (x, y, z): (i32, i32, i32)) -> Option<i32> {
     let current = world.get(x, y, z);
     let here = read(current);
+    // Lava pouring down onto water makes stone.
+    if here.is_some_and(|(k, _)| k == Kind::Water) && read(world.get(x, y + 1, z)).is_some_and(|(k, _)| k == Kind::Lava) {
+        return crate::blocks::any_state("minecraft:stone");
+    }
     // Lava touching water hardens: a source into obsidian, flowing lava into cobblestone.
     if let Some((Kind::Lava, level)) = here {
         let wet = [(1, 0, 0), (-1, 0, 0), (0, 0, 1), (0, 0, -1), (0, 1, 0)]

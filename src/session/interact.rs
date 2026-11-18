@@ -278,6 +278,18 @@ impl Session {
             wear(&mut self.conn, &self.server, self.id, &mut self.inv, self.selected_slot as usize, 1, &self.mode).await;
             return;
         }
+        // A rocket used on a block launches from that face (vanilla ItemFirework.onActivate).
+        if held_name == "minecraft:firework_rocket" && !matches!(self.mode, GameType::Spectator) {
+            let (ox, oy, oz) = placement::face_offset(u.block_face);
+            let at = ((p.x + ox) as f32 + 0.5, (p.y + oy) as f32 + 0.1, (p.z + oz) as f32 + 0.5);
+            let data = self.inv.held(self.selected_slot as usize).map(|s| s.item.user_data_buffer.clone()).unwrap_or_default();
+            crate::rockets::launch(&self.server, at, &data);
+            if survival_like(&self.mode) {
+                self.inv.use_one(self.selected_slot as usize);
+                let _ = self.conn.send(&[self.inv.content_packet()]).await;
+            }
+            return;
+        }
         if held_name == "minecraft:flint_and_steel" && spawn::can_build(&self.mode) {
             let (ox, oy, oz) = placement::face_offset(u.block_face);
             let at = (p.x + ox, p.y + oy, p.z + oz);
