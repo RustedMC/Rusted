@@ -18,7 +18,7 @@ This file tracks how far each part of PNX has come over.
 | `command` | vanilla commands | 🟡 ~50 commands and target selectors; no `/execute`, `/locate`, `/function` |
 | `event` + `plugin` | plugin API | 🟡 21 of PNX's ~200 events, scheduler, config files; plugins are compiled in |
 | `form`, `scoreboard` | server UI | 🟡 forms, scoreboards, boss bars; no NPC dialogs or camera control |
-| loot tables | chest loot, spawners | ❌ generated chests are empty, spawners don't spawn |
+| loot tables | chest loot, spawners | 🟡 chests in 15 overworld and Nether structures fill on first open (vanilla tables, enchanted books are plain books); mineshaft, stronghold and fortress spawners work; no End city loot, dungeons or trial spawners |
 
 ## How ported code is written
 - Same rules, numbers and random-number order as PNX. Where Java needed objects and virtual

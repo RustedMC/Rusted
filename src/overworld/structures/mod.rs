@@ -113,6 +113,7 @@ fn build(ow: &Overworld, t: &StructureType, cx: i32, cz: i32) -> Built {
     let mut out: Built = HashMap::new();
     for (k, id) in w.writes {
         let (x, y, z) = unkey(k);
+        crate::loot::generated((x, y, z), id, t.name);
         out.entry((x >> 4, z >> 4)).or_default().push(((x & 15) as u8, y as i16, (z & 15) as u8, id));
     }
     out

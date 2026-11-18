@@ -212,6 +212,7 @@ impl Lvl<'_> {
         self.ch.get(x - self.bx, y, z - self.bz)
     }
     fn set(&mut self, x: i32, y: i32, z: i32, id: i32) {
+        crate::loot::generated((x, y + crate::dims::base(crate::dims::NETHER), z), id, "nether_fortress");
         self.ch.set(x - self.bx, y, z - self.bz, id);
     }
 }

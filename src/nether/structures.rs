@@ -115,7 +115,13 @@ pub fn apply(n: &Nether, ch: &mut NetherChunk, cx: i32, cz: i32) {
         if !bastion || n.terrain.picker.column((sx << 4) + 7, (sz << 4) + 7) == BASALT_DELTAS {
             continue;
         }
-        let b = cached(n, 0, sx, sz, || Built::Blocks(group(jigsaw::bastion([sx << 4, 33, sz << 4], &mut post_selection_random(seed, sx, sz)))));
+        let b = cached(n, 0, sx, sz, || {
+            let blocks = jigsaw::bastion([sx << 4, 33, sz << 4], &mut post_selection_random(seed, sx, sz));
+            for &(x, y, z, v) in &blocks {
+                crate::loot::generated((x, y + crate::dims::base(crate::dims::NETHER), z), v, "bastion");
+            }
+            Built::Blocks(group(blocks))
+        });
         copy(&b, ch, cx, cz);
     }
     // NetherFortressPopulator

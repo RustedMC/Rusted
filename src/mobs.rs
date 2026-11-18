@@ -1167,6 +1167,7 @@ impl Mobs {
 
     pub fn tick(&self, server: &Server) {
         tick_tnt(server);
+        self.tick_spawners(server);
         let mut out = Vec::new();
         let ids: Vec<i64> = self.mobs.lock().keys().copied().collect();
         for id in ids {
@@ -1341,6 +1342,51 @@ impl Mobs {
         self.tick_thrown(server, &mut out);
         for p in out {
             broadcast(server, p);
+        }
+    }
+
+    /// Structure spawners (vanilla `MobSpawnerBaseLogic`): with a player within 16 blocks,
+    /// every 10-40 s spawn up to 4 of their mob within 4 blocks, unless 6 are already close.
+    fn tick_spawners(&self, server: &Server) {
+        static DELAY: Mutex<Option<HashMap<(i32, i32, i32), u32>>> = Mutex::new(None);
+        let spawners: Vec<((i32, i32, i32), &str)> = crate::loot::spawners().lock().iter().map(|(p, m)| (*p, *m)).collect();
+        if spawners.is_empty() {
+            return;
+        }
+        let players: Vec<(f32, f32, f32)> = server.all().iter().map(|p| (p.pos.0, p.pos.1 - 1.62, p.pos.2)).collect();
+        let mut spawn = Vec::new();
+        {
+            let mut delays = DELAY.lock();
+            let delays = delays.get_or_insert_with(HashMap::new);
+            for (at, mob) in spawners {
+                let centre = (at.0 as f32 + 0.5, at.1 as f32, at.2 as f32 + 0.5);
+                if !players.iter().any(|&p| dist2(p, centre) < 16.0 * 16.0) {
+                    continue;
+                }
+                let d = delays.entry(at).or_insert(0);
+                if *d > 0 {
+                    *d -= 1;
+                    continue;
+                }
+                *d = (10 + self.rand() % 30) * TPS;
+                if let Some(kind) = Kind::from_name(mob) {
+                    spawn.push((at, kind));
+                }
+            }
+        }
+        for (at, kind) in spawn {
+            if blocks::short(server.world.get(at.0, at.1, at.2)) != "mob_spawner" {
+                crate::loot::spawners().lock().remove(&at); // broken
+                continue;
+            }
+            let centre = (at.0 as f32 + 0.5, at.1 as f32, at.2 as f32 + 0.5);
+            let near = self.mobs.lock().values().filter(|m| m.kind == kind && dist2(m.pos, centre) < 8.0 * 8.0).count();
+            for _ in 0..6usize.saturating_sub(near).min(4) {
+                let p = (at.0 + (self.rand() % 9) as i32 - 4, at.1 + (self.rand() % 3) as i32 - 1, at.2 + (self.rand() % 9) as i32 - 4);
+                if standable(&server.world, p) {
+                    self.spawn(server, kind, (p.0 as f32 + 0.5, p.1 as f32, p.2 as f32 + 0.5));
+                }
+            }
         }
     }
 
@@ -3108,6 +3154,19 @@ mod tests {
         let c = server.mobs.mobs.lock()[&cart].clone();
         assert!(c.pos.0 > 110.0 && (c.pos.2 - 0.5).abs() < 1e-3, "rolled along the rail: {:?}", c.pos);
         assert!(c.rider.is_none(), "the powered activator rail threw the rider out");
+
+        // A mineshaft spawner makes cave spiders while a player is near, and stops at 6.
+        let spawner = (200, -60, 200);
+        server.world.set(spawner.0, spawner.1, spawner.2, any_state("minecraft:mob_spawner").unwrap());
+        crate::loot::generated(spawner, server.world.get(spawner.0, spawner.1, spawner.2), "normal_mineshaft");
+        server.moved(7, (200.5, -60.0 + 1.62, 205.5), (0.0, 0.0), 0.0);
+        let spiders = || server.mobs.mobs.lock().values().filter(|m| m.kind == Kind::CaveSpider && m.dying == 0).count();
+        server.mobs.tick(&server);
+        assert!(spiders() > 0, "spawned on the first tick");
+        for _ in 0..(60 * TPS) {
+            server.mobs.tick(&server);
+        }
+        assert!(spiders() <= 6, "capped at 6 nearby: {}", spiders());
 
         // Saddles and temper are saved with the world.
         let file = std::env::temp_dir().join(format!("rusted_ride_{}.txt", std::process::id()));

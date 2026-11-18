@@ -14,6 +14,12 @@ impl Session {
             close_open(&self.server, pos, slots, self.open_pair.take());
         }
         let pos = (p.x, p.y, p.z);
+        // A generated structure's chest gets its loot the first time it's opened.
+        for at in std::iter::once(pos).chain(containers::chest_pair(&self.server.world, pos)) {
+            if let Some(loot) = crate::loot::take(at, crate::inventory::CHEST_SLOTS) {
+                self.server.containers.put(at, loot);
+            }
+        }
         self.window_id = if self.window_id >= 99 { 2 } else { self.window_id + 1 };
         let (container_type, name) = match kind {
             containers::Kind::Chest => (ContainerType::Container, ContainerEnumName::LevelEntityContainer),
