@@ -36,6 +36,7 @@ pub enum Kind {
     Anvil,
     Grindstone,
     Enchanting,
+    Beacon,
     Shulker,
     Dispenser,
     Dropper,
@@ -54,7 +55,7 @@ pub fn open_slots(k: Kind) -> usize {
 
 /// Screens that keep their slots in the player's UI, nothing stored at the block.
 pub fn ui_only(k: Kind) -> bool {
-    matches!(k, Kind::Workbench | Kind::Stonecutter | Kind::Anvil | Kind::Grindstone | Kind::Enchanting | Kind::Smithing)
+    matches!(k, Kind::Workbench | Kind::Stonecutter | Kind::Anvil | Kind::Grindstone | Kind::Enchanting | Kind::Smithing | Kind::Beacon)
 }
 
 /// from PNX BlockEntityBrewingStand
@@ -137,6 +138,7 @@ pub fn kind(block: i32) -> Option<Kind> {
         "minecraft:dispenser" => Some(Kind::Dispenser),
         "minecraft:dropper" => Some(Kind::Dropper),
         "minecraft:smithing_table" => Some(Kind::Smithing),
+        "minecraft:beacon" => Some(Kind::Beacon),
         n if n.ends_with("shulker_box") => Some(Kind::Shulker),
         _ => None,
     }

@@ -6,6 +6,7 @@ mod chunks;
 mod ticks;
 mod packets;
 mod saves;
+mod beacon;
 mod blockops;
 mod session;
 mod cmdargs;
@@ -317,6 +318,7 @@ async fn main() {
                 let _ = tokio::task::spawn_blocking(move || {
                     s.mobs.tick(&s);
                     fishing::tick(&s);
+                    beacon::tick(&s);
                     s.entities.tick(&s);
                     if turn % 20 == 0 {
                         s.mobs.spawn_near_players(&s);

@@ -64,6 +64,7 @@ pub const SMITH_MATERIAL: usize = 8;
 pub const SMITH_TEMPLATE: usize = 9;
 pub const TRADE_A: usize = 10;
 pub const TRADE_B: usize = 11;
+pub const BEACON_PAYMENT: usize = 12;
 
 pub const CHEST_SLOTS: usize = 27;
 
@@ -93,6 +94,8 @@ pub struct Inventory {
     /// Levels spent (anvil, enchanting) and XP given (grindstone) by the last `handle`.
     pub spent_levels: i32,
     pub gained_xp: i32,
+    /// Effects picked and paid for in a beacon screen: (primary, secondary).
+    pub beacon: Option<(i32, i32)>,
     /// Current enchanting offers, (option net id, offer).
     pub offers: Vec<(u32, crate::tables::Offer)>,
     /// Villager with the trade screen open, plus its offers.
@@ -105,7 +108,7 @@ impl Default for Inventory {
     fn default() -> Self {
         Self {
             slots: vec![None; SLOTS], cursor: None, created: None, open: None, dropped: vec![], craft: vec![None; CRAFT_SLOTS], next_net_id: 1, selected: 0, sneaking: false,
-            levels: 0, creative: false, spent_levels: 0, gained_xp: 0, offers: vec![], trading: None, traded: vec![],
+            levels: 0, creative: false, spent_levels: 0, gained_xp: 0, beacon: None, offers: vec![], trading: None, traded: vec![],
         }
     }
 }
@@ -132,6 +135,7 @@ fn place_of(info: &ItemStackRequestSlotInfo<Protocol>) -> Option<Place> {
         ContainerEnumName::BrewingStandFuelContainer => Some(Place::Open(4)),
         // table screens keep their inputs in the UI grid until closed
         ContainerEnumName::AnvilInputContainer => Some(Place::Craft(ANVIL_INPUT)),
+        ContainerEnumName::BeaconPaymentContainer => Some(Place::Craft(BEACON_PAYMENT)),
         ContainerEnumName::AnvilMaterialContainer => Some(Place::Craft(ANVIL_MATERIAL)),
         ContainerEnumName::GrindstoneInputContainer => Some(Place::Craft(GRIND_INPUT)),
         ContainerEnumName::GrindstoneAdditionalContainer => Some(Place::Craft(GRIND_EXTRA)),
@@ -674,6 +678,14 @@ impl Inventory {
                         }
                         None => false,
                     }
+                }
+                // The beacon's payment slot needs an ingot or gem; the Consume after this uses it up.
+                ItemStackRequestActionType::ScreenBeaconPayment { primary_effect, secondary_effect } => {
+                    let paid = self.craft[BEACON_PAYMENT].as_ref().and_then(|s| crate::items::name_of(s.item.id)).is_some_and(|n| crate::beacon::PAYMENT.contains(&n));
+                    if paid {
+                        self.beacon = Some((*primary_effect, *secondary_effect));
+                    }
+                    paid
                 }
                 // anvil rename comes in through the filtered strings
                 ItemStackRequestActionType::CraftRecipeOptional { filtered_strings_index, .. } => {

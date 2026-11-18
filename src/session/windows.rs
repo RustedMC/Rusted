@@ -38,6 +38,7 @@ impl Session {
             containers::Kind::Dropper => (ContainerType::Dropper, ContainerEnumName::LevelEntityContainer),
             containers::Kind::Smithing => (ContainerType::SmithingTable, ContainerEnumName::SmithingTableInputContainer),
             containers::Kind::Enchanting => (ContainerType::Enchantment, ContainerEnumName::EnchantingInputContainer),
+            containers::Kind::Beacon => (ContainerType::Beacon, ContainerEnumName::BeaconPaymentContainer),
         };
         self.open_kind = Some((kind, name.clone()));
         let mut out = vec![Protocol::ContainerOpenPacket(Box::new(ContainerOpenPacket {
@@ -123,6 +124,11 @@ impl Session {
                 let before = self.inv.enchant_input().map(|s| (s.item.id, s.item.user_data_buffer.clone()));
                 let r = self.inv.handle(req, items::creative_item);
                 thrown.append(&mut self.inv.dropped);
+                if let (Some((primary, secondary)), Some(pos)) = (self.inv.beacon.take(), self.open_container)
+                    && !crate::beacon::configure(&self.server.world, pos, primary, secondary)
+                {
+                    let _ = self.server.events.send(Event::Tell { to: self.id, message: "§cThis beacon's pyramid isn't big enough for that effect".into() });
+                }
                 if self.inv.spent_levels > 0 {
                     self.xp.add_levels(-self.inv.spent_levels);
                     self.table_changed = true;
