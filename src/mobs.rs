@@ -127,6 +127,41 @@ pub struct Spec {
 }
 
 impl Kind {
+    /// Horses, donkeys and mules: tamed by riding them until they stop bucking (PNX EntityHorse).
+    pub fn horse_like(self) -> bool {
+        matches!(self, Kind::Horse | Kind::Donkey | Kind::Mule)
+    }
+
+    /// Mobs a player can sit on. Pigs, striders and camels need a saddle first.
+    pub fn rideable(self) -> bool {
+        self.horse_like() || matches!(self, Kind::Pig | Kind::Strider | Kind::Camel)
+    }
+
+    /// How far the rider's feet sit above the mob's feet.
+    fn seat_height(self) -> f32 {
+        match self {
+            Kind::Horse | Kind::Mule => 1.1,
+            Kind::Donkey => 0.95,
+            Kind::Pig => 0.65,
+            Kind::Strider => 1.4,
+            Kind::Camel => 1.65,
+            _ => 1.0,
+        }
+    }
+
+    /// Temper an untamed horse gains from a snack (vanilla horse feeding values).
+    fn temper_food(self, held: &str) -> u32 {
+        if !self.horse_like() {
+            return 0;
+        }
+        match held {
+            "minecraft:sugar" | "minecraft:wheat" | "minecraft:apple" => 3,
+            "minecraft:golden_carrot" => 5,
+            "minecraft:golden_apple" | "minecraft:enchanted_golden_apple" => 10,
+            _ => 0,
+        }
+    }
+
     pub const PASSIVE: [Kind; 4] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken];
     pub const ALL: [Kind; 71] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken, Kind::Zombie, Kind::Skeleton, Kind::Creeper, Kind::Spider, Kind::Enderman, Kind::Villager, Kind::IronGolem, Kind::Wolf, Kind::Cat, Kind::Squid, Kind::Cod, Kind::Salmon, Kind::Drowned, Kind::Rabbit, Kind::Horse, Kind::Donkey, Kind::Mule, Kind::Llama, Kind::Goat, Kind::Fox, Kind::Panda, Kind::PolarBear, Kind::Mooshroom, Kind::Ocelot, Kind::Turtle, Kind::Armadillo, Kind::Camel, Kind::Sniffer, Kind::Frog, Kind::Axolotl, Kind::GlowSquid, Kind::TropicalFish, Kind::Pufferfish, Kind::Dolphin, Kind::Bat, Kind::Parrot, Kind::Bee, Kind::Allay, Kind::Husk, Kind::Stray, Kind::Bogged, Kind::ZombieVillager, Kind::CaveSpider, Kind::Silverfish, Kind::Witch, Kind::Slime, Kind::Phantom, Kind::Pillager, Kind::Vindicator, Kind::Evoker, Kind::Ravager, Kind::Vex, Kind::Guardian, Kind::ElderGuardian, Kind::Breeze, Kind::Warden, Kind::WitherSkeleton, Kind::Blaze, Kind::Ghast, Kind::MagmaCube, Kind::Piglin, Kind::ZombiePigman, Kind::Hoglin, Kind::Strider, Kind::EnderDragon, Kind::EndCrystal, Kind::Shulker];
 
@@ -339,6 +374,13 @@ pub struct Mob {
     curing: u32,
     /// Leads a pillager patrol (killing it gives Bad Omen).
     pub captain: bool,
+    /// Player riding it.
+    pub rider: Option<i64>,
+    saddled: bool,
+    /// Horses: chance out of 100 to accept a rider, goes up with feeding and each buck.
+    temper: u32,
+    /// Ticks until an untamed horse decides whether to keep its rider.
+    buck: u32,
 }
 
 /// Weapon enchantment effects on a hit.
@@ -503,7 +545,13 @@ fn data_of(m: &Mob) -> Vec<DataItem<Protocol>> {
     use ActorDataIDs::*;
     use DataItemType as T;
     let mut d = data_with(m.kind, m.baby > 0, m.burning, m.fuse > 0);
-    let bits = (m.sitting as i64) << 24 | (m.owner.is_some() as i64) << 28 | (m.sheared as i64) << 31;
+    // SADDLED 8, SITTING 24, TAMED 28, SHEARED 31, WASD_CONTROLLED 44, CAN_POWER_JUMP 45
+    let bits = (m.saddled as i64) << 8
+        | (m.sitting as i64) << 24
+        | (m.owner.is_some() as i64) << 28
+        | (m.sheared as i64) << 31
+        | (m.rider.is_some() as i64) << 44
+        | (m.kind.horse_like() as i64) << 45;
     if let Some(DataItem { data_item_type: T::Int64(f), .. }) = d.first_mut() {
         *f |= bits;
     }
@@ -613,6 +661,36 @@ fn data_packet(m: &Mob) -> Protocol {
     }))
 }
 
+/// Puts `rider` on `vehicle`, or takes them off.
+fn link_packet(vehicle: i64, rider: i64, on: bool) -> Protocol {
+    use bedrock::protocol::v662::enums::ActorLinkType;
+    use bedrock::protocol::v662::packets::SetActorLinkPacket;
+    use bedrock::protocol::v712::types::ActorLink;
+    Protocol::SetActorLinkPacket(Box::new(SetActorLinkPacket {
+        link: ActorLink {
+            actor_unique_id_a: ActorUniqueID(vehicle),
+            actor_unique_id_b: ActorUniqueID(rider),
+            link_type: if on { ActorLinkType::Riding } else { ActorLinkType::None },
+            immediate: !on,
+            passenger_initiated: true,
+            vehicle_angular_velocity: 0.0,
+        },
+    }))
+}
+
+/// The player's RIDING flag (bit 2), so they sit instead of stand.
+fn rider_flag(player: i64, on: bool) -> Protocol {
+    Protocol::SetActorDataPacket(Box::new(bedrock::protocol::v662::packets::SetActorDataPacket {
+        target_runtime_id: ActorRuntimeID(player as u64),
+        actor_data: vec![DataItem {
+            data_item_id: ActorDataIDs::Reserved0,
+            data_item_type: DataItemType::Int64(crate::spawn::FLAGS | (on as i64) << 2),
+        }],
+        synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
+        tick: 0,
+    }))
+}
+
 fn event(id: i64, e: bedrock::protocol::v975::enums::ActorEvent) -> Protocol {
     Protocol::ActorEventPacket(Box::new(bedrock::protocol::v975::packets::ActorEventPacket {
         target_runtime_id: ActorRuntimeID(id as u64),
@@ -665,7 +743,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: kind.max_health(), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: if baby { GROW } else { 0 }, baby: if baby { GROW } else { 0 },
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false,
+            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, temper: 0, buck: 0,
         };
         let size = [1u8, 2, 4][(self.rand() % 3) as usize];
         if kind.spec().splits {
@@ -690,7 +768,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: (size as f32).powi(2), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: 0,
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false,
+            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, temper: 0, buck: 0,
         };
         broadcast(server, add_packet(&m));
         self.mobs.lock().insert(id, m);
@@ -745,6 +823,37 @@ impl Mobs {
             }
             return Use::Nothing;
         }
+        if m.kind.rideable() && m.baby == 0 {
+            let tame = !m.kind.horse_like() || m.owner.is_some();
+            // A saddle goes on tamed horses, and on any adult pig, strider or camel.
+            if held == "minecraft:saddle" && !m.saddled && tame {
+                m.saddled = true;
+                broadcast(server, data_packet(m));
+                broadcast(server, sound("mob.horse.armor", m.pos));
+                return Use::Consume;
+            }
+            // Snacks calm an untamed horse down: more temper, better odds next ride.
+            let snack = m.kind.temper_food(held);
+            if snack > 0 && m.owner.is_none() {
+                m.temper = (m.temper + snack).min(100);
+                broadcast(server, event(id, ActorEvent::Feed));
+                return Use::Consume;
+            }
+            let can_ride = m.kind.horse_like() || m.saddled;
+            if can_ride && m.rider.is_none() && !m.kind.food(held) {
+                m.rider = Some(player);
+                m.path.clear();
+                if m.owner.is_none() {
+                    m.buck = 40 + self.rand() % 60;
+                }
+                let packets = [link_packet(id, player, true), rider_flag(player, true), data_packet(m)];
+                drop(mobs);
+                for p in packets {
+                    broadcast(server, p);
+                }
+                return Use::Mount;
+            }
+        }
         // Taming: bones for wolves, raw fish for cats (1 in 3 tries).
         let tame_food = match m.kind {
             Kind::Wolf => held.ends_with(":bone"),
@@ -764,7 +873,7 @@ impl Mobs {
             return Use::Consume;
         }
         // The owner toggles sitting.
-        if m.owner == Some(player) {
+        if m.owner == Some(player) && matches!(m.kind, Kind::Wolf | Kind::Cat) {
             m.sitting = !m.sitting;
             m.path.clear();
             broadcast(server, data_packet(m));
@@ -791,6 +900,34 @@ impl Mobs {
 
     pub fn contains(&self, id: i64) -> bool {
         self.mobs.lock().contains_key(&id)
+    }
+
+    pub fn rider_of(&self, id: i64) -> Option<i64> {
+        self.mobs.lock().get(&id).and_then(|m| m.rider)
+    }
+
+    /// The rider moved: the client steers ridden mobs, so the mob follows its rider.
+    /// `eye` is the rider's eye position.
+    pub fn ride(&self, id: i64, player: i64, eye: (f32, f32, f32), yaw: f32) {
+        if let Some(m) = self.mobs.lock().get_mut(&id).filter(|m| m.rider == Some(player)) {
+            m.pos = (eye.0, eye.1 - 1.62 - m.kind.seat_height(), eye.2);
+            m.yaw = yaw;
+            m.head_yaw = yaw;
+            m.vel = (0.0, 0.0, 0.0);
+        }
+    }
+
+    /// Takes `player` off whatever they're riding.
+    pub fn dismount(&self, server: &Server, player: i64) {
+        let mut mobs = self.mobs.lock();
+        let Some(m) = mobs.values_mut().find(|m| m.rider == Some(player)) else { return };
+        m.rider = None;
+        m.buck = 0;
+        let packets = [link_packet(m.id, player, false), rider_flag(player, false), data_packet(m)];
+        drop(mobs);
+        for p in packets {
+            broadcast(server, p);
+        }
     }
 
     /// Whether hostiles may target this player (call on join and game mode changes).
@@ -1000,6 +1137,39 @@ impl Mobs {
                 }
             }
             m.cooldown = m.cooldown.saturating_sub(1);
+            if let Some(r) = m.rider {
+                use bedrock::protocol::v975::enums::ActorEvent;
+                if server.get(r).is_none() || m.health <= 0.0 {
+                    m.rider = None;
+                    out.extend([link_packet(id, r, false), rider_flag(r, false), data_packet(&m)]);
+                } else {
+                    // An untamed horse decides after a few seconds: keep the rider (tamed) or buck.
+                    if m.buck > 0 {
+                        m.buck -= 1;
+                        if m.buck == 0 {
+                            if self.rand() % 100 < m.temper {
+                                m.owner = Some(r);
+                                out.extend([event(id, ActorEvent::TamingSucceeded), data_packet(&m)]);
+                            } else {
+                                m.temper = (m.temper + 5).min(100);
+                                m.rider = None;
+                                out.extend([event(id, ActorEvent::TamingFailed), link_packet(id, r, false), rider_flag(r, false), data_packet(&m)]);
+                                out.push(sound("mob.horse.angry", m.pos));
+                            }
+                        }
+                    }
+                    // Ridden: the rider steers, so no AI or physics of its own.
+                    if m.sent.0 != m.pos || (m.sent.1 - m.yaw).abs() > 2.0 {
+                        m.sent = (m.pos, m.yaw, m.head_yaw);
+                        out.push(move_packet(&m));
+                    }
+                    // Only write back what this tick changed: `ride` moves the mob meanwhile.
+                    if let Some(slot) = self.mobs.lock().get_mut(&id) {
+                        (slot.rider, slot.owner, slot.temper, slot.buck, slot.sent) = (m.rider, m.owner, m.temper, m.buck, m.sent);
+                    }
+                    continue;
+                }
+            }
             if m.love > 0 {
                 m.love -= 1;
                 if m.love % 20 == 0 {
@@ -1420,8 +1590,8 @@ impl Mobs {
             return;
         }
         m.aggro = None;
-        // Tamed: stay near the owner (teleport if left far behind).
-        if let Some(o) = m.owner.and_then(|o| server.get(o)) {
+        // Tamed pets stay near the owner (teleport if left far behind). Horses just stay put.
+        if let Some(o) = m.owner.filter(|_| !m.kind.rideable()).and_then(|o| server.get(o)) {
             let feet_o = (o.pos.0, o.pos.1 - 1.62, o.pos.2);
             let d2 = dist2(feet_o, m.pos);
             if d2 > 20.0 * 20.0 {
@@ -2429,16 +2599,16 @@ impl Mobs {
     /// `keys` maps online entity ids to owner keys.
     pub fn save(&self, path: &std::path::Path, keys: &HashMap<i64, i64>) -> std::io::Result<()> {
         use std::fmt::Write;
-        let mut out = String::from("# Rusted mobs v1: kind x y z yaw health baby owner sitting color sheared\n");
+        let mut out = String::from("# Rusted mobs v1: kind x y z yaw health baby owner sitting color sheared job saddled temper\n");
         for m in self.mobs.lock().values() {
             if m.dying > 0 || (m.kind.hostile() || m.kind.aquatic()) && m.owner.is_none() {
                 continue;
             }
             let _ = writeln!(
                 out,
-                "m {} {} {} {} {} {} {} {} {} {} {} {}",
+                "m {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
                 m.kind.identifier(), m.pos.0, m.pos.1, m.pos.2, m.yaw, m.health, m.baby, m.owner.map_or(0, |o| keys.get(&o).copied().unwrap_or(o)), m.sitting as u8, m.color, m.sheared as u8,
-                m.job.as_ref().map_or("-".to_string(), |j| j.to_text())
+                m.job.as_ref().map_or("-".to_string(), |j| j.to_text()), m.saddled as u8, m.temper
             );
         }
         for (x, z) in self.rolled.lock().iter() {
@@ -2465,6 +2635,8 @@ impl Mobs {
                 }
                 ["m", kind, x, y, z, yaw, health, baby, owner, sitting, color, sheared, extra @ ..] => {
                     let job = extra.first().and_then(|t| crate::villagers::Job::from_text(t)).map(Box::new);
+                    let saddled = extra.get(1) == Some(&"1");
+                    let temper = extra.get(2).and_then(|t| t.parse().ok()).unwrap_or(0u32).min(100);
                     let num = |s: &str| s.parse::<f32>().ok().filter(|v| v.is_finite());
                     let (Some(kind), Some(x), Some(y), Some(z), Some(yaw), Some(health)) = (Kind::from_name(kind), num(x), num(y), num(z), num(yaw), num(health)) else {
                         continue;
@@ -2476,7 +2648,7 @@ impl Mobs {
                         id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health, on_ground: false, target: None, panic: 0, dying: 0,
                         sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: baby.parse().unwrap_or(0),
                         aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner, sitting: *sitting == "1",
-                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false,
+                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false, rider: None, saddled, temper, buck: 0,
                     });
                     if let Some(site) = job.and_then(|j| j.site) {
                         crate::villagers::claim(site, id);
@@ -2524,6 +2696,8 @@ pub enum Use {
     Consume,
     /// Bucket on a cow: becomes a milk bucket.
     Milk,
+    /// The player is now riding it.
+    Mount,
 }
 
 /// Whether a mob can stand at block `p` (feet there and above free, solid ground below).
@@ -2733,5 +2907,69 @@ mod tests {
         assert!(n > 0 && !saved.iter().any(|k| k.hostile()), "{saved:?}");
         assert!(again.mobs.lock().values().any(|m| m.kind == Kind::Wolf && m.owner == Some(owner_key("Steve"))));
         assert_eq!(attack_damage(Some("minecraft:diamond_sword")), 8.0);
+    }
+
+    #[test]
+    fn riding_saddles_and_horse_taming() {
+        let server = Server::new();
+        server.join(crate::players::tests::sample(7));
+        let at = |x: f32| (x, -60.0, 0.5);
+        let adult = |id: i64| server.mobs.mobs.lock().get_mut(&id).unwrap().baby = 0;
+
+        // Pigs need a saddle before they can be ridden.
+        let pig = server.mobs.spawn(&server, Kind::Pig, at(0.5));
+        adult(pig);
+        assert!(matches!(server.mobs.interact(&server, pig, None, 7), Use::Nothing));
+        assert!(matches!(server.mobs.interact(&server, pig, Some("minecraft:saddle"), 7), Use::Consume));
+        assert!(matches!(server.mobs.interact(&server, pig, None, 7), Use::Mount));
+        assert_eq!(server.mobs.rider_of(pig), Some(7));
+        // The ridden pig follows its rider and doesn't wander off on its own.
+        server.mobs.ride(pig, 7, (10.0, -57.0, 3.0), 90.0);
+        server.mobs.tick(&server);
+        let p = server.mobs.mobs.lock()[&pig].pos;
+        assert!((p.0 - 10.0).abs() < 1e-3 && (p.2 - 3.0).abs() < 1e-3, "{p:?}");
+        server.mobs.dismount(&server, 7);
+        assert_eq!(server.mobs.rider_of(pig), None);
+
+        // An untamed horse takes no saddle, but can be ridden to tame it.
+        let horse = server.mobs.spawn(&server, Kind::Horse, at(20.5));
+        adult(horse);
+        // (vanilla: you just climb on instead)
+        assert!(matches!(server.mobs.interact(&server, horse, Some("minecraft:saddle"), 7), Use::Mount));
+        assert!(!server.mobs.mobs.lock()[&horse].saddled);
+        server.mobs.dismount(&server, 7);
+        // Snacks raise its temper; at 100 it can't refuse.
+        for _ in 0..12 {
+            server.mobs.interact(&server, horse, Some("minecraft:golden_apple"), 7);
+        }
+        assert_eq!(server.mobs.mobs.lock()[&horse].temper, 100);
+        assert!(matches!(server.mobs.interact(&server, horse, None, 7), Use::Mount));
+        for _ in 0..120 {
+            server.mobs.tick(&server);
+        }
+        assert_eq!(server.mobs.mobs.lock()[&horse].owner, Some(7), "tamed after riding it");
+        assert_eq!(server.mobs.rider_of(horse), Some(7), "and still riding");
+        server.mobs.dismount(&server, 7);
+        assert!(matches!(server.mobs.interact(&server, horse, Some("minecraft:saddle"), 7), Use::Consume));
+
+        // A horse with no temper always bucks its rider and gets a little calmer.
+        let wild = server.mobs.spawn(&server, Kind::Horse, at(40.5));
+        adult(wild);
+        server.mobs.interact(&server, wild, None, 7);
+        for _ in 0..120 {
+            server.mobs.tick(&server);
+        }
+        let m = server.mobs.mobs.lock()[&wild].clone();
+        assert!(m.rider.is_none() && m.owner.is_none() && m.temper == 5, "bucked: {:?} {:?} {}", m.rider, m.owner, m.temper);
+
+        // Saddles and temper are saved with the world.
+        let file = std::env::temp_dir().join(format!("rusted_ride_{}.txt", std::process::id()));
+        server.mobs.save(&file, &HashMap::new()).unwrap();
+        let again = Mobs::default();
+        again.load(&file, &HashMap::new());
+        std::fs::remove_file(&file).ok();
+        let back = again.mobs.lock();
+        assert!(back.values().any(|m| m.kind == Kind::Pig && m.saddled));
+        assert!(back.values().any(|m| m.kind == Kind::Horse && m.temper == 5));
     }
 }

@@ -55,6 +55,8 @@ pub(crate) struct Session {
     // Input ticks spent standing in a nether portal, and when the last trip ended.
     pub portal_ticks: u32,
     pub portal_done: Instant,
+    /// Mob this player is riding.
+    pub riding: Option<i64>,
 }
 
 impl Session {
@@ -142,6 +144,7 @@ impl Session {
             last_pos: None,
             portal_ticks: 0,
             portal_done: Instant::now(),
+            riding: None,
         })
     }
 
@@ -187,6 +190,7 @@ impl Session {
                 println!("{}: client loaded; sent player state: {r:?}", self.name);
             }
             Protocol::InteractPacket(i) if matches!(i.action, InteractAction::OpenInventory) => self.on_open_inventory().await,
+            Protocol::InteractPacket(i) if matches!(i.action, InteractAction::StopRiding) => self.get_off(),
             Protocol::ContainerClosePacket(c) => self.on_container_close(c).await,
             Protocol::ItemStackRequestPacket(r) => self.on_stack_request(&r).await,
             Protocol::MobEquipmentPacket(m) => {
@@ -215,6 +219,7 @@ impl Session {
 
     /// Saves and tells everyone we left.
     pub fn leave(mut self) {
+        self.server.mobs.dismount(&self.server, self.id);
         let name = &self.name;
         if let (Some(pos), Some(slots)) = (self.open_container.take(), self.inv.open.take()) {
             close_open(&self.server, pos, slots, self.open_pair.take());

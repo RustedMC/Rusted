@@ -11,7 +11,7 @@ breakdown of what's ported, part by part, is kept in the repo:
 **Works:** overworld, Nether and End generation (seed-exact with PNX), survival, enchanting,
 brewing, anvils, smithing, effects, bows and tridents, redstone, 71 mob types, villager
 trading, raids, the dragon fight, vanilla commands with selectors, forms, scoreboards and
-boss bars.
+boss bars, riding and taming horses.
 
-**Next up:** riding and taming, loot tables and spawners, crossbows and fishing, beacons and
+**Next up:** boats and minecarts, loot tables and spawners, crossbows and fishing, beacons and
 looms.

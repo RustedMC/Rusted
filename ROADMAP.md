@@ -3,7 +3,7 @@
 Rough order of what's next. See [PORTING.md](PORTING.md) for where each part stands today.
 
 ## Next up
-- Riding and taming: horses, donkeys, pigs, striders, boats, minecarts and rails
+- Boats, minecarts and rails (riding animals is done)
 - Loot tables for generated chests, working mob spawners
 - Crossbows, fishing, fireworks and elytra, shields, totems
 - Beacon, loom, cartography table, crafter, lectern

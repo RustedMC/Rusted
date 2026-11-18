@@ -28,7 +28,10 @@ impl Session {
             match flag {
                 Input::StartFlying => self.flying = true,
                 Input::StopFlying => self.flying = false,
-                Input::StartSneaking => self.sneaking = true,
+                Input::StartSneaking => {
+                    self.sneaking = true;
+                    self.get_off();
+                }
                 Input::StopSneaking => self.sneaking = false,
                 Input::StartSprinting => self.sprinting = true,
                 Input::StopSprinting => self.sprinting = false,
@@ -64,6 +67,15 @@ impl Session {
         let rot = input.player_rotation;
         let head = input.player_head_rotation;
         self.server.moved(self.id, pos, rot, head);
+        if let Some(mount) = self.riding {
+            if self.hp.dead || self.server.mobs.rider_of(mount) != Some(self.id) {
+                // bucked off, the mount died, or we died
+                self.riding = None;
+                self.server.mobs.dismount(&self.server, self.id);
+            } else {
+                self.server.mobs.ride(mount, self.id, pos, rot.1);
+            }
+        }
         // Portals: nether portals after 4 s standing in them (instant in
         // creative), end portals at once (PNX `Player.checkNearPortal`).
         let feet = (pos.0.floor() as i32, (pos.1 - 1.62 + 0.1).floor() as i32, pos.2.floor() as i32);

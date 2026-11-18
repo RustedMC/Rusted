@@ -3,6 +3,13 @@
 use super::*;
 
 impl Session {
+    /// Off the mount, if riding one.
+    pub(super) fn get_off(&mut self) {
+        if self.riding.take().is_some() {
+            self.server.mobs.dismount(&self.server, self.id);
+        }
+    }
+
     pub(super) async fn on_mob_use(&mut self, t: &Transaction) {
         // Right-click on a mob: feed it, or milk a cow.
         let InventoryTransactionData::ItemUseOnEntity(e) = &t.data else { return };
@@ -33,6 +40,10 @@ impl Session {
                     }
                 }
                 true
+            }
+            mobs::Use::Mount => {
+                self.riding = Some(e.actor_runtime_id as i64);
+                false
             }
             _ => false,
         };
