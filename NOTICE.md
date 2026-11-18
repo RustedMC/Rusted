@@ -21,10 +21,7 @@ Rusted builds on the work of others. Thank you.
 
 ## Reference
 - **PowerNukkitX** (LGPL-3.0, https://github.com/PowerNukkitX/PowerNukkitX): Rusted is a
-  Rust port of PowerNukkitX, ported with permission and credit. Ported so far: the world
-  generator (`src/overworld/`: noise, density functions, caves, aquifers, ore veins, biomes,
-  surfaces, features, trees, structures) and PNX's behaviour for items, chests and drops;
-  more of PNX is being ported. Rusted as a whole is therefore licensed **LGPL-3.0** (see
-  LICENSE), like PowerNukkitX.
+  Rust port of PowerNukkitX. Ported code credits its PNX source class in a comment, and
+  Rusted as a whole is licensed **LGPL-3.0** (see LICENSE), like PowerNukkitX.
 - **bedrock-rs** code Rusted started from (`src/main.rs`, from `examples/server.rs`) is
   Apache-2.0 (LICENSE-APACHE), which is compatible with LGPL-3.0; its notice is kept.
