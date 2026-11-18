@@ -507,7 +507,7 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
         },
         ["seed"] => format!("Seed: [{}]", server.world.seed() as i64),
         ["plugins" | "pl"] => {
-            let names = server.plugins.names();
+            let names = server.plugins.summaries();
             format!("Plugins ({}): {}", names.len(), names.iter().map(|n| format!("§a{n}§f")).collect::<Vec<_>>().join(", "))
         }
         ["version" | "ver" | "about"] => format!(

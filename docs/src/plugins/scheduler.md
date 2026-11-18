@@ -35,11 +35,21 @@ let id = server.scheduler.run_repeating(20, 20, |_| true);
 server.scheduler.cancel(id);
 ```
 
-## Keep tasks short
+## Slow work
 
-Tasks run one after another on the tick thread. Something slow, like a web request or a big
-file write, holds up the whole tick. Do slow work on a separate thread and only touch the
-server from the task.
+Tasks run one after another on the tick thread, so something slow, like a web request or a
+database query, holds up the whole server. Use `run_async` for that. The first closure runs on
+its own thread. The second gets the result back on the tick, where it's safe to touch players
+and the world:
+
+```rust
+let name = player.name.clone();
+let id = player.id;
+server.scheduler.run_async(
+    move || look_up_rank_online(&name), // own thread: don't touch the server here
+    move |server, rank| server.tell(id, &format!("Your rank: {rank}")),
+);
+```
 
 Tasks need to be `Send + 'static`, so move what they need into the closure (`move |server| ...`)
 and use `Arc` for anything shared.

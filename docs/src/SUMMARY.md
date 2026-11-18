@@ -15,6 +15,7 @@
 - [Events](plugins/events.md)
 - [The server handle](plugins/server.md)
 - [Commands](plugins/commands.md)
+- [Permissions](plugins/permissions.md)
 - [Scheduler](plugins/scheduler.md)
 - [Config files](plugins/config.md)
 - [Forms, scoreboards and boss bars](plugins/ui.md)

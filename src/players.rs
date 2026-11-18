@@ -106,7 +106,7 @@ impl Server {
             world,
             clock: Arc::new(Mutex::new((1000, std::time::Instant::now()))), // morning
             game_rules: Arc::default(),
-            plugins: Arc::new(crate::plugin::Plugins(crate::plugin::all())),
+            plugins: Arc::new(crate::plugin::Plugins::new(crate::plugin::all())),
             fluids: Arc::default(),
             entities: Arc::default(),
             mobs: Arc::default(),

@@ -27,6 +27,27 @@ impl Plugin for Greeter {
 
 Every event has a default that does nothing, so you only write the ones you need.
 
+### Plugin info
+
+These are optional, and `/pl` shows the name and version:
+
+```rust
+fn version(&self) -> &str { "1.2.0" }
+fn description(&self) -> &str { "Greets players" }
+fn authors(&self) -> &[&str] { &["Steve"] }
+
+/// Needed: if "economy" isn't loaded, this plugin isn't either.
+fn depends(&self) -> &[&str] { &["economy"] }
+
+/// Used if present: loads first when it's there, ignored when it isn't.
+fn soft_depends(&self) -> &[&str] { &["chat-format"] }
+```
+
+Plugins load in dependency order: a plugin's `on_server_start` runs after the plugins it
+depends on, and its `on_server_stop` runs before theirs.
+
+To talk to another plugin, look it up by name with `server.plugins.get("economy")`.
+
 ## 2. Register it
 
 In `src/main.rs`, add the module next to the others:

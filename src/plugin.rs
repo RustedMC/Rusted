@@ -12,8 +12,67 @@
 
 use crate::players::{PlayerInfo, Server};
 
+/// When a plugin sees events compared to other plugins. `Lowest` runs first, so later plugins
+/// get the final say. `Monitor` runs last, only sees events nobody cancelled, and can't cancel
+/// them itself: use it for logging and stats.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum Priority {
+    Lowest,
+    Low,
+    #[default]
+    Normal,
+    High,
+    Highest,
+    Monitor,
+}
+
+/// Who gets a permission when nobody granted or denied it in `permissions.txt`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Access {
+    Everyone,
+    Ops,
+    Nobody,
+}
+
 pub trait Plugin: Send + Sync {
     fn name(&self) -> &str;
+
+    /// Shown by `/pl`.
+    fn version(&self) -> &str {
+        "1.0.0"
+    }
+
+    fn description(&self) -> &str {
+        ""
+    }
+
+    fn authors(&self) -> &[&str] {
+        &[]
+    }
+
+    /// Plugins this one needs. If one is missing, this plugin isn't loaded.
+    fn depends(&self) -> &[&str] {
+        &[]
+    }
+
+    /// Plugins this one works with if they're there. They load first when present.
+    fn soft_depends(&self) -> &[&str] {
+        &[]
+    }
+
+    fn priority(&self) -> Priority {
+        Priority::Normal
+    }
+
+    /// Permission nodes this plugin uses, like `("homes.set", Access::Everyone)`.
+    fn permissions(&self) -> Vec<(&'static str, Access)> {
+        vec![]
+    }
+
+    /// Permission a player needs to run one of this plugin's commands. `None` = anyone.
+    fn command_permission(&self, _command: &str) -> Option<&'static str> {
+        None
+    }
 
     /// Player finished joining.
     fn on_join(&self, _server: &Server, _player: &PlayerInfo) {}
@@ -118,101 +177,251 @@ pub fn all() -> Vec<Box<dyn Plugin>> {
 
 /// Registered plugins, plus helpers to run an event through all of them.
 #[derive(Default)]
-pub struct Plugins(pub Vec<Box<dyn Plugin>>);
+pub struct Plugins {
+    /// In load order: everything a plugin depends on comes before it.
+    list: Vec<Box<dyn Plugin>>,
+    /// Indexes into `list` sorted by priority, the order events run in.
+    by_priority: Vec<usize>,
+    /// Every declared permission and who gets it by default.
+    defaults: Vec<(&'static str, Access)>,
+}
 
 impl Plugins {
+    /// Drops plugins with a missing dependency, orders the rest so dependencies load first.
+    pub fn new(plugins: Vec<Box<dyn Plugin>>) -> Plugins {
+        let mut pending = plugins;
+        loop {
+            let names: Vec<String> = pending.iter().map(|p| p.name().to_string()).collect();
+            let before = pending.len();
+            pending.retain(|p| match p.depends().iter().find(|d| !names.iter().any(|n| n == *d)) {
+                Some(missing) => {
+                    println!("Plugin {} needs {missing}, which isn't loaded. Skipping it.", p.name());
+                    false
+                }
+                None => true,
+            });
+            if pending.len() == before {
+                break;
+            }
+        }
+        let mut list: Vec<Box<dyn Plugin>> = Vec::new();
+        while !pending.is_empty() {
+            let waits_on = |p: &dyn Plugin, other: &dyn Plugin| {
+                other.name() != p.name() && p.depends().iter().chain(p.soft_depends()).any(|d| *d == other.name())
+            };
+            let i = (0..pending.len())
+                .find(|&i| !pending.iter().any(|q| waits_on(pending[i].as_ref(), q.as_ref())))
+                .unwrap_or_else(|| {
+                    println!("Plugin {} is in a dependency loop, loading it anyway.", pending[0].name());
+                    0
+                });
+            list.push(pending.remove(i));
+        }
+        let mut by_priority: Vec<usize> = (0..list.len()).collect();
+        by_priority.sort_by_key(|&i| list[i].priority());
+        let defaults = list.iter().flat_map(|p| p.permissions()).collect();
+        Plugins { list, by_priority, defaults }
+    }
+
+    /// Event order. Monitor plugins come last.
+    fn ordered(&self) -> impl Iterator<Item = &dyn Plugin> {
+        self.by_priority.iter().map(|&i| self.list[i].as_ref())
+    }
+
+    /// Runs a cancellable event: stops at the first plugin that cancels, then lets Monitor
+    /// plugins see it if it went through. Monitor results are ignored.
+    fn cancellable(&self, mut f: impl FnMut(&dyn Plugin) -> bool) -> bool {
+        let (monitors, rest): (Vec<&dyn Plugin>, Vec<&dyn Plugin>) =
+            self.ordered().partition(|p| p.priority() == Priority::Monitor);
+        let allowed = rest.into_iter().all(&mut f);
+        if allowed {
+            for p in monitors {
+                f(p);
+            }
+        }
+        allowed
+    }
+
+    fn each(&self, f: impl FnMut(&dyn Plugin)) {
+        self.ordered().for_each(f);
+    }
+
+    /// Another loaded plugin, by name.
+    pub fn get(&self, name: &str) -> Option<&dyn Plugin> {
+        self.list.iter().find(|p| p.name() == name).map(|p| p.as_ref())
+    }
+
     pub fn join(&self, s: &Server, p: &PlayerInfo) {
-        self.0.iter().for_each(|pl| pl.on_join(s, p));
+        self.each(|pl| pl.on_join(s, p));
     }
 
     pub fn leave(&self, s: &Server, p: &PlayerInfo) {
-        self.0.iter().for_each(|pl| pl.on_leave(s, p));
+        self.each(|pl| pl.on_leave(s, p));
     }
 
     /// False if any plugin blocked it. Each plugin can rewrite the message in turn.
     pub fn chat(&self, s: &Server, p: &PlayerInfo, message: &mut String) -> bool {
-        self.0.iter().all(|pl| pl.on_chat(s, p, message))
+        self.cancellable(|pl| pl.on_chat(s, p, message))
     }
 
     pub fn block_break(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32), block: i32) -> bool {
-        self.0.iter().all(|pl| pl.on_block_break(s, p, pos, block))
+        self.cancellable(|pl| pl.on_block_break(s, p, pos, block))
     }
 
     pub fn block_place(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32), block: i32) -> bool {
-        self.0.iter().all(|pl| pl.on_block_place(s, p, pos, block))
+        self.cancellable(|pl| pl.on_block_place(s, p, pos, block))
     }
 
+    /// In load order, so a plugin's dependencies start before it.
     pub fn server_start(&self, s: &Server) {
-        self.0.iter().for_each(|pl| pl.on_server_start(s));
+        self.list.iter().for_each(|pl| pl.on_server_start(s));
     }
 
+    /// Reverse load order, so nothing stops before the plugins that use it.
     pub fn server_stop(&self, s: &Server) {
-        self.0.iter().for_each(|pl| pl.on_server_stop(s));
+        self.list.iter().rev().for_each(|pl| pl.on_server_stop(s));
     }
 
     pub fn command_preprocess(&self, s: &Server, p: &PlayerInfo, line: &mut String) -> bool {
-        self.0.iter().all(|pl| pl.on_command_preprocess(s, p, line))
+        self.cancellable(|pl| pl.on_command_preprocess(s, p, line))
     }
 
     pub fn player_damage(&self, s: &Server, p: &PlayerInfo, cause: &str, amount: f32) -> bool {
-        self.0.iter().all(|pl| pl.on_player_damage(s, p, cause, amount))
+        self.cancellable(|pl| pl.on_player_damage(s, p, cause, amount))
     }
 
     pub fn player_death(&self, s: &Server, p: &PlayerInfo, message: &mut String) {
-        self.0.iter().for_each(|pl| pl.on_player_death(s, p, message));
+        self.each(|pl| pl.on_player_death(s, p, message));
     }
 
     pub fn player_respawn(&self, s: &Server, p: &PlayerInfo) {
-        self.0.iter().for_each(|pl| pl.on_player_respawn(s, p));
+        self.each(|pl| pl.on_player_respawn(s, p));
     }
 
     pub fn player_interact(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32), item: &str) -> bool {
-        self.0.iter().all(|pl| pl.on_player_interact(s, p, pos, item))
+        self.cancellable(|pl| pl.on_player_interact(s, p, pos, item))
     }
 
     pub fn gamemode_change(&self, s: &Server, p: &PlayerInfo, mode: &str) -> bool {
-        self.0.iter().all(|pl| pl.on_gamemode_change(s, p, mode))
+        self.cancellable(|pl| pl.on_gamemode_change(s, p, mode))
     }
 
     pub fn item_drop(&self, s: &Server, p: &PlayerInfo, item: &str, count: i8) {
-        self.0.iter().for_each(|pl| pl.on_item_drop(s, p, item, count));
+        self.each(|pl| pl.on_item_drop(s, p, item, count));
     }
 
     pub fn entity_damage(&self, s: &Server, p: &PlayerInfo, mob: i64, kind: &str, damage: f32) -> bool {
-        self.0.iter().all(|pl| pl.on_entity_damage(s, p, mob, kind, damage))
+        self.cancellable(|pl| pl.on_entity_damage(s, p, mob, kind, damage))
     }
 
     pub fn entity_death(&self, s: &Server, kind: &str, pos: (f32, f32, f32), killer: Option<i64>) {
-        self.0.iter().for_each(|pl| pl.on_entity_death(s, kind, pos, killer));
+        self.each(|pl| pl.on_entity_death(s, kind, pos, killer));
     }
 
     pub fn entity_spawn(&self, s: &Server, kind: &str, pos: (f32, f32, f32)) -> bool {
-        self.0.iter().all(|pl| pl.on_entity_spawn(s, kind, pos))
+        self.cancellable(|pl| pl.on_entity_spawn(s, kind, pos))
     }
 
     pub fn explosion(&self, s: &Server, pos: (f32, f32, f32), power: f32) -> bool {
-        self.0.iter().all(|pl| pl.on_explosion(s, pos, power))
+        self.cancellable(|pl| pl.on_explosion(s, pos, power))
     }
 
     pub fn weather_change(&self, s: &Server, weather: &str) -> bool {
-        self.0.iter().all(|pl| pl.on_weather_change(s, weather))
+        self.cancellable(|pl| pl.on_weather_change(s, weather))
     }
 
     pub fn names(&self) -> Vec<String> {
-        self.0.iter().map(|p| p.name().to_string()).collect()
+        self.list.iter().map(|p| p.name().to_string()).collect()
+    }
+
+    /// `name v1.0.0` for `/pl`.
+    pub fn summaries(&self) -> Vec<String> {
+        self.list.iter().map(|p| format!("{} v{}", p.name(), p.version())).collect()
     }
 
     pub fn commands(&self) -> Vec<(&'static str, &'static str)> {
-        self.0.iter().flat_map(|pl| pl.commands()).collect()
+        self.list.iter().flat_map(|pl| pl.commands()).collect()
     }
 
-    /// First plugin that owns `name` handles it.
+    /// First plugin that owns `name` handles it, if the player has its permission.
     pub fn command(&self, s: &Server, p: &PlayerInfo, name: &str, args: &[&str]) -> Option<String> {
-        self.0
-            .iter()
-            .filter(|pl| pl.commands().iter().any(|(n, _)| *n == name))
-            .find_map(|pl| pl.on_command(s, p, name, args))
+        let owner = self.list.iter().find(|pl| pl.commands().iter().any(|(n, _)| *n == name))?;
+        if let Some(node) = owner.command_permission(name)
+            && !self.allowed(&p.name, node)
+        {
+            return Some("§cYou do not have permission to use this command".into());
+        }
+        owner.on_command(s, p, name, args)
     }
+
+    /// Does `player` have `node`? `permissions.txt` wins, then the plugin's default for it.
+    /// Nodes nobody declared are ops-only.
+    pub fn allowed(&self, player: &str, node: &str) -> bool {
+        if let Some(set) = permissions().get(player, node) {
+            return set;
+        }
+        match self.defaults.iter().find(|(n, _)| *n == node).map_or(Access::Ops, |(_, a)| *a) {
+            Access::Everyone => true,
+            Access::Ops => crate::commands::is_op(player),
+            Access::Nobody => false,
+        }
+    }
+}
+
+/// `permissions.txt`: one `<player> <node>` per line, `-node` to take it away, `plugin.*` for
+/// every node under `plugin.`, `*` for everything. Re-read when the file changes.
+pub struct PermissionFile {
+    path: std::path::PathBuf,
+    cache: parking_lot::Mutex<(Option<std::time::SystemTime>, Vec<(String, String, bool)>)>,
+}
+
+impl PermissionFile {
+    pub fn new(path: impl Into<std::path::PathBuf>) -> Self {
+        PermissionFile { path: path.into(), cache: Default::default() }
+    }
+
+    fn rules(&self) -> Vec<(String, String, bool)> {
+        let modified = std::fs::metadata(&self.path).and_then(|m| m.modified()).ok();
+        let mut cache = self.cache.lock();
+        if cache.0 != modified || modified.is_none() {
+            let text = std::fs::read_to_string(&self.path).unwrap_or_default();
+            cache.1 = text
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .filter_map(|l| l.split_once(char::is_whitespace))
+                .map(|(who, node)| {
+                    let node = node.trim();
+                    let (node, grant) = node.strip_prefix('-').map_or((node, true), |n| (n, false));
+                    (who.to_lowercase(), node.to_string(), grant)
+                })
+                .collect();
+            cache.0 = modified;
+        }
+        cache.1.clone()
+    }
+
+    /// `Some(true/false)` if the file says anything about this player and node. The most
+    /// specific rule wins: `homes.set` beats `homes.*` beats `*`.
+    pub fn get(&self, player: &str, node: &str) -> Option<bool> {
+        let player = player.to_lowercase();
+        self.rules()
+            .into_iter()
+            .filter(|(who, _, _)| *who == player)
+            .filter_map(|(_, rule, grant)| {
+                let hit = rule == node
+                    || rule == "*"
+                    || rule.strip_suffix(".*").is_some_and(|base| node.len() > base.len() && node.starts_with(base) && node[base.len()..].starts_with('.'));
+                hit.then_some((rule.len(), grant))
+            })
+            .max_by_key(|(len, _)| *len)
+            .map(|(_, grant)| grant)
+    }
+}
+
+pub fn permissions() -> &'static PermissionFile {
+    static P: std::sync::OnceLock<PermissionFile> = std::sync::OnceLock::new();
+    P.get_or_init(|| PermissionFile::new("permissions.txt"))
 }
 
 /// Scheduled task. Return false to stop repeating.
@@ -264,6 +473,20 @@ impl Scheduler {
         self.tasks.lock().retain(|t| t.id != id);
     }
 
+    /// Run slow `work` (a web request, a database, a big file) on its own thread, then `done`
+    /// with its result back on the tick, where touching the world is safe.
+    pub fn run_async<T: Send + 'static>(
+        self: &std::sync::Arc<Self>,
+        work: impl FnOnce() -> T + Send + 'static,
+        done: impl FnOnce(&Server, T) + Send + 'static,
+    ) {
+        let me = self.clone();
+        std::thread::spawn(move || {
+            let result = work();
+            me.run_later(1, move |s| done(s, result));
+        });
+    }
+
     /// Runs whatever is due this tick.
     pub fn tick(&self, server: &Server) {
         use std::sync::atomic::Ordering::Relaxed;
@@ -284,6 +507,11 @@ impl Scheduler {
     }
 }
 
+/// Keeps a name usable as a file name: no slashes or dots, so it can't leave its folder.
+fn safe_name(name: &str) -> String {
+    name.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').collect()
+}
+
 /// Plugin settings in plugins/<name>/config.txt as `key = value` lines (like PNX Config).
 /// Missing keys fall back to the default you pass in.
 pub struct Config {
@@ -293,8 +521,17 @@ pub struct Config {
 
 impl Config {
     pub fn load(plugin: &str) -> Config {
-        let safe: String = plugin.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').collect();
-        let path = std::path::Path::new("plugins").join(safe).join("config.txt");
+        Config::at(std::path::Path::new("plugins").join(safe_name(plugin)).join("config.txt"))
+    }
+
+    /// This plugin's saved data for one player, in plugins/<name>/players/<player>.txt. Keyed by
+    /// Xbox id when there is one, so it survives name changes. Call `save()` after changing it.
+    pub fn player(plugin: &str, player: &PlayerInfo) -> Config {
+        let who = if player.xuid.is_empty() { player.name.to_lowercase() } else { player.xuid.clone() };
+        Config::at(std::path::Path::new("plugins").join(safe_name(plugin)).join("players").join(format!("{}.txt", safe_name(&who))))
+    }
+
+    fn at(path: std::path::PathBuf) -> Config {
         let values = std::fs::read_to_string(&path)
             .unwrap_or_default()
             .lines()
@@ -378,7 +615,7 @@ mod tests {
 
     #[test]
     fn events_cancel_and_edit() {
-        let plugins = Plugins(vec![Box::new(NoDirt), Box::new(Welcome)]);
+        let plugins = Plugins::new(vec![Box::new(NoDirt), Box::new(Welcome)]);
         let server = Server::new();
         let player = crate::players::tests::sample(1);
         assert!(!plugins.block_place(&server, &player, (0, 0, 0), crate::world::DIRT));
@@ -390,6 +627,103 @@ mod tests {
         // commands go to the plugin that owns them
         assert!(plugins.command(&server, &player, "online", &[]).unwrap().starts_with("Online (0)"));
         assert!(plugins.command(&server, &player, "nope", &[]).is_none());
+    }
+
+    /// Records the order plugins see chat in, and blocks it if told to.
+    struct Order {
+        name: &'static str,
+        priority: Priority,
+        block: bool,
+        depends: &'static [&'static str],
+        log: std::sync::Arc<parking_lot::Mutex<Vec<&'static str>>>,
+    }
+    impl Plugin for Order {
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn priority(&self) -> Priority {
+            self.priority
+        }
+        fn depends(&self) -> &[&str] {
+            self.depends
+        }
+        fn on_chat(&self, _: &Server, _: &PlayerInfo, _: &mut String) -> bool {
+            self.log.lock().push(self.name);
+            !self.block
+        }
+        fn on_server_start(&self, _: &Server) {
+            self.log.lock().push(self.name);
+        }
+        fn permissions(&self) -> Vec<(&'static str, Access)> {
+            vec![("order.use", Access::Everyone), ("order.admin", Access::Ops)]
+        }
+        fn commands(&self) -> Vec<(&'static str, &'static str)> {
+            vec![("secret", "")]
+        }
+        fn command_permission(&self, _: &str) -> Option<&'static str> {
+            Some("order.admin")
+        }
+        fn on_command(&self, _: &Server, _: &PlayerInfo, _: &str, _: &[&str]) -> Option<String> {
+            Some("ok".into())
+        }
+    }
+
+    fn order(name: &'static str, priority: Priority, block: bool, depends: &'static [&'static str], log: &std::sync::Arc<parking_lot::Mutex<Vec<&'static str>>>) -> Box<dyn Plugin> {
+        Box::new(Order { name, priority, block, depends, log: log.clone() })
+    }
+
+    #[test]
+    fn priorities_monitor_and_depends() {
+        let server = Server::new();
+        let player = crate::players::tests::sample(1);
+        let log = std::sync::Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let plugins = Plugins::new(vec![
+            order("mon", Priority::Monitor, false, &[], &log),
+            order("high", Priority::High, false, &["low"], &log),
+            order("low", Priority::Low, false, &[], &log),
+            order("orphan", Priority::Normal, false, &["missing"], &log),
+        ]);
+        assert_eq!(plugins.names(), ["mon", "low", "high"], "orphan dropped, low loads before high");
+        plugins.server_start(&server);
+        assert_eq!(*log.lock(), ["mon", "low", "high"]);
+        log.lock().clear();
+        assert!(plugins.chat(&server, &player, &mut String::new()));
+        assert_eq!(*log.lock(), ["low", "high", "mon"], "events by priority, monitor last");
+
+        let log = std::sync::Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let plugins = Plugins::new(vec![order("mon", Priority::Monitor, true, &[], &log), order("blocker", Priority::Low, true, &[], &log)]);
+        assert!(!plugins.chat(&server, &player, &mut String::new()));
+        assert_eq!(*log.lock(), ["blocker"], "monitor doesn't see cancelled events");
+        let log = std::sync::Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let plugins = Plugins::new(vec![order("mon", Priority::Monitor, true, &[], &log)]);
+        assert!(plugins.chat(&server, &player, &mut String::new()), "monitor can't cancel");
+
+        // declared defaults: player 1 isn't an op
+        assert!(plugins.allowed(&player.name, "order.use"));
+        assert!(!plugins.allowed(&player.name, "order.admin"));
+        assert!(!plugins.allowed(&player.name, "never.declared"));
+        assert!(plugins.command(&server, &player, "secret", &[]).unwrap().contains("permission"));
+    }
+
+    #[test]
+    fn permission_file_rules() {
+        let path = std::env::temp_dir().join(format!("rusted-perms-{}.txt", std::process::id()));
+        std::fs::write(&path, "# comment\nSteve homes.*\nsteve -homes.delete\nAlex *\n").unwrap();
+        let file = PermissionFile::new(&path);
+        assert_eq!(file.get("steve", "homes.set"), Some(true), "wildcard, names ignore case");
+        assert_eq!(file.get("Steve", "homes.delete"), Some(false), "exact rule beats wildcard");
+        assert_eq!(file.get("Steve", "homesick"), None, "homes.* doesn't match homesick");
+        assert_eq!(file.get("Alex", "anything.at.all"), Some(true));
+        assert_eq!(file.get("Nobody", "homes.set"), None);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn player_data_path_is_safe() {
+        let mut p = crate::players::tests::sample(1);
+        p.xuid = "../../evil".into();
+        let c = Config::player("my plugin/..", &p);
+        assert_eq!(c.path, std::path::Path::new("plugins").join("myplugin").join("players").join("evil.txt"));
     }
 
     #[test]

@@ -28,3 +28,4 @@
 # Server logs
 *.log
 docs/book/
+permissions.txt

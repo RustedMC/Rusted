@@ -22,6 +22,23 @@ fn on_server_start(&self, server: &Server) {
 | `config.set("key", "value")` | Change a value |
 | `config.save()` | Write the file, creating the folder if needed |
 
+## Saving data per player
+
+`Config::player` gives each player their own file for your plugin, at
+`plugins/<name>/players/<player>.txt`. It's keyed by Xbox id, so the data survives name changes.
+
+```rust
+fn on_join(&self, server: &Server, player: &PlayerInfo) {
+    let mut data = Config::player("greeter", player);
+    let visits: u32 = data.get_or("visits", "0").parse().unwrap_or(0) + 1;
+    data.set("visits", &visits.to_string());
+    let _ = data.save();
+    server.tell(player.id, &format!("Visit number {visits}!"));
+}
+```
+
+## Numbers
+
 Values are text. Parse numbers yourself:
 
 ```rust

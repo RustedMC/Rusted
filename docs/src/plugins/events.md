@@ -2,11 +2,28 @@
 
 Override any of these methods on your `Plugin`. Every one has a default that does nothing.
 
-**Cancellable** events return `bool`: return `false` to stop the action. When several plugins
-handle the same event, they run in the order they're listed in `all()`. The first one that
-returns `false` cancels it.
+**Cancellable** events return `bool`: return `false` to stop the action. Events that pass a
+`&mut String` let you rewrite the text.
 
-Events that pass a `&mut String` let you rewrite the text.
+## Priority
+
+When several plugins handle the same event, they run by priority:
+
+```rust
+fn priority(&self) -> Priority {
+    Priority::High
+}
+```
+
+| Priority | Use it for |
+|---|---|
+| `Lowest`, `Low` | Runs first. Good for setting things up that others may override. |
+| `Normal` | The default. |
+| `High`, `Highest` | Runs later, so it gets the final say. Protection plugins usually go here. |
+| `Monitor` | Runs last, only for events nobody cancelled. Its `bool` is ignored. Use it for logging and stats, never to change anything. |
+
+The first plugin that returns `false` cancels the event, and plugins after it don't see it.
+Plugins with the same priority run in load order.
 
 ## Players
 
