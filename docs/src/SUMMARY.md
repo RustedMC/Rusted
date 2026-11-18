@@ -23,5 +23,6 @@
 
 # Project
 
+- [Changelog](changelog.md)
 - [Porting status](porting.md)
 - [Contributing](contributing.md)
