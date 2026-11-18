@@ -125,9 +125,6 @@ impl Session {
             target_actor_id: ActorUniqueID(-1),
         }))];
         out.extend(self.inv.open_packet(self.window_id as u32, ContainerEnumName::LevelEntityContainer));
-        // Frozen while the menu is open, so knockback or falling can't carry them out of the
-        // chest's range (which closes the screen).
-        out.push(immobile(self.id, true));
         let _ = self.conn.send(&out).await;
     }
 
@@ -137,7 +134,7 @@ impl Session {
             ui::menu_closed(self.id);
             self.inv.open = None;
             self.open_kind = None;
-            let _ = self.conn.send(&[update_block(pos.0, pos.1, pos.2, real), self.inv.content_packet(), immobile(self.id, false)]).await;
+            let _ = self.conn.send(&[update_block(pos.0, pos.1, pos.2, real), self.inv.content_packet()]).await;
         }
     }
 
@@ -269,18 +266,4 @@ impl Session {
             }
         }
     }
-}
-
-/// The player's IMMOBILE flag (bit 16): on, they can look around but not move.
-fn immobile(id: i64, on: bool) -> Protocol {
-    use bedrock::protocol::v662::packets::SetActorDataPacket;
-    use bedrock::protocol::v662::types::{DataItem, PropertySyncData};
-    use bedrock::protocol::v924::enums::ActorDataIDs;
-    use bedrock::protocol::v2168::enums::DataItemType;
-    Protocol::SetActorDataPacket(Box::new(SetActorDataPacket {
-        target_runtime_id: ActorRuntimeID(id as u64),
-        actor_data: vec![DataItem { data_item_id: ActorDataIDs::Reserved0, data_item_type: DataItemType::Int64(spawn::FLAGS | (on as i64) << 16) }],
-        synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
-        tick: 0,
-    }))
 }
