@@ -49,6 +49,7 @@ impl Session {
             containers::Kind::Crafter => (ContainerType::Crafter, ContainerEnumName::CrafterLevelEntityContainer),
         };
         self.open_kind = Some((kind, name.clone()));
+        self.open_table = Some(pos);
         let mut out = vec![Protocol::ContainerOpenPacket(Box::new(ContainerOpenPacket {
             container_id: ContainerID(self.window_id),
             container_type,
@@ -220,7 +221,7 @@ impl Session {
                 }
                 let r = self.inv.handle(req, items::creative_item);
                 thrown.append(&mut self.inv.dropped);
-                if let (Some((primary, secondary)), Some(pos)) = (self.inv.beacon.take(), self.open_container)
+                if let (Some((primary, secondary)), Some(pos)) = (self.inv.beacon.take(), self.open_table)
                     && !crate::beacon::configure(&self.server.world, pos, primary, secondary)
                 {
                     let _ = self.server.events.send(Event::Tell { to: self.id, message: "§cThis beacon's pyramid isn't big enough for that effect".into() });

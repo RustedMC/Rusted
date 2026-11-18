@@ -31,6 +31,8 @@ pub(crate) struct Session {
     pub window_id: i8, // container windows; PNX starts at 2
     pub open_container: Option<(i32, i32, i32)>, // chest/barrel this player has open
     pub open_kind: Option<(containers::Kind, ContainerEnumName)>,
+    /// Block position of the open table-style screen (beacon), which has no stored slots.
+    pub open_table: Option<(i32, i32, i32)>,
     pub open_pair: Option<(i32, i32, i32)>, // other half of an open double chest
     pub hp: health::Health,
     pub flying: bool,
@@ -132,6 +134,7 @@ impl Session {
             window_id: 1,
             open_container: None,
             open_kind: None,
+            open_table: None,
             open_pair: None,
             hp: health::Health::default(),
             flying: false,
@@ -179,7 +182,12 @@ impl Session {
                 self.on_release().await;
             }
             Protocol::InventoryTransactionPacket(t) if matches!(&t.data, InventoryTransactionData::ItemRelease(r) if r.action_type == 1) => {
-                self.on_consume().await;
+                // A crossbow reports its finished charge as a "consume" (PNX ItemCrossbow.onUse).
+                if self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id)) == Some("minecraft:crossbow") {
+                    self.on_release().await;
+                } else {
+                    self.on_consume().await;
+                }
             }
             Protocol::InventoryTransactionPacket(t) if matches!(t.data, InventoryTransactionData::Normal) => self.on_drop(&t).await,
             Protocol::InventoryTransactionPacket(t) if matches!(&t.data, InventoryTransactionData::ItemUseOnEntity(e) if e.action_type == 0) => {
@@ -219,6 +227,9 @@ impl Session {
             Protocol::ItemStackRequestPacket(r) => self.on_stack_request(&r).await,
             Protocol::MobEquipmentPacket(m) => {
                 self.selected_slot = m.selected_slot.max(0) as u32;
+                if items::name_of(m.item.id) != Some("minecraft:fishing_rod") {
+                    crate::fishing::retract(&self.server, self.id); // put the rod away: the line comes in
+                }
                 self.inv.selected = self.selected_slot as usize;
                 self.server.mobs.set_held(self.id, items::name_of(m.item.id));
                 if let Some(me) = self.server.get(self.id) {

@@ -710,6 +710,25 @@ fn detector_on(server: &Server, rail: crate::minecart::Rail) {
     }
 }
 
+/// What a mob holds in its hand, so skeletons are drawn with a bow (vanilla spawn equipment).
+fn held_packet(m: &Mob) -> Option<Protocol> {
+    let item = match m.kind {
+        Kind::Skeleton | Kind::Stray | Kind::Bogged => "minecraft:bow",
+        Kind::Pillager => "minecraft:crossbow",
+        Kind::Vindicator => "minecraft:iron_axe",
+        Kind::WitherSkeleton => "minecraft:stone_sword",
+        Kind::Piglin => "minecraft:golden_sword",
+        _ => return None,
+    };
+    Some(Protocol::MobEquipmentPacket(Box::new(bedrock::protocol::v975::packets::MobEquipmentPacket {
+        target_runtime_id: ActorRuntimeID(m.id as u64),
+        item: crate::items::item_by_name(item)?,
+        slot: 0,
+        selected_slot: 0,
+        container_id: bedrock::protocol::v662::enums::ContainerID(0),
+    })))
+}
+
 /// Puts `rider` on `vehicle`, or takes them off.
 fn link_packet(vehicle: i64, rider: i64, on: bool) -> Protocol {
     use bedrock::protocol::v662::enums::ActorLinkType;
@@ -825,6 +844,9 @@ impl Mobs {
             m
         };
         broadcast(server, add_packet(&m));
+        if let Some(p) = held_packet(&m) {
+            broadcast(server, p);
+        }
         self.mobs.lock().insert(id, m);
         id
     }
@@ -840,12 +862,15 @@ impl Mobs {
             color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, temper: 0, buck: 0, push: None, brain: Default::default(),
         };
         broadcast(server, add_packet(&m));
+        if let Some(p) = held_packet(&m) {
+            broadcast(server, p);
+        }
         self.mobs.lock().insert(id, m);
         id
     }
 
     pub fn spawn_packets(&self) -> Vec<Protocol> {
-        self.mobs.lock().values().filter(|m| m.dying == 0).map(add_packet).collect()
+        self.mobs.lock().values().filter(|m| m.dying == 0).flat_map(|m| std::iter::once(add_packet(m)).chain(held_packet(m))).collect()
     }
 
     /// A player's held item changed (tempting).
@@ -1139,8 +1164,10 @@ impl Mobs {
         m.health -= damage;
         let (dx, dz) = (m.pos.0 - from.0, m.pos.2 - from.2);
         let len = (dx * dx + dz * dz).sqrt().max(0.01);
-        let k = 0.6 + 0.5 * hit.knockback as f32;
-        m.vel = (dx / len * k, 0.5 + 0.1 * hit.knockback as f32, dz / len * k);
+        // PNX EntityLiving.knockBack: half the old motion plus 0.4 away and 0.4 up (capped),
+        // Knockback adds 0.5 a level. Horizontal is doubled since mobs tick at 10 Hz, not 20.
+        let base = 0.4 + 0.5 * hit.knockback as f32;
+        m.vel = (m.vel.0 / 2.0 + dx / len * base * 2.0, (m.vel.1 / 2.0 + 0.4).min(0.4), m.vel.2 / 2.0 + dz / len * base * 2.0);
         m.hurt_at = Some(std::time::Instant::now());
         m.fire = m.fire.max(hit.fire);
         if !m.kind.hostile() {

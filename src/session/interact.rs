@@ -84,13 +84,12 @@ impl Session {
                 let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(play_sound("random.bow", me.pos)) });
                 return;
             }
-            if let Some((item, count, xp)) = crate::fishing::reel(&self.server, self.id)
+            if let Some((item, from, xp)) = crate::fishing::reel(&self.server, self.id)
                 && let Some(it) = items::item_by_name(item)
             {
-                let left = self.inv.add(it.clone(), count);
-                if left > 0 {
-                    self.server.entities.drop_item(&self.server, it, left, (me.pos.0, me.pos.1 - 1.0, me.pos.2));
-                }
+                // The catch flies out of the water at you (PNX reelLine).
+                let vel = crate::fishing::fling(from, (me.pos.0, me.pos.1 - 1.0, me.pos.2));
+                self.server.entities.drop_item_vel(&self.server, it, 1, from, vel);
                 let _ = self.server.events.send(Event::Xp { to: self.id, points: xp });
                 wear(&mut self.conn, &self.server, self.id, &mut self.inv, self.selected_slot as usize, 1, &self.mode).await;
                 let _ = self.conn.send(&[self.inv.content_packet()]).await;

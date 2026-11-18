@@ -21,6 +21,8 @@ struct Hook {
     wait: u32,
     /// Ticks left to reel in a biting fish.
     biting: u32,
+    /// A fish swimming in toward the hook (its wake shows on the surface).
+    fish: Option<(f32, f32)>,
     luck: i16,
     lure: i16,
 }
@@ -88,14 +90,22 @@ pub fn cast(server: &Server, player: i64, eye: (f32, f32, f32), rot: (f32, f32),
     }));
     relay(server, add);
     let (luck, lure) = (crate::enchant::level(rod, crate::enchant::LUCK_OF_THE_SEA), crate::enchant::level(rod, crate::enchant::LURE));
-    let old = hooks().lock().insert(player, Hook { id, pos, vel, in_water: false, wait: 0, biting: 0, luck, lure });
+    let old = hooks().lock().insert(player, Hook { id, pos, vel, in_water: false, wait: 0, biting: 0, fish: None, luck, lure });
     if let Some(old) = old {
         remove(server, old.id);
     }
 }
 
-/// Reels the hook in. Returns the catch (item, count) and XP if a fish was biting.
-pub fn reel(server: &Server, player: i64) -> Option<(&'static str, i8, i32)> {
+/// Pulls the hook back without a catch (the player switched away from the rod).
+pub fn retract(server: &Server, player: i64) {
+    if let Some(h) = hooks().lock().remove(&player) {
+        remove(server, h.id);
+    }
+}
+
+/// Reels the hook in. Returns the catch, where it comes out of the water and XP 1-3, if a
+/// fish was biting (PNX reelLine).
+pub fn reel(server: &Server, player: i64) -> Option<(&'static str, (f32, f32, f32), i32)> {
     let hook = hooks().lock().remove(&player)?;
     remove(server, hook.id);
     if hook.biting == 0 {
@@ -103,7 +113,23 @@ pub fn reel(server: &Server, player: i64) -> Option<(&'static str, i8, i32)> {
     }
     let mut roll = rng(now() ^ hook.id as u64);
     let item = catch(hook.luck, &mut roll);
-    Some((item, 1, 1 + roll(6) as i32))
+    Some((item, hook.pos, 1 + roll(3) as i32))
+}
+
+/// The motion that throws a caught item from `from` to the player at `to` (PNX reelLine).
+pub fn fling(from: (f32, f32, f32), to: (f32, f32, f32)) -> (f32, f32, f32) {
+    let d = ((to.0 - from.0).powi(2) + (to.1 - from.1).powi(2) + (to.2 - from.2).powi(2)).sqrt();
+    ((to.0 - from.0) * 0.1, (to.1 - from.1) * 0.1 + d.sqrt() * 0.08, (to.2 - from.2) * 0.1)
+}
+
+fn particle(name: &str, at: (f32, f32, f32)) -> Protocol {
+    Protocol::SpawnParticleEffectPacket(Box::new(bedrock::protocol::v662::packets::SpawnParticleEffectPacket {
+        dimension_id: 0,
+        actor_id: ActorUniqueID(-1),
+        position: at,
+        effect_name: name.into(),
+        molang_variables: None,
+    }))
 }
 
 /// What comes out of the water: fish, junk or treasure. Luck of the Sea moves the odds from
@@ -170,17 +196,42 @@ pub fn tick(server: &Server) {
         h.pos = (h.pos.0 + h.vel.0 * 2.0, h.pos.1 + h.vel.1 * 2.0, h.pos.2 + h.vel.2 * 2.0);
         if h.in_water {
             use bedrock::protocol::v975::enums::ActorEvent;
+            // PNX EntityFishingHook: wait, then a fish swims in leaving a wake, bites, and
+            // stays on for 1.5-2.5 s. Their 20 Hz numbers are halved for our 10 Hz tick.
+            let surface = at.1 as f32 + 1.0;
             if h.biting > 0 {
                 h.biting -= 1;
                 if h.biting == 0 {
                     h.wait = wait_ticks(h.lure, &mut roll); // got away
                 }
+            } else if let Some((fx, fz)) = h.fish {
+                let (fx, fz) = (fx + (h.pos.0 - fx) * 0.19, fz + (h.pos.2 - fz) * 0.19);
+                if roll(100) < 85 {
+                    out.push(particle("minecraft:water_wake_particle", (fx, surface, fz)));
+                }
+                if (fx - h.pos.0).powi(2) + (fz - h.pos.2).powi(2) < 0.15 * 0.15 {
+                    h.fish = None;
+                    h.biting = 15 + roll(10);
+                    out.extend([event(h.id, ActorEvent::FishhookHooktime), event(h.id, ActorEvent::FishhookBubble), event(h.id, ActorEvent::FishhookTease)]);
+                    for _ in 0..5 {
+                        let (ox, oz) = (roll(50) as f32 / 100.0 - 0.25, roll(50) as f32 / 100.0 - 0.25);
+                        out.push(particle("minecraft:basic_bubble_particle_manual", (h.pos.0 + ox, surface, h.pos.2 + oz)));
+                    }
+                    out.push(crate::packets::play_sound("random.splash", h.pos));
+                } else {
+                    h.fish = Some((fx, fz));
+                }
             } else if h.wait > 0 {
                 h.wait -= 1;
                 if h.wait == 0 {
-                    h.biting = TPS; // about a second to reel in
-                    out.push(event(h.id, ActorEvent::FishhookHooktime));
-                    out.push(crate::packets::play_sound("random.splash", h.pos));
+                    // 90%: a fish starts in from 1-2.2 blocks out; otherwise wait again.
+                    if roll(100) < 90 {
+                        let side = |r: u32| if r.is_multiple_of(2) { -1.0 } else { 1.0 };
+                        let off = |roll: &mut dyn FnMut(u32) -> u32| (roll(120) as f32 / 100.0 + 1.0) * side(roll(2));
+                        h.fish = Some((h.pos.0 + off(&mut roll), h.pos.2 + off(&mut roll)));
+                    } else {
+                        h.wait = wait_ticks(h.lure, &mut roll);
+                    }
                 }
             }
         }
@@ -251,7 +302,7 @@ mod tests {
         cast(&server, 9, (0.5, -58.0, 0.5), (30.0, 0.0), &[]);
         assert!(has_hook(9));
         let mut bit = false;
-        for _ in 0..(40 * TPS) {
+        for _ in 0..(60 * TPS) {
             tick(&server);
             if hooks().lock()[&9].biting > 0 {
                 bit = true;
@@ -259,8 +310,10 @@ mod tests {
             }
         }
         assert!(bit, "a fish bit within 30 s");
-        let (item, count, xp) = reel(&server, 9).expect("reeled in a catch");
-        assert!(count == 1 && (1..=6).contains(&xp) && crate::items::item_by_name(item).is_some());
+        let (item, from, xp) = reel(&server, 9).expect("reeled in a catch");
+        assert!((1..=3).contains(&xp) && crate::items::item_by_name(item).is_some());
+        let v = fling(from, (from.0 + 5.0, from.1 + 1.0, from.2));
+        assert!(v.0 > 0.0 && v.1 > 0.0, "the catch flies toward the player: {v:?}");
         assert!(!has_hook(9));
         assert!(reel(&server, 9).is_none(), "nothing left to reel");
     }

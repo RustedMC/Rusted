@@ -88,9 +88,12 @@ fn data() -> &'static Data {
                 stack_size: 1,
                 aux_value: item["damage"].as_u64().unwrap_or(0) as u32,
                 block_runtime_id: block_network_id(item["block_state_b64"].as_str()),
-                // TODO: send item NBT (enchanted books, potion data). Those entries are skipped below
-                // until items get real NBT support.
-                user_data_buffer: EMPTY_USER_DATA.to_vec(),
+                // Banners, fireworks, enchanted books: the entry's little-endian NBT behind the
+                // 0xffff "has NBT" marker and version 1, then empty can-place/can-break lists.
+                user_data_buffer: match item["nbt_b64"].as_str().and_then(|b| base64::engine::general_purpose::STANDARD.decode(b).ok()) {
+                    Some(nbt) => [&[0xff, 0xff, 1][..], &nbt, &[0; 8]].concat(),
+                    None => EMPTY_USER_DATA.to_vec(),
+                },
             })
         };
         let groups = creative["groups"]
@@ -119,7 +122,6 @@ fn data() -> &'static Data {
             .as_array()
             .unwrap()
             .iter()
-            .filter(|i| i.get("nbt_b64").is_none())
             .filter_map(|i| Some((instance(i)?, i["group_index"].as_u64()? as u32)))
             .enumerate()
             .map(|(n, (item_instance, group_id))| CreativeItemData {
@@ -327,7 +329,7 @@ pub fn creative_item(creative_net_id: u32) -> Option<NetworkItemStackDescriptorV
         aux_value: i.aux_value,
         net_id: None,
         block_runtime_id: i.block_runtime_id as u32,
-        user_data_buffer: EMPTY_USER_DATA.to_vec(),
+        user_data_buffer: i.user_data_buffer.clone(),
     })
 }
 
