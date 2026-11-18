@@ -10,7 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://discord.gg/HBegxHxREc"><img src="assets/discord-button.svg" alt="Join the Discord" height="48"></a>
+  <a href="https://discord.gg/HBegxHxREc"><img src="assets/discord-button.svg" alt="Join the Discord" height="48"></a>&nbsp;&nbsp;
+  <a href="https://rustedmc.github.io/Rusted/"><img src="assets/docs-button.svg" alt="Read the docs" height="48"></a>
 </p>
 
 A Minecraft: Bedrock Edition server written in Rust, ported from
@@ -96,7 +97,8 @@ impl Plugin for SpawnGreeter {
 }
 ```
 
-Then add it to `plugin::all()` in [`src/plugin.rs`](src/plugin.rs), which lists the events.
+Then add it to `plugin::all()` in [`src/plugin.rs`](src/plugin.rs). The [plugin docs](https://rustedmc.github.io/Rusted/plugins/first-plugin.html)
+cover every event, commands, the scheduler, config files and forms.
 
 ## Contributing
 
