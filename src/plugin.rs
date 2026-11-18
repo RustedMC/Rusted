@@ -178,7 +178,7 @@ pub trait Plugin: Send + Sync {
 
 /// Every loaded plugin. Add yours here.
 pub fn all() -> Vec<Box<dyn Plugin>> {
-    vec![]
+    vec![Box::new(crate::demo::Demo)]
 }
 
 /// Registered plugins, plus helpers to run an event through all of them.

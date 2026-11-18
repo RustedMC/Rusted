@@ -8,6 +8,7 @@ mod packets;
 mod saves;
 mod ai;
 mod beacon;
+mod demo;
 mod blockops;
 mod session;
 mod cmdargs;

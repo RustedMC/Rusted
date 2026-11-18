@@ -1,5 +1,7 @@
 # Items, menus and player control
 
+Rusted ships a small demo plugin, [`src/demo.rs`](https://github.com/RustedMC/Rusted/blob/main/src/demo.rs), that uses everything on this page. Type `/lobby` in game to try it.
+
 ## Custom items
 
 `plugin::item` builds an item with a name, lore and hidden tags only plugins can see:
