@@ -10,12 +10,20 @@
 pub enum Behavior {
     /// Hurt: run away for a while.
     Panic,
+    /// Hostiles: go after the target player.
+    Attack,
     /// In love with a partner nearby: walk to it and breed.
     Breed,
     /// A player holds this mob's food: follow them.
     Tempt,
+    /// Lost sight of the target: walk to where it was last seen.
+    Search,
+    /// Zombies and illagers with no player around: go for a villager.
+    HuntVillager,
     /// A baby too far from its parent: walk back to it.
     FollowParent,
+    /// Burning in daylight (skeletons, strays): find a roof.
+    SeekShade,
     /// A sheared sheep on grass: eat it and grow wool back.
     EatGrass,
     /// Walk somewhere random nearby.
@@ -27,10 +35,14 @@ pub enum Behavior {
 impl Behavior {
     pub fn priority(self) -> u8 {
         match self {
-            Behavior::Panic => 6,
-            Behavior::Breed => 5,
-            Behavior::Tempt => 4,
-            Behavior::FollowParent => 3,
+            Behavior::Panic => 11,
+            Behavior::Attack => 10,
+            Behavior::Breed => 9,
+            Behavior::Tempt => 8,
+            Behavior::Search => 7,
+            Behavior::HuntVillager => 6,
+            Behavior::FollowParent => 5,
+            Behavior::SeekShade => 4,
             Behavior::EatGrass => 2,
             Behavior::Roam => 1,
             Behavior::Idle => 0,
@@ -41,7 +53,7 @@ impl Behavior {
     pub fn speed(self) -> f32 {
         match self {
             Behavior::Panic => 2.0,
-            Behavior::Breed | Behavior::FollowParent => 1.2,
+            Behavior::Breed | Behavior::FollowParent | Behavior::SeekShade => 1.2,
             _ => 1.0,
         }
     }
@@ -59,6 +71,12 @@ pub struct Memory {
     pub parent: Option<(i64, (f32, f32, f32), f32)>,
     /// Standing on grass it could eat.
     pub on_grass: bool,
+    /// Hostiles: the player they're after.
+    pub target: Option<(i64, (f32, f32, f32), f32)>,
+    /// Where the target was last seen, and ticks left to look for them there.
+    pub last_seen: Option<((f32, f32, f32), u32)>,
+    /// Zombies and illagers: a villager nearby.
+    pub villager: Option<(i64, (f32, f32, f32))>,
 }
 
 /// A mob's AI state: its memory, what it's doing and since when.
@@ -86,6 +104,8 @@ pub struct Facts {
     pub has_path: bool,
     /// A random roll in 0..1000 this tick, for behaviours that start by chance.
     pub roll: u32,
+    /// Burning in daylight, and the kind that looks for shade.
+    pub sunburnt: bool,
 }
 
 /// Babies wander back when their parent is further than this (squared).
@@ -97,6 +117,10 @@ impl Brain {
         let m = &self.memory;
         match b {
             Behavior::Panic => f.panicking,
+            Behavior::Attack => m.target.is_some(),
+            Behavior::HuntVillager => m.villager.is_some(),
+            Behavior::Search => m.last_seen.is_some_and(|(_, left)| left > 0),
+            Behavior::SeekShade => f.sunburnt,
             Behavior::Breed => f.in_love && m.mate.is_some(),
             Behavior::Tempt => !f.baby && m.feeder.is_some(),
             Behavior::FollowParent => f.baby && m.parent.is_some_and(|p| p.2 > PARENT_FAR),
@@ -111,7 +135,19 @@ impl Brain {
     /// Picks what to do this tick. Returns the new behaviour if it changed (the caller then
     /// drops the old one's path and starts the new one).
     pub fn decide(&mut self, f: &Facts) -> Option<Behavior> {
-        const ALL: [Behavior; 7] = [Behavior::Panic, Behavior::Breed, Behavior::Tempt, Behavior::FollowParent, Behavior::EatGrass, Behavior::Roam, Behavior::Idle];
+        const ALL: [Behavior; 11] = [
+            Behavior::Panic,
+            Behavior::Attack,
+            Behavior::Breed,
+            Behavior::Tempt,
+            Behavior::Search,
+            Behavior::HuntVillager,
+            Behavior::FollowParent,
+            Behavior::SeekShade,
+            Behavior::EatGrass,
+            Behavior::Roam,
+            Behavior::Idle,
+        ];
         let keep = self.applies(self.doing, f);
         let best = ALL.into_iter().find(|&b| self.applies(b, f)).unwrap_or(Behavior::Idle);
         // Keep going unless something more important comes up or this stopped applying.
@@ -179,5 +215,28 @@ mod tests {
         assert_eq!(s.decide(&Facts { sheared: true, roll: 5, ..calm }), Some(Behavior::EatGrass));
         assert_eq!(s.decide(&Facts { sheared: true, ..calm }), None, "keeps eating");
         assert_eq!(s.decide(&calm), Some(Behavior::Idle), "wool's back");
+    }
+
+    #[test]
+    fn hostiles_attack_search_hunt_and_hide() {
+        let mut z = brain();
+        let calm = Facts { roll: 999, ..Default::default() };
+        z.memory.villager = Some((9, (5.0, 0.0, 5.0)));
+        assert_eq!(z.decide(&calm), Some(Behavior::HuntVillager));
+        // A player shows up: they come first.
+        z.memory.target = Some((1, (3.0, 0.0, 0.0), 9.0));
+        assert_eq!(z.decide(&calm), Some(Behavior::Attack));
+        // Lost them: go look where they were, ahead of the villager.
+        z.memory.target = None;
+        z.memory.last_seen = Some(((3.0, 0.0, 0.0), 50));
+        assert_eq!(z.decide(&calm), Some(Behavior::Search));
+        // Gave up looking: back to the villager.
+        z.memory.last_seen = Some(((3.0, 0.0, 0.0), 0));
+        assert_eq!(z.decide(&calm), Some(Behavior::HuntVillager));
+
+        let mut s = brain();
+        assert_eq!(s.decide(&Facts { sunburnt: true, ..calm }), Some(Behavior::SeekShade));
+        s.memory.target = Some((1, (3.0, 0.0, 0.0), 9.0));
+        assert_eq!(s.decide(&Facts { sunburnt: true, ..calm }), Some(Behavior::Attack), "a target beats hiding");
     }
 }

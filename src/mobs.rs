@@ -1530,23 +1530,72 @@ impl Mobs {
             .filter(|p| server.plugins.mob_target(server, m.id, m.kind.identifier(), p))
             .cloned();
         m.attack_cd = m.attack_cd.saturating_sub(1);
-        if target.is_none() && matches!(m.kind, Kind::Zombie | Kind::Drowned | Kind::Husk | Kind::ZombieVillager | Kind::Pillager | Kind::Vindicator | Kind::Ravager | Kind::Evoker) {
-            // No player around: zombies go for villagers.
-            let v = self.nearest(m, 16.0, |o| o.kind == Kind::Villager);
-            if let Some((vid, vpos)) = v {
-                self.chase_and_hit(server, m, vid, vpos);
+        // Memory: the target, where it was last seen (looked for for 10 s), a villager to go for.
+        let mem = &mut m.brain.memory;
+        mem.target = target.as_ref().map(|p| (p.id, (p.pos.0, p.pos.1 - 1.62, p.pos.2), dist2((p.pos.0, p.pos.1 - 1.62, p.pos.2), m.pos)));
+        match &mem.target {
+            Some((_, at, _)) => mem.last_seen = Some((*at, 10 * TPS)),
+            None => {
+                if let Some((_, left)) = &mut mem.last_seen {
+                    *left = left.saturating_sub(1);
+                }
+            }
+        }
+        let hunts = matches!(m.kind, Kind::Zombie | Kind::Drowned | Kind::Husk | Kind::ZombieVillager | Kind::Pillager | Kind::Vindicator | Kind::Ravager | Kind::Evoker);
+        m.brain.memory.villager = (target.is_none() && hunts).then(|| self.nearest(m, 16.0, |o| o.kind == Kind::Villager)).flatten();
+        let facts = crate::ai::Facts {
+            has_path: !m.path.is_empty(),
+            roll: self.rand() % 1000,
+            // Skeletons and strays look for a roof when the sun sets them alight (vanilla FleeSunGoal).
+            sunburnt: m.burning && matches!(m.kind, Kind::Skeleton | Kind::Stray) && open_sky,
+            ..Default::default()
+        };
+        if m.brain.decide(&facts).is_some() {
+            m.path.clear();
+        }
+        use crate::ai::Behavior as B;
+        if m.brain.doing != B::Attack && m.fuse > 0 {
+            m.fuse = 0; // a creeper that lost its target stops hissing
+            out.push(data_packet(m));
+        }
+        match m.brain.doing {
+            B::Attack => {}
+            B::HuntVillager => {
+                if let Some((vid, vpos)) = m.brain.memory.villager {
+                    self.chase_and_hit(server, m, vid, vpos);
+                }
+                return false;
+            }
+            B::Search => {
+                let Some((at, _)) = m.brain.memory.last_seen else { return false };
+                if dist2(at, m.pos) < 2.0 {
+                    m.brain.memory.last_seen = None; // got there, nobody around
+                } else if m.path.is_empty() {
+                    m.path = path(w, feet, (at.0.floor() as i32, at.1.floor() as i32, at.2.floor() as i32), 160);
+                }
+                self.steer(m);
+                return false;
+            }
+            B::SeekShade => {
+                if m.path.is_empty() {
+                    // A spot within 8 blocks with something overhead.
+                    let shade = (0..40)
+                        .map(|_| (feet.0 + (self.rand() % 17) as i32 - 8, feet.1, feet.2 + (self.rand() % 17) as i32 - 8))
+                        .find(|&q| standable(w, q) && !sky(w, q));
+                    if let Some(q) = shade {
+                        m.path = path(w, feet, q, 160);
+                    }
+                }
+                self.steer(m);
+                return false;
+            }
+            _ => {
+                m.aggro = None;
+                self.wander(server, m);
                 return false;
             }
         }
-        let Some(p) = target else {
-            m.aggro = None;
-            if m.fuse > 0 {
-                m.fuse = 0;
-                out.push(data_packet(m));
-            }
-            self.wander(server, m);
-            return false;
-        };
+        let Some(p) = target else { return false };
         let feet_p = (p.pos.0, p.pos.1 - 1.62, p.pos.2);
         let d2 = dist2(feet_p, m.pos);
         m.head_yaw = (-(p.pos.0 - m.pos.0)).atan2(p.pos.2 - m.pos.2).to_degrees();
@@ -2292,6 +2341,7 @@ impl Mobs {
             sheared: m.kind == Kind::Sheep && m.sheared,
             has_path: !m.path.is_empty(),
             roll: self.rand() % 1000,
+            sunburnt: false,
         };
         if m.brain.decide(&facts).is_some() {
             m.path.clear(); // the old behaviour's walk is over
@@ -2357,7 +2407,8 @@ impl Mobs {
                     m.path = path(&server.world, feet, (feet.0 + (a.cos() * r) as i32, feet.1, feet.2 + (a.sin() * r) as i32), 120);
                 }
             }
-            B::Idle => {}
+            // hostile behaviours; passive memory never has a target, villager or sunburn
+            B::Idle | B::Attack | B::HuntVillager | B::Search | B::SeekShade => {}
         }
         // Core behaviour, alongside the rest: look at a nearby player when standing still,
         // glance around now and then, otherwise look where it's going.
