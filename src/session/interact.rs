@@ -158,6 +158,45 @@ impl Session {
             }
             return;
         }
+        // Lecterns: put a book on, sneak-click to take it back, click to read.
+        if crate::lectern::is_lectern(clicked) && !matches!(self.mode, GameType::Spectator) {
+            let pos = (p.x, p.y, p.z);
+            let book = self.server.containers.get(pos).into_iter().next().flatten();
+            let page = crate::lectern::pages_open().lock().get(&pos).copied().unwrap_or(0);
+            let slot = self.selected_slot as usize;
+            match book {
+                None if crate::lectern::is_book(held_name) => {
+                    let Some(mut b) = self.inv.held(slot).cloned() else { return };
+                    b.count = 1;
+                    if survival_like(&self.mode) {
+                        self.inv.use_one(slot);
+                        let _ = self.conn.send(&[self.inv.content_packet()]).await;
+                    }
+                    self.server.containers.put(pos, vec![Some(b.clone())]);
+                    crate::lectern::pages_open().lock().insert(pos, 0);
+                    let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(crate::lectern::data(pos, Some(&b), 0)) });
+                    let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(play_sound("item.book.put", (p.x as f32 + 0.5, p.y as f32 + 1.0, p.z as f32 + 0.5))) });
+                    return;
+                }
+                Some(b) if self.sneaking => {
+                    let left = self.inv.add(b.item.clone(), 1);
+                    if left > 0 && let Some(me) = self.server.get(self.id) {
+                        self.server.entities.drop_item(&self.server, b.item, left, (me.pos.0, me.pos.1 - 1.0, me.pos.2));
+                    }
+                    self.server.containers.put(pos, vec![]);
+                    crate::lectern::pages_open().lock().remove(&pos);
+                    let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(crate::lectern::data(pos, None, 0)) });
+                    let _ = self.conn.send(&[self.inv.content_packet()]).await;
+                    return;
+                }
+                Some(b) => {
+                    // The client opens the book screen itself; make sure it has the pages.
+                    let _ = self.conn.send(&[crate::lectern::data(pos, Some(&b), page)]).await;
+                    return;
+                }
+                None => {}
+            }
+        }
         // Beds set your spawn point (sleeping isn't simulated yet).
         if !self.sneaking && (clicked_name.ends_with("_bed") || clicked_name == "minecraft:bed") {
             self.use_bed(u).await;

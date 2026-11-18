@@ -17,6 +17,7 @@ mod drops;
 mod entities;
 mod hunger;
 mod fishing;
+mod lectern;
 mod loot;
 mod minecart;
 mod mobs;

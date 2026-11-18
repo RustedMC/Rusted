@@ -194,6 +194,16 @@ impl Session {
             }
             Protocol::InteractPacket(i) if matches!(i.action, InteractAction::OpenInventory) => self.on_open_inventory().await,
             Protocol::InteractPacket(i) if matches!(i.action, InteractAction::StopRiding) => self.get_off(),
+            Protocol::LecternUpdatePacket(l) => {
+                // Page turned: everyone sees the lectern open at it.
+                let p = &l.position_of_lectern_to_update;
+                let pos = (p.x, p.y, p.z);
+                if let Some(book) = self.server.containers.get(pos).into_iter().next().flatten() {
+                    let page = (l.new_page_to_show as i32).clamp(0, crate::lectern::pages(&book).max(1) - 1);
+                    crate::lectern::pages_open().lock().insert(pos, page);
+                    let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(crate::lectern::data(pos, Some(&book), page)) });
+                }
+            }
             Protocol::ContainerClosePacket(c) => self.on_container_close(c).await,
             Protocol::ItemStackRequestPacket(r) => self.on_stack_request(&r).await,
             Protocol::MobEquipmentPacket(m) => {
