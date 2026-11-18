@@ -195,6 +195,7 @@ impl Session {
             Protocol::ItemStackRequestPacket(r) => self.on_stack_request(&r).await,
             Protocol::MobEquipmentPacket(m) => {
                 self.selected_slot = m.selected_slot.max(0) as u32;
+                self.inv.selected = self.selected_slot as usize;
                 self.server.mobs.set_held(self.id, items::name_of(m.item.id));
                 // Others see what we're holding.
                 let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(Protocol::MobEquipmentPacket(m)) });

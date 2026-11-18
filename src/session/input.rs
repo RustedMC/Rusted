@@ -30,9 +30,13 @@ impl Session {
                 Input::StopFlying => self.flying = false,
                 Input::StartSneaking => {
                     self.sneaking = true;
+                    self.inv.sneaking = true;
                     self.get_off();
                 }
-                Input::StopSneaking => self.sneaking = false,
+                Input::StopSneaking => {
+                    self.sneaking = false;
+                    self.inv.sneaking = false;
+                }
                 Input::StartSprinting => self.sprinting = true,
                 Input::StopSprinting => self.sprinting = false,
                 Input::StartJumping if survival_like(&self.mode) && self.food.exhaust(if self.sprinting { 0.2 } else { 0.05 }) => {

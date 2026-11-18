@@ -83,6 +83,10 @@ pub struct Inventory {
     pub dropped: Vec<Stack>,
     craft: Vec<Option<Stack>>,
     next_net_id: i32,
+    /// Hotbar slot in hand (mirrors the session's, for things like totems).
+    pub selected: usize,
+    /// Sneaking, which raises a held shield.
+    pub sneaking: bool,
     /// Set by the session before `handle` so table costs can be checked.
     pub levels: i32,
     pub creative: bool,
@@ -100,7 +104,7 @@ pub struct Inventory {
 impl Default for Inventory {
     fn default() -> Self {
         Self {
-            slots: vec![None; SLOTS], cursor: None, created: None, open: None, dropped: vec![], craft: vec![None; CRAFT_SLOTS], next_net_id: 1,
+            slots: vec![None; SLOTS], cursor: None, created: None, open: None, dropped: vec![], craft: vec![None; CRAFT_SLOTS], next_net_id: 1, selected: 0, sneaking: false,
             levels: 0, creative: false, spent_levels: 0, gained_xp: 0, offers: vec![], trading: None, traded: vec![],
         }
     }
@@ -370,6 +374,23 @@ impl Inventory {
 
     pub fn enchant_input(&self) -> Option<&Stack> {
         self.craft[ENCHANT_INPUT].as_ref()
+    }
+
+    /// The slot of a raised shield (sneaking with one in the main hand or offhand).
+    pub fn shield(&self) -> Option<usize> {
+        let shield = |i: &usize| self.slots.get(*i).and_then(|s| s.as_ref()).and_then(|s| crate::items::name_of(s.item.id)) == Some("minecraft:shield");
+        if !self.sneaking {
+            return None;
+        }
+        [self.selected, OFFHAND].into_iter().find(shield)
+    }
+
+    /// Uses up a totem of undying in the main hand or offhand. True if there was one.
+    pub fn use_totem(&mut self) -> bool {
+        let totem = |s: &Option<Stack>| s.as_ref().and_then(|s| crate::items::name_of(s.item.id)) == Some("minecraft:totem_of_undying");
+        let Some(slot) = [self.selected, OFFHAND].into_iter().find(|&i| self.slots.get(i).is_some_and(totem)) else { return false };
+        self.use_one(slot);
+        true
     }
 
     pub fn held(&self, slot: usize) -> Option<&Stack> {
@@ -912,5 +933,25 @@ mod tests {
             amount: 5, source: at(ContainerEnumName::HotbarContainer, 0),
         }]), |_| None)));
         assert!(inv.slots[0].is_none());
+    }
+}
+
+#[cfg(test)]
+mod totem_tests {
+    use super::*;
+
+    #[test]
+    fn totem_in_offhand_is_used_once() {
+        crate::blocks::init();
+        let mut inv = Inventory::default();
+        assert!(!inv.use_totem());
+        inv.set_slot(OFFHAND, crate::items::item_by_name("minecraft:totem_of_undying").unwrap(), 1);
+        assert!(inv.use_totem());
+        assert!(!inv.use_totem(), "only one");
+        // A shield only counts while sneaking.
+        inv.set_slot(OFFHAND, crate::items::item_by_name("minecraft:shield").unwrap(), 1);
+        assert_eq!(inv.shield(), None);
+        inv.sneaking = true;
+        assert_eq!(inv.shield(), Some(OFFHAND));
     }
 }

@@ -141,6 +141,19 @@ pub(crate) async fn hurt(conn: &mut dims::DimConn, server: &players::Server, id:
             return;
         }
     }
+    // A raised shield stops mob hits and projectiles, and wears instead (1 + damage).
+    // shortcut: blocks from every side, vanilla only blocks hits from the front; needs the attacker's position in Damage.
+    if let D::Mob(d, _) | D::Shot(d, _) = damage
+        && let Some(slot) = inv.shield()
+    {
+        let broke = inv.wear(slot, 1 + d as i32) == Some(true);
+        if let Some(me) = server.get(id) {
+            let sound = if broke { "random.break" } else { "item.shield.block" };
+            let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(play_sound(sound, me.pos)) });
+        }
+        let _ = conn.send(&[inv.content_packet()]).await;
+        return;
+    }
     let damage = match damage {
         D::Mob(d, by) => D::Mob(fx.resist(d), by),
         D::Shot(d, by) => D::Shot(fx.resist(d), by),
@@ -191,6 +204,19 @@ pub(crate) async fn hurt(conn: &mut dims::DimConn, server: &players::Server, id:
     };
     if had != fx.absorb() {
         let _ = conn.send(&[absorption_packet(id, fx.absorb())]).await;
+    }
+    // A totem of undying cheats death, except from the void and /kill (vanilla).
+    let lethal = hp.health - damage_cause(damage).1 <= 0.0 && !matches!(damage, D::Void | D::Kill);
+    if lethal && !hp.dead && inv.use_totem() {
+        use bedrock::protocol::v975::enums::ActorEvent as E;
+        hp.health = 1.0;
+        for (effect, amplifier, ticks) in [(effects::REGENERATION, 1, 45 * 20), (effects::ABSORPTION, 1, 5 * 20), (effects::FIRE_RESISTANCE, 0, 40 * 20)] {
+            let _ = server.events.send(players::Event::Effect { to: id, effect, amplifier, ticks });
+        }
+        let totem = Protocol::ActorEventPacket(Box::new(ActorEventPacket { target_runtime_id: ActorRuntimeID(id as u64), event_id: E::TalismanActivate, data: 0, fire_at_position: None }));
+        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(totem) });
+        let _ = conn.send(&[spawn::health_packet(id, hp.health), inv.content_packet()]).await;
+        return;
     }
     let died = hp.hurt(damage);
     let event = |e: ActorEvent| {
