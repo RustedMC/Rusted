@@ -35,6 +35,35 @@ Some generated structures (mansions, end cities, bastions, ...) need a structure
 file, `data/structures.nbt`, which isn't in the repo yet because its license is unclear.
 Without it those structures are just skipped.
 
+## Hosting on a VPS
+
+On a Linux server (Debian/Ubuntu shown):
+
+```bash
+sudo apt install build-essential git
+curl https://sh.rustup.rs -sSf | sh
+git clone https://github.com/RustedMC/Rusted.git && cd Rusted
+cargo build --release
+
+sudo useradd -r -m -d /opt/rusted rusted
+sudo cp target/release/rusted /opt/rusted/ && sudo cp -r data /opt/rusted/
+sudo chown -R rusted: /opt/rusted
+sudo cp deploy/rusted.service /etc/systemd/system/
+sudo systemctl enable --now rusted
+```
+
+Open UDP **and** TCP port `19132` in the firewall (`sudo ufw allow 19132`), and in your
+provider's panel if it has one. Newer clients join over TCP, older ones over UDP.
+
+- Logs: `journalctl -u rusted -f`
+- Settings: edit `/opt/rusted/server.properties`, then `sudo systemctl restart rusted`
+- Stopping saves the world and players first.
+
+To update, pull, rebuild and copy the binary again, then restart.
+
+At home, the same steps work on any Linux box. You'll also need to forward port 19132
+(UDP and TCP) on your router so friends outside your network can join.
+
 ## What's in
 
 - **World**: PNX's overworld, Nether and End generators, seed-exact, with structures

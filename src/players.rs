@@ -214,7 +214,7 @@ fn b64_text(s: &str) -> String {
 
 /// Login skin converted to what other clients expect.
 pub fn skin_from_client(c: &ClientData) -> SerializedSkin<V2225> {
-    // Clients without a skin (bots, our proxy) still need valid JSON and an image or
+    // Clients without a skin (bots, test clients) still need valid JSON and an image or
     // everyone else rejects the player list entry, so fall back to a plain Steve skin.
     let mut patch = b64_text(&c.skin_resource_patch);
     if serde_json::from_str::<serde_json::Value>(&patch).is_err() {

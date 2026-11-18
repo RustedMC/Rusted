@@ -13,7 +13,7 @@ use bedrock::protocol::v662::enums::CommandPermissionLevel;
 
 type Protocol = V2225;
 
-// Flag words copied from PNX's SetActorData via the proxy. Guessing from Cloudburst's
+// Flag words copied from PNX's SetActorData. Guessing from Cloudburst's
 // enum was off by one and put "gravity" on collision.
 // FLAGS = bits 19, 22, 35, 48 (collision), 49 (gravity); FLAGS_EXTENDED = bits 89, 109.
 pub const FLAGS: i64 = 844_459_294_588_928;
