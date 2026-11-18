@@ -458,6 +458,14 @@ impl Containers {
 
     /// Comparator reading, PNX formula 1 + fullness * 14 (0 when empty).
     pub fn comparator(&self, world: &crate::world::World, pos: (i32, i32, i32)) -> Option<u8> {
+        // A lectern reads how far through its book it's open (vanilla: 1 + 14 * page / last page).
+        if crate::lectern::is_lectern(world.get(pos.0, pos.1, pos.2)) {
+            let book = self.map.lock().get(&pos).and_then(|s| s.first().cloned().flatten());
+            let Some(book) = book else { return Some(0) };
+            let last = (crate::lectern::pages(&book) - 1).max(0);
+            let page = crate::lectern::pages_open().lock().get(&pos).copied().unwrap_or(0).clamp(0, last);
+            return Some(if last == 0 { 15 } else { 1 + (14 * page / last) as u8 });
+        }
         let k = kind(world.get(pos.0, pos.1, pos.2)).filter(|k| !ui_only(*k))?;
         let n = open_slots(k);
         let map = self.map.lock();

@@ -76,13 +76,21 @@ fn solid(b: i32) -> bool {
 
 fn is_component(b: i32) -> bool {
     let n = name(b);
-    n == "redstone_block" || n.contains("repeater") || n.contains("comparator") || n == "observer" || n.contains("piston") || n.starts_with("daylight_detector")
+    n == "redstone_block" || n == "detector_rail" || n.contains("repeater") || n.contains("comparator") || n == "observer" || n.contains("piston") || n.starts_with("daylight_detector")
 }
 
-/// Output side of a repeater/comparator. `direction` (0 south, 1 west, 2 north, 3 east)
-/// is the input side, it outputs the other way.
+/// Output side of a repeater/comparator. Its facing (south, west, north, east) is the input
+/// side; it outputs the other way. Current Bedrock uses `minecraft:cardinal_direction`, older
+/// data the `direction` number (0 south, 1 west, 2 north, 3 east).
 fn diode_out(b: i32) -> Pos {
-    match int(b, "direction") {
+    let facing = match text(b, "minecraft:cardinal_direction") {
+        "south" => 0,
+        "west" => 1,
+        "north" => 2,
+        "east" => 3,
+        _ => int(b, "direction"),
+    };
+    match facing {
         0 => (0, 0, -1),
         1 => (1, 0, 0),
         2 => (0, 0, 1),
@@ -129,6 +137,8 @@ fn emits(w: &World, src: Pos, to: Pos, comparators: &HashMap<Pos, u8>) -> (u8, b
             let s = int(b, "redstone_signal").clamp(0, 15) as u8;
             (s, dir == DIRS[0] && s > 0)
         }
+        // A cart on a detector rail powers its neighbours and strongly the block under it.
+        "detector_rail" if int(b, "rail_data_bit") == 1 => (15, dir == DIRS[0]),
         "redstone_torch" => {
             if attached == Some(to) {
                 (0, false)
@@ -275,9 +285,26 @@ fn rename(b: i32, new: &str) -> i32 {
 }
 
 /// Should this diode be on now, and which block should it be.
+/// A repeater is locked (keeps its state) while a powered repeater or comparator points
+/// into its side (vanilla).
+fn locked(w: &World, p: Pos, b: i32, c: &HashMap<Pos, u8>) -> bool {
+    let (dx, _, dz) = diode_out(b);
+    [(dz, 0, -dx), (-dz, 0, dx)].into_iter().any(|side| {
+        let q = add(p, side);
+        let qb = w.get(q.0, q.1, q.2);
+        diode_out(qb) == neg(side)
+            && match name(qb) {
+                "powered_repeater" => true,
+                "powered_comparator" | "unpowered_comparator" => c.get(&q).copied().unwrap_or(0) > 0,
+                _ => false,
+            }
+    })
+}
+
 fn diode_target(w: &World, p: Pos, b: i32, c: &mut HashMap<Pos, u8>, fill: &dyn Fn(Pos) -> Option<u8>) -> Option<i32> {
     let n = name(b);
     match n {
+        "unpowered_repeater" | "powered_repeater" if locked(w, p, b, c) => None,
         "unpowered_repeater" | "powered_repeater" => {
             let back = add(p, neg(diode_out(b)));
             let bb = w.get(back.0, back.1, back.2);
@@ -588,6 +615,47 @@ mod tests {
                 mark(p);
             }
         }
+    }
+
+    #[test]
+    fn repeater_locks_and_detector_rail_powers() {
+        let _serial = SERIAL.lock();
+        crate::blocks::init();
+        let w = World::default();
+        let y = -60;
+        let facing = ["south", "west", "north", "east"];
+        let rep = |d: i32, powered: bool| with(block(if powered { "powered_repeater" } else { "unpowered_repeater" }), &[("minecraft:cardinal_direction", State::Str(facing[d as usize].into()))]);
+        // A outputs north; B sits east of A and points west into A's side.
+        let a = (40, y, 40);
+        w.set(a.0, a.1, a.2, rep(0, false));
+        let into_a = (0..4).find(|&d| diode_out(rep(d, true)) == (-1, 0, 0)).unwrap();
+        let b = (41, y, 40);
+        w.set(b.0, b.1, b.2, rep(into_a, true));
+        let behind_b = add(b, neg(diode_out(rep(into_a, true))));
+        w.set(behind_b.0, behind_b.1, behind_b.2, block("redstone_block")); // keeps B on
+        mark(b);
+        run(&w, 6);
+        assert_eq!(name(w.get(b.0, b.1, b.2)), "powered_repeater");
+        // Power A's input: it's locked, so it stays off.
+        let behind_a = add(a, neg(diode_out(rep(0, false))));
+        w.set(behind_a.0, behind_a.1, behind_a.2, block("redstone_block"));
+        mark(behind_a);
+        run(&w, 10);
+        assert_eq!(name(w.get(a.0, a.1, a.2)), "unpowered_repeater", "locked");
+        // Remove the lock and it switches on.
+        w.set(b.0, b.1, b.2, AIR);
+        mark(b);
+        mark(a);
+        run(&w, 10);
+        assert_eq!(name(w.get(a.0, a.1, a.2)), "powered_repeater", "unlocked");
+
+        // A detector rail with a cart on it lights the lamp next to it.
+        let det = with(block("detector_rail"), &[("rail_data_bit", State::Bool(true))]);
+        w.set(60, y, 60, det);
+        w.set(61, y, 60, block("redstone_lamp"));
+        mark((60, y, 60));
+        run(&w, 3);
+        assert_eq!(name(w.get(61, y, 60)), "lit_redstone_lamp");
     }
 
     #[test]

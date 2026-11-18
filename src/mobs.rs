@@ -691,6 +691,19 @@ fn data_packet(m: &Mob) -> Protocol {
     }))
 }
 
+/// Detector rails with a cart on them: position -> ticks until they switch off.
+static DETECTORS: Mutex<Option<HashMap<(i32, i32, i32), u32>>> = Mutex::new(None);
+
+/// A cart is on this detector rail: power it, and keep it on while carts pass.
+fn detector_on(server: &Server, rail: crate::minecart::Rail) {
+    let p = rail.at;
+    DETECTORS.lock().get_or_insert_with(HashMap::new).insert(p, 2);
+    if !rail.on {
+        let b = server.world.get(p.0, p.1, p.2);
+        server.set_block_quiet(0, p.0, p.1, p.2, crate::blocks::with(b, &[("rail_data_bit", crate::blocks::State::Bool(true))]));
+    }
+}
+
 /// Puts `rider` on `vehicle`, or takes them off.
 fn link_packet(vehicle: i64, rider: i64, on: bool) -> Protocol {
     use bedrock::protocol::v662::enums::ActorLinkType;
@@ -1168,6 +1181,7 @@ impl Mobs {
     pub fn tick(&self, server: &Server) {
         tick_tnt(server);
         self.tick_spawners(server);
+        self.tick_detectors(server);
         let mut out = Vec::new();
         let ids: Vec<i64> = self.mobs.lock().keys().copied().collect();
         for id in ids {
@@ -1345,6 +1359,24 @@ impl Mobs {
         }
     }
 
+    /// Detector rails switch off a moment after the last cart leaves them.
+    fn tick_detectors(&self, server: &Server) {
+        let mut off = Vec::new();
+        DETECTORS.lock().get_or_insert_with(HashMap::new).retain(|&p, left| {
+            *left = left.saturating_sub(1);
+            if *left == 0 {
+                off.push(p);
+            }
+            *left > 0
+        });
+        for p in off {
+            let b = server.world.get(p.0, p.1, p.2);
+            if blocks::short(b) == "detector_rail" {
+                server.set_block_quiet(0, p.0, p.1, p.2, crate::blocks::with(b, &[("rail_data_bit", crate::blocks::State::Bool(false))]));
+            }
+        }
+    }
+
     /// Structure spawners (vanilla `MobSpawnerBaseLogic`): with a player within 16 blocks,
     /// every 10-40 s spawn up to 4 of their mob within 4 blocks, unless 6 are already close.
     fn tick_spawners(&self, server: &Server) {
@@ -1398,6 +1430,9 @@ impl Mobs {
             Some(rail) => {
                 (m.pos, m.vel) = on_rail(w, rail, m.pos, m.vel, m.rider.is_some(), m.push.take(), solid);
                 m.on_ground = true;
+                if rail.kind == RailKind::Detector {
+                    detector_on(server, rail);
+                }
                 if rail.kind == RailKind::Activator && rail.on && let Some(r) = m.rider.take() {
                     // A powered activator rail throws the rider out.
                     out.extend([link_packet(m.id, r, false), rider_flag(r, false), data_packet(m)]);

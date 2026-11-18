@@ -201,6 +201,7 @@ impl Session {
                 if let Some(book) = self.server.containers.get(pos).into_iter().next().flatten() {
                     let page = (l.new_page_to_show as i32).clamp(0, crate::lectern::pages(&book).max(1) - 1);
                     crate::lectern::pages_open().lock().insert(pos, page);
+                    crate::redstone::mark(pos); // comparators read the page
                     let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(crate::lectern::data(pos, Some(&book), page)) });
                 }
             }

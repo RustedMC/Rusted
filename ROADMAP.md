@@ -8,7 +8,7 @@ Rough order of what's next. See [PORTING.md](PORTING.md) for where each part sta
 
 ## After that
 - PNX's full mob AI (memory, sensors, behaviours) to replace the current simpler AI
-- Repeater locking, detector rails, quasi-connectivity, sculk
+- Sculk sensors and shriekers (repeater locking, detector rails and lectern signals are done; quasi-connectivity is Java-only)
 - `/execute` and the remaining vanilla commands
 - More plugin events, plugins loaded at runtime
 - Sky light, NPC dialogs, camera control
