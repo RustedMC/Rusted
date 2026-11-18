@@ -255,7 +255,7 @@ impl Session {
             ["damage", amount, ..] => match amount.parse::<f32>() {
                 Ok(d) if d >= 0.0 => {
                     if survival_like(&self.mode) {
-                        hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Magic(d), &mut self.inv, &self.effects).await;
+                        hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Magic(d), &mut self.inv, &self.effects, &self.mode).await;
                     }
                     format!("Applied damage to {}", self.name)
                 }
@@ -428,7 +428,7 @@ impl Session {
             }
             ["scoreboard", rest @ ..] => ui::command(&self.server, &self.name, rest),
             ["kill"] => {
-                hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Kill, &mut self.inv, &self.effects).await;
+                hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Kill, &mut self.inv, &self.effects, &self.mode).await;
                 String::new()
             }
             ["clear"] => {

@@ -505,10 +505,10 @@ pub fn emission(id: i32) -> i32 {
     let Some(e) = crate::blocks::entry(id) else { return 0 };
     match e.name.trim_start_matches("minecraft:") {
         "glowstone" | "sea_lantern" | "lantern" | "jack_o_lantern" | "lava" | "flowing_lava" | "beacon" | "shroomlight" | "campfire" | "lit_pumpkin"
-        | "ochre_froglight" | "verdant_froglight" | "pearlescent_froglight" | "end_gateway" | "conduit" | "respawn_anchor" | "fire" => 15,
-        "torch" | "end_rod" | "lit_furnace" | "lit_smoker" | "lit_blast_furnace" | "wall_torch" => 14,
+        | "ochre_froglight" | "verdant_froglight" | "pearlescent_froglight" | "end_gateway" | "conduit" | "respawn_anchor" | "fire" | "lit_redstone_lamp" | "copper_lantern" => 15,
+        "torch" | "copper_torch" | "end_rod" | "lit_furnace" | "lit_smoker" | "lit_blast_furnace" | "wall_torch" => 14,
         "soul_lantern" | "soul_torch" | "soul_campfire" | "soul_fire" | "crying_obsidian" => 10,
-        "redstone_torch" | "glow_lichen" | "enchanting_table" | "ender_chest" => 7,
+        "redstone_torch" | "lit_redstone_ore" | "lit_deepslate_redstone_ore" | "glow_lichen" | "enchanting_table" | "ender_chest" => 7,
         "magma" | "brewing_stand" => 3,
         n if n.ends_with("candle") || n.ends_with("candle_cake") => 3,
         _ => 0,

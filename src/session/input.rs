@@ -78,7 +78,7 @@ impl Session {
         self.in_lava = body.ends_with("lava");
         self.in_fire = body == "minecraft:fire";
         if let Some(damage) = self.hp.on_move(pos.1 - 1.62, takes_damage, in_water) {
-            hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, damage, &mut self.inv, &self.effects).await;
+            hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, damage, &mut self.inv, &self.effects, &self.mode).await;
         }
         if let Some(last) = self.last_pos.replace(pos) && survival_like(&self.mode) && !self.flying {
             let walked = ((pos.0 - last.0).powi(2) + (pos.2 - last.2).powi(2)).sqrt().min(10.0);

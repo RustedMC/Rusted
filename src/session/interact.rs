@@ -292,8 +292,11 @@ impl Session {
                 wear(&mut self.conn, &self.server, self.id, &mut self.inv, self.selected_slot as usize, 1, &self.mode).await;
                 return;
             }
-            if self.server.world.get(at.0, at.1, at.2) == world::AIR && let Some(fire) = blocks::any_state("minecraft:fire") {
-                self.server.set_block(self.id, at.0, at.1, at.2, fire);
+            let here = self.server.world.get(at.0, at.1, at.2);
+            let open = here == world::AIR || (crate::overworld::feature::blocks::is_plant(here));
+            if open && let Some(fire) = blocks::any_state("minecraft:fire") {
+                // Quiet: the only sound is flint and steel's own ignite, not a block place.
+                self.server.set_block_quiet(self.id, at.0, at.1, at.2, fire);
                 growth::FIRES.lock().push(at);
                 wear(&mut self.conn, &self.server, self.id, &mut self.inv, self.selected_slot as usize, 1, &self.mode).await;
                 let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(play_sound("fire.ignite", (at.0 as f32 + 0.5, at.1 as f32 + 0.5, at.2 as f32 + 0.5))) });

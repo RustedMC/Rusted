@@ -129,7 +129,7 @@ impl Session {
             }
             let _ = self.conn.send(&[movement_packet(self.id, self.effects.speed())]).await;
             for (e, x) in gained {
-                give_effect(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, &mut self.food, &mut self.effects, &mut self.inv, e, x).await;
+                give_effect(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, &mut self.food, &mut self.effects, &mut self.inv, e, x, &self.mode).await;
             }
             self.inv.use_one(slot);
             if let Some(it) = leftover.and_then(items::item_by_name) {

@@ -86,22 +86,55 @@ pub(crate) fn available_commands(plugins: &plugin::Plugins) -> Protocol {
         .collect();
 
     let desc = |n: &str| commands::HELP.iter().find(|(c, _)| *c == n).map_or("", |(_, d)| d);
-    let special = ["gamemode", "tp", "time", "give", "gamerule", "weather", "difficulty", "whitelist"];
+    let special = [
+        "gamemode", "tp", "time", "give", "gamerule", "weather", "difficulty", "whitelist", "kill", "effect", "enchant", "xp", "summon", "tell", "kick",
+        "op", "deop", "ban", "unban", "clear", "setblock", "fill", "spawnpoint", "setworldspawn", "say", "me", "damage", "title", "list", "help",
+    ];
     let mut commands = vec![
-        command("gamemode", desc("gamemode"), &[&[("gameMode", e("GameMode"), false), ("player", MESSAGE, true)]]),
-        command("tp", desc("tp"), &[&[("x", INT, false), ("y", INT, false), ("z", INT, false)], &[("destination", MESSAGE, false)]]),
+        command("gamemode", desc("gamemode"), &[&[("gameMode", e("GameMode"), false), ("player", TARGET, true)], &[("gameMode", INT, false), ("player", TARGET, true)]]),
+        command("tp", desc("tp"), &[
+            &[("destination", POSITION, false)],
+            &[("destination", TARGET, false)],
+            &[("victim", TARGET, false), ("destination", POSITION, false)],
+            &[("victim", TARGET, false), ("destination", TARGET, false)],
+        ]),
         command("time", desc("time"), &[
             &[("action", e("TimeSet"), false), ("time", e("TimeSpec"), false)],
             &[("action", e("TimeSet"), false), ("time", INT, false)],
         ]),
-        command("give", desc("give"), &[&[("itemName", e("Item"), false), ("amount", INT, true)], &[("player", MESSAGE, false)]]),
+        command("give", desc("give"), &[&[("player", TARGET, false), ("itemName", e("Item"), false), ("amount", INT, true), ("data", INT, true)]]),
         command("gamerule", desc("gamerule"), &[
             &[("rule", e("BoolGameRule"), false), ("value", e("Boolean"), true)],
             &[("rule", e("IntGameRule"), false), ("value", INT, true)],
         ]),
-        command("weather", desc("weather"), &[&[("type", e("Weather"), false)]]),
-        command("difficulty", desc("difficulty"), &[&[("difficulty", e("Difficulty"), false)]]),
-        command("whitelist", desc("whitelist"), &[&[("action", e("WhitelistAction"), false), ("name", MESSAGE, true)]]),
+        command("weather", desc("weather"), &[&[("type", e("Weather"), false), ("duration", INT, true)]]),
+        command("difficulty", desc("difficulty"), &[&[("difficulty", e("Difficulty"), false)], &[("difficulty", INT, false)]]),
+        command("whitelist", desc("whitelist"), &[&[("action", e("WhitelistAction"), false), ("name", STRING, true)]]),
+        command("kill", desc("kill"), &[&[("target", TARGET, true)]]),
+        command("effect", desc("effect"), &[
+            &[("player", TARGET, false), ("effect", STRING, false), ("seconds", INT, true), ("amplifier", INT, true), ("hideParticles", e("Boolean"), true)],
+            &[("player", TARGET, false), ("clear", STRING, false)],
+        ]),
+        command("enchant", desc("enchant"), &[&[("player", TARGET, false), ("enchantmentName", STRING, false), ("level", INT, true)]]),
+        command("xp", desc("xp"), &[&[("amount", INT, false), ("player", TARGET, true)], &[("amount", STRING, false), ("player", TARGET, true)]]),
+        command("summon", desc("summon"), &[&[("entityType", STRING, false), ("spawnPos", POSITION, true), ("nameTag", STRING, true)]]),
+        command("tell", desc("tell"), &[&[("target", TARGET, false), ("message", MESSAGE, false)]]),
+        command("kick", desc("kick"), &[&[("name", TARGET, false), ("reason", MESSAGE, true)]]),
+        command("op", desc("op"), &[&[("player", TARGET, false)]]),
+        command("deop", desc("deop"), &[&[("player", TARGET, false)]]),
+        command("ban", desc("ban"), &[&[("player", STRING, false), ("reason", MESSAGE, true)]]),
+        command("unban", desc("unban"), &[&[("player", STRING, false)]]),
+        command("clear", desc("clear"), &[&[("player", TARGET, true), ("itemName", e("Item"), true), ("data", INT, true), ("maxCount", INT, true)]]),
+        command("setblock", desc("setblock"), &[&[("position", POSITION, false), ("tileName", STRING, false), ("oldBlockHandling", STRING, true)]]),
+        command("fill", desc("fill"), &[&[("from", POSITION, false), ("to", POSITION, false), ("tileName", STRING, false), ("oldBlockHandling", STRING, true)]]),
+        command("spawnpoint", desc("spawnpoint"), &[&[("player", TARGET, true), ("spawnPos", POSITION, true)]]),
+        command("setworldspawn", desc("setworldspawn"), &[&[("spawnPoint", POSITION, true)]]),
+        command("say", desc("say"), &[&[("message", MESSAGE, false)]]),
+        command("me", desc("me"), &[&[("message", MESSAGE, false)]]),
+        command("damage", desc("damage"), &[&[("target", TARGET, false), ("amount", INT, false), ("cause", STRING, true)]]),
+        command("title", desc("title"), &[&[("player", TARGET, false), ("type", STRING, false), ("titleText", MESSAGE, true)]]),
+        command("list", desc("list"), &[&[]]),
+        command("help", desc("help"), &[&[("command", STRING, true)], &[("page", INT, true)]]),
     ];
     for (n, d) in commands::HELP.iter().filter(|(n, _)| !special.contains(n)) {
         commands.push(command(n, d, &[&[("args", MESSAGE, true)]]));
@@ -133,6 +166,12 @@ pub(crate) const ARG_ENUM: u32 = 0x20_0000;
 pub(crate) const INT: u32 = ARG_VALID | 1;
 
 pub(crate) const MESSAGE: u32 = ARG_VALID | 68; // rest of the line, as PNX's /tell uses
+
+pub(crate) const TARGET: u32 = ARG_VALID | 8; // a player name or @-selector
+
+pub(crate) const STRING: u32 = ARG_VALID | 56;
+
+pub(crate) const POSITION: u32 = ARG_VALID | 65; // x y z, ~ and ^ allowed
 
 /// One command with one or more overloads (alternative argument lists).
 pub(crate) fn command(name: &str, description: &str, overloads: &[&[(&str, u32, bool)]]) -> bedrock::protocol::v898::packets::CommandsEntry {

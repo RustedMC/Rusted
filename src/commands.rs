@@ -511,7 +511,7 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
             format!("Plugins ({}): {}", names.len(), names.iter().map(|n| format!("§a{n}§f")).collect::<Vec<_>>().join(", "))
         }
         ["version" | "ver" | "about"] => format!(
-            "This server is running Rusted {VERSION} for Minecraft: Bedrock Edition v1.26.60 (by Gardery, ported in part from PowerNukkitX)"
+            "This server is running Rusted {VERSION} for Minecraft: Bedrock Edition v1.26.60, written in Rust"
         ),
         ["status"] => {
             let up = started().elapsed().as_secs();

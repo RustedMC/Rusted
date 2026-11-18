@@ -2575,7 +2575,6 @@ impl Mobs {
     }
 
     /// Hostile spawns 24-48 blocks around each player: at night on the surface, anytime in caves.
-    // TODO: real light levels. "Dark" is just no sky above for now, so torches do nothing.
     fn spawn_hostiles(&self, server: &Server) {
         if *crate::commands::DIFFICULTY.lock() == 0 {
             return;
@@ -2615,7 +2614,9 @@ impl Mobs {
                     while y > lo && !solid(w.get(x, y - 1, z)) {
                         y -= 1;
                     }
-                    if sky(w, (x, y, z)) {
+                    // Leaves let daylight through, so by day a spot needs real cover overhead.
+                    let covered = (y + 1..=(y + 64).min(319)).any(|q| crate::overworld::feature::blocks::is_full(w.get(x, q, z)));
+                    if sky(w, (x, y, z)) || (!night && !covered) {
                         continue;
                     }
                     y

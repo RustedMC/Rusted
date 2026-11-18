@@ -71,7 +71,7 @@ impl Session {
         }
         for c in queued {
             match c {
-                effects::Queued::Give(e, x) => give_effect(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, &mut self.food, &mut self.effects, &mut self.inv, e, x).await,
+                effects::Queued::Give(e, x) => give_effect(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, &mut self.food, &mut self.effects, &mut self.inv, e, x, &self.mode).await,
                 effects::Queued::Clear => {
                     let all: Vec<i32> = self.effects.active.keys().copied().collect();
                     self.effects.active.clear();
@@ -98,10 +98,10 @@ impl Session {
             }
             if t.poison > 0.0 && self.hp.health > 1.0 && survival_like(&self.mode) {
                 let d = t.poison.min(self.hp.health - 1.0); // poison never kills
-                hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Magic(d), &mut self.inv, &self.effects).await;
+                hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Magic(d), &mut self.inv, &self.effects, &self.mode).await;
             }
             if t.wither > 0.0 && survival_like(&self.mode) {
-                hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Wither(t.wither), &mut self.inv, &self.effects).await;
+                hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Wither(t.wither), &mut self.inv, &self.effects, &self.mode).await;
             }
             if t.exhaustion > 0.0 && survival_like(&self.mode) && self.food.exhaust(t.exhaustion) {
                 let _ = self.conn.send(&[self.food.packet(self.id)]).await;
@@ -125,12 +125,12 @@ impl Session {
             }
             if self.air <= -20 {
                 self.air = 0;
-                hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Drown, &mut self.inv, &self.effects).await;
+                hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Drown, &mut self.inv, &self.effects, &self.mode).await;
             }
             if self.in_lava && !self.hp.dead {
-                hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Lava, &mut self.inv, &self.effects).await;
+                hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Lava, &mut self.inv, &self.effects, &self.mode).await;
             } else if self.in_fire && !self.hp.dead {
-                hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Fire, &mut self.inv, &self.effects).await;
+                hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Fire, &mut self.inv, &self.effects, &self.mode).await;
             }
         }
         if survival_like(&self.mode) && !self.hp.dead {
@@ -140,7 +140,7 @@ impl Session {
                 hunger::Step::Heal if self.hp.regenerate() => {
                     let _ = self.conn.send(&[spawn::health_packet(self.id, self.hp.health)]).await;
                 }
-                hunger::Step::Starve => hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Starve, &mut self.inv, &self.effects).await,
+                hunger::Step::Starve => hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Starve, &mut self.inv, &self.effects, &self.mode).await,
                 _ => {}
             }
             if (self.food.food, self.food.saturation, self.food.exhaustion) != before {
@@ -162,7 +162,7 @@ impl Session {
             }
             Ok(Event::Damage { to, damage, knock }) if to == self.id => {
                 if survival_like(&self.mode) && !self.hp.dead {
-                    hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, damage, &mut self.inv, &self.effects).await;
+                    hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, damage, &mut self.inv, &self.effects, &self.mode).await;
                     let motion = Protocol::SetActorMotionPacket(Box::new(bedrock::protocol::v662::packets::SetActorMotionPacket {
                         target_runtime_id: ActorRuntimeID(self.id as u64),
                         motion: knock,
@@ -175,7 +175,7 @@ impl Session {
             Ok(Event::Effect { to, effect, amplifier, ticks }) if to == self.id => {
                 if survival_like(&self.mode) && !self.hp.dead {
                     let x = effects::Effect { amplifier, ticks, particles: true };
-                    give_effect(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, &mut self.food, &mut self.effects, &mut self.inv, effect, x).await;
+                    give_effect(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, &mut self.food, &mut self.effects, &mut self.inv, effect, x, &self.mode).await;
                 }
                 return GO;
             }

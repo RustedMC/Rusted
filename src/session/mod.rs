@@ -25,13 +25,13 @@ pub(crate) async fn set_game_mode(conn: &mut dims::DimConn, id: i64, mode: &Game
 
 /// Instant effects act right away (PNX: heal 4 << amp, harm 6 << amp), others get sent.
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn give_effect(conn: &mut dims::DimConn, server: &players::Server, id: i64, name: &str, hp: &mut health::Health, food: &mut hunger::Hunger, fx: &mut effects::Effects, inv: &mut inventory::Inventory, e: i32, x: effects::Effect) {
+pub(crate) async fn give_effect(conn: &mut dims::DimConn, server: &players::Server, id: i64, name: &str, hp: &mut health::Health, food: &mut hunger::Hunger, fx: &mut effects::Effects, inv: &mut inventory::Inventory, e: i32, x: effects::Effect, mode: &GameType) {
     match e {
         effects::INSTANT_HEALTH => {
             hp.health = (hp.health + (4 << x.amplifier.min(5)) as f32).min(health::MAX_HEALTH);
             let _ = conn.send(&[spawn::health_packet(id, hp.health)]).await;
         }
-        effects::INSTANT_DAMAGE => hurt(conn, server, id, name, hp, health::Damage::Magic((6 << x.amplifier.min(5)) as f32), inv, fx).await,
+        effects::INSTANT_DAMAGE => hurt(conn, server, id, name, hp, health::Damage::Magic((6 << x.amplifier.min(5)) as f32), inv, fx, mode).await,
         effects::SATURATION => {
             food.eat((x.amplifier + 1) as f32, (x.amplifier + 1) as f32 * 2.0);
             let _ = conn.send(&[food.packet(id)]).await;
@@ -70,13 +70,24 @@ pub(crate) async fn change_dim(conn: &mut dims::DimConn, server: &players::Serve
     chunks.center = None;
     server.moved(id, eye, rot, head);
     let (cx, cz) = ((eye.0.floor() as i32) >> 4, (eye.2.floor() as i32) >> 4);
-    chunks.update(conn, &server.world, cx, cz, usize::MAX).await?;
+    // Only the nearest chunks now (the rest stream in as usual), so the loading screen
+    // doesn't wait on a whole view distance of terrain.
+    chunks.update(conn, &server.world, cx, cz, 25).await?;
     let mut tp = move_player(id, eye, rot, head);
     if let Protocol::MovePlayerPacket(m) = &mut tp {
         m.position_mode = PlayerPositionMode::Teleport;
         m.teleport_data = Some(MovePlayerTeleportData { teleportation_cause: 0, source_actor_type: 0 });
     }
-    conn.send(&[tp, play_status(PlayStatus::PlayerSpawn)]).await?;
+    // Chunks are there: tell the client it can drop the loading screen (PNX CHANGE_DIMENSION_ACK).
+    let at = NetworkBlockPosition { x: eye.0.floor() as i32, y: eye.1.floor() as i32, z: eye.2.floor() as i32 };
+    let ack = Protocol::PlayerActionPacket(Box::new(bedrock::protocol::v662::packets::PlayerActionPacket {
+        player_runtime_id: ActorRuntimeID(id as u64),
+        action: bedrock::protocol::v662::enums::PlayerActionType::ChangeDimensionAck,
+        block_position: at.clone(),
+        result_pos: at,
+        face: 0,
+    }));
+    conn.send(&[tp, ack]).await?;
     // Everyone in the new dimension sees us arrive.
     let _ = server.events.send(players::Event::Join(id));
     if to == dims::END {
@@ -133,7 +144,11 @@ pub(crate) async fn swap_bucket(conn: &mut dims::DimConn, inv: &mut inventory::I
 }
 
 /// Health, red flash for everyone watching, and death if it kills.
-pub(crate) async fn hurt(conn: &mut dims::DimConn, server: &players::Server, id: i64, name: &str, hp: &mut health::Health, damage: health::Damage, inv: &mut inventory::Inventory, fx: &effects::Effects) {
+pub(crate) async fn hurt(conn: &mut dims::DimConn, server: &players::Server, id: i64, name: &str, hp: &mut health::Health, damage: health::Damage, inv: &mut inventory::Inventory, fx: &effects::Effects, mode: &GameType) {
+    // Creative and spectator players only die to /kill and the void, as in vanilla.
+    if !survival_like(mode) && !matches!(damage, health::Damage::Kill | health::Damage::Void) {
+        return;
+    }
     use health::Damage as D;
     if fx.level(effects::FIRE_RESISTANCE).is_some() && matches!(damage, D::Lava | D::Fire) || fx.level(effects::WATER_BREATHING).is_some() && damage == D::Drown {
         return;
