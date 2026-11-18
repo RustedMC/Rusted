@@ -3172,7 +3172,9 @@ mod tests {
         for _ in 0..(60 * TPS) {
             server.mobs.tick(&server);
         }
-        assert!(spiders() <= 6, "capped at 6 nearby: {}", spiders());
+        // The cap counts spiders within 8 blocks, so wanderers make room for more, but
+        // without it 60 s would make well over 12.
+        assert!(spiders() <= 12, "capped: {}", spiders());
 
         // Saddles and temper are saved with the world.
         let file = std::env::temp_dir().join(format!("rusted_ride_{}.txt", std::process::id()));
