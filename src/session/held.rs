@@ -90,6 +90,12 @@ impl Session {
         // Finished eating (release action 1 = consume).
         let slot = self.selected_slot as usize;
         let held = self.inv.held(slot).and_then(|s| items::name_of(s.item.id)).unwrap_or("");
+        if let Some(me) = self.server.get(self.id)
+            && !self.server.plugins.consume(&self.server, &me, held)
+        {
+            let _ = self.conn.send(&[self.inv.content_packet()]).await;
+            return;
+        }
         let eaten = hunger::food(held);
         // Drinks and bowls give their container back (PNX ItemFood/ItemPotion/ItemBucket).
         let leftover = match held {

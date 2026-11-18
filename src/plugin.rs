@@ -187,6 +187,33 @@ pub trait Plugin: Send + Sync {
     /// Player started (`true`) or stopped sprinting.
     fn on_sprint(&self, _server: &Server, _player: &PlayerInfo, _sprinting: bool) {}
 
+    /// Player is opening a chest, furnace or other block screen at `pos`. Return false to keep it shut.
+    fn on_container_open(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32), _block: &str) -> bool {
+        true
+    }
+
+    /// Player finished eating or drinking `item`. Return false and nothing is eaten.
+    fn on_consume(&self, _server: &Server, _player: &PlayerInfo, _item: &str) -> bool {
+        true
+    }
+
+    /// Player switched hotbar slot or what's in hand (`item` is `None` for an empty hand).
+    fn on_held_change(&self, _server: &Server, _player: &PlayerInfo, _slot: u32, _item: Option<&str>) {}
+
+    /// Player went to dimension `to` (0 overworld, 1 Nether, 2 End).
+    fn on_dimension_change(&self, _server: &Server, _player: &PlayerInfo, _to: u8) {}
+
+    /// Player was teleported to `to` (feet position): commands, pearls, plugins.
+    fn on_teleport(&self, _server: &Server, _player: &PlayerInfo, _to: (f32, f32, f32)) {}
+
+    /// Player is getting `points` of XP (negative takes it away). Change it, or set 0 to cancel.
+    fn on_xp_change(&self, _server: &Server, _player: &PlayerInfo, _points: &mut i32) {}
+
+    /// Player wrote a sign at `pos`. Edit the text, or return false to keep the old text.
+    fn on_sign_change(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32), _front: &mut String, _back: &mut String) -> bool {
+        true
+    }
+
     /// (name, description) of commands this plugin handles, for autocomplete.
     fn commands(&self) -> Vec<(&'static str, &'static str)> {
         vec![]
@@ -360,6 +387,34 @@ impl Plugins {
 
     pub fn item_use(&self, s: &Server, p: &PlayerInfo, item: &crate::inventory::Stack) -> bool {
         self.cancellable(|pl| pl.on_item_use(s, p, item))
+    }
+
+    pub fn container_open(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32), block: &str) -> bool {
+        self.cancellable(|pl| pl.on_container_open(s, p, pos, block))
+    }
+
+    pub fn consume(&self, s: &Server, p: &PlayerInfo, item: &str) -> bool {
+        self.cancellable(|pl| pl.on_consume(s, p, item))
+    }
+
+    pub fn held_change(&self, s: &Server, p: &PlayerInfo, slot: u32, item: Option<&str>) {
+        self.each(|pl| pl.on_held_change(s, p, slot, item));
+    }
+
+    pub fn dimension_change(&self, s: &Server, p: &PlayerInfo, to: u8) {
+        self.each(|pl| pl.on_dimension_change(s, p, to));
+    }
+
+    pub fn teleport(&self, s: &Server, p: &PlayerInfo, to: (f32, f32, f32)) {
+        self.each(|pl| pl.on_teleport(s, p, to));
+    }
+
+    pub fn xp_change(&self, s: &Server, p: &PlayerInfo, points: &mut i32) {
+        self.each(|pl| pl.on_xp_change(s, p, points));
+    }
+
+    pub fn sign_change(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32), front: &mut String, back: &mut String) -> bool {
+        self.cancellable(|pl| pl.on_sign_change(s, p, pos, front, back))
     }
 
     /// The first refusal message any plugin gives, if one does.

@@ -45,6 +45,13 @@ Plugins with the same priority run in load order.
 | `on_move(server, player, to) -> bool` | Moved (`to` is the eye position) | `false` puts them back |
 | `on_sneak(server, player, sneaking: bool)` | Started or stopped sneaking | |
 | `on_sprint(server, player, sprinting: bool)` | Started or stopped sprinting | |
+| `on_held_change(server, player, slot: u32, item: Option<&str>)` | Switched hotbar slot or what's in hand | |
+| `on_consume(server, player, item: &str) -> bool` | Finished eating or drinking | `false`: nothing is eaten |
+| `on_container_open(server, player, pos, block: &str) -> bool` | Opening a chest, furnace or other block screen | `false` keeps it shut |
+| `on_teleport(server, player, to)` | Teleported (commands, pearls, plugins), feet position | |
+| `on_dimension_change(server, player, to: u8)` | Went to another dimension: 0 overworld, 1 Nether, 2 End | |
+| `on_xp_change(server, player, points: &mut i32)` | Getting XP (negative takes it away) | Change `points`, 0 cancels |
+| `on_sign_change(server, player, pos, front: &mut String, back: &mut String) -> bool` | Wrote a sign | Edit the text, or `false` keeps the old text |
 
 ## Blocks
 

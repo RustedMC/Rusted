@@ -52,6 +52,9 @@ pub(crate) async fn give_effect(conn: &mut dims::DimConn, server: &players::Serv
 /// Cross-dimension teleport to `eye`: resend chunks, show/hide us (PNX Player.teleport).
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn change_dim(conn: &mut dims::DimConn, server: &players::Server, chunks: &mut ChunkTracker, id: i64, to: u8, eye: (f32, f32, f32), rot: (f32, f32), head: f32) -> Result<(), ConnectionError> {
+    if let Some(me) = server.get(id) {
+        server.plugins.dimension_change(server, &me, to);
+    }
     // Others stop seeing us where we were.
     let gone = Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) }));
     let _ = server.events.send(players::Event::Relay { from: id, packet: Box::new(gone) });

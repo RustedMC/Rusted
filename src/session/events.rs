@@ -196,6 +196,13 @@ impl Session {
                 return GO;
             }
             Ok(Event::Xp { to, points }) if to == self.id => {
+                let mut points = points;
+                if let Some(me) = self.server.get(self.id) {
+                    self.server.plugins.xp_change(&self.server, &me, &mut points);
+                }
+                if points == 0 {
+                    return GO;
+                }
                 self.xp.add_points(points);
                 save_xp(&self.name, self.xp);
                 let mut out = vec![self.xp.packet(self.id)];
@@ -206,6 +213,9 @@ impl Session {
                 return GO;
             }
             Ok(Event::Teleport { id: who, feet }) if who == self.id => {
+                if let Some(me) = self.server.get(self.id) {
+                    self.server.plugins.teleport(&self.server, &me, feet);
+                }
                 let eye = (feet.0, feet.1 + 1.62, feet.2);
                 let (rot, head) = self.server.get(self.id).map_or(((0.0, 0.0), 0.0), |p| (p.rot, p.head_yaw));
                 let mut tp = move_player(self.id, eye, rot, head);

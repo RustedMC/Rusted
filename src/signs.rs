@@ -115,11 +115,16 @@ fn text_of(tags: &HashMap<String, nbtx::Value>, key: &str) -> String {
 
 /// Client edited a sign. Saves it and returns the packet for everyone, or None if there's
 /// no sign there (clients can't write arbitrary block entities).
-pub fn edited(world: &crate::world::World, p: Pos, tags: &HashMap<String, nbtx::Value>) -> Option<Protocol> {
+/// A player wrote a sign. `filter` may change the text, or return false to keep the old one.
+pub fn edited(world: &crate::world::World, p: Pos, tags: &HashMap<String, nbtx::Value>, filter: impl FnOnce(&mut String, &mut String) -> bool) -> Option<Protocol> {
     if !is_sign(world.get(p.0, p.1, p.2)) {
         return None;
     }
-    let (front, back) = (text_of(tags, "FrontText"), text_of(tags, "BackText"));
+    let (mut front, mut back) = (text_of(tags, "FrontText"), text_of(tags, "BackText"));
+    if !filter(&mut front, &mut back) {
+        let (f, b) = all().lock().get(&p).cloned().unwrap_or_default();
+        return Some(data_packet(p, &f, &b));
+    }
     let packet = data_packet(p, &front, &back);
     let mut map = all().lock();
     map.insert(p, (front, back));

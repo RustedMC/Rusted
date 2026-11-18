@@ -186,7 +186,9 @@ impl Session {
             Protocol::InventoryTransactionPacket(t) => self.on_item_use(t).await,
             Protocol::BlockActorDataPacket(b) => {
                 let p = (b.block_position.x, b.block_position.y, b.block_position.z);
-                if spawn::can_build(&self.mode) && let Some(packet) = signs::edited(&self.server.world, p, &b.actor_data_tags) {
+                let me = self.server.get(self.id);
+                let filter = |front: &mut String, back: &mut String| me.as_ref().is_none_or(|me| self.server.plugins.sign_change(&self.server, me, p, front, back));
+                if spawn::can_build(&self.mode) && let Some(packet) = signs::edited(&self.server.world, p, &b.actor_data_tags, filter) {
                     let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(packet) });
                 }
             }
@@ -214,6 +216,9 @@ impl Session {
                 self.selected_slot = m.selected_slot.max(0) as u32;
                 self.inv.selected = self.selected_slot as usize;
                 self.server.mobs.set_held(self.id, items::name_of(m.item.id));
+                if let Some(me) = self.server.get(self.id) {
+                    self.server.plugins.held_change(&self.server, &me, self.selected_slot, items::name_of(m.item.id));
+                }
                 // Others see what we're holding.
                 let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(Protocol::MobEquipmentPacket(m)) });
             }
