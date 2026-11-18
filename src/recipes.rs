@@ -20,6 +20,60 @@ pub struct Recipes {
     pub smithing: HashMap<u32, NetworkItemStackDescriptorV2>,
     /// armor trim recipe net ids
     pub trims: std::collections::HashSet<u32>,
+    /// Crafting table recipes with their inputs, for crafters (players' crafting is matched by the client).
+    grid: Vec<GridRecipe>,
+}
+
+/// One input slot: an item (with aux, `None` = any), a tag like `minecraft:planks`, or empty.
+#[derive(Clone, Debug, PartialEq)]
+enum Input {
+    Empty,
+    Item(String, Option<i16>),
+    Tag(String),
+}
+
+struct GridRecipe {
+    /// `Some((w, h))` for shaped recipes, inputs row by row; `None` for shapeless.
+    shape: Option<(usize, usize)>,
+    inputs: Vec<Input>,
+    out: (NetworkItemStackDescriptorV2, i8),
+}
+
+fn input(i: &bedrock::protocol::v2168::types::CraftingRecipeIngredient) -> Input {
+    use bedrock::protocol::v2168::types::CraftingItemDescriptor as D;
+    match &i.descriptor {
+        D::Name { item_id, aux_value } => Input::Item(item_id.clone(), (*aux_value != 0x7fff && *aux_value != -1).then_some(*aux_value as i16)),
+        D::ItemTag { item_tag } => Input::Tag(item_tag.clone()),
+        _ => Input::Empty,
+    }
+}
+
+/// Whether `name` is in item tag `tag`.
+// shortcut: Rusted doesn't load Bedrock's item tag lists, so tags match by name
+// (`minecraft:planks` -> anything ending in `_planks`); load the real tag data if a recipe misses.
+fn in_tag(tag: &str, name: &str) -> bool {
+    let t = tag.trim_start_matches("minecraft:");
+    let n = name.trim_start_matches("minecraft:");
+    match t {
+        "planks" => n.ends_with("_planks"),
+        "logs" | "logs_that_burn" => n.ends_with("_log") || n.ends_with("_wood") || n.ends_with("_stem") || n.ends_with("_hyphae"),
+        "wool" => n.ends_with("_wool"),
+        "coals" => n == "coal" || n == "charcoal",
+        "stone_tool_materials" | "stone_crafting_materials" => matches!(n, "cobblestone" | "blackstone" | "cobbled_deepslate"),
+        "wooden_slabs" => n.ends_with("_slab") && !n.contains("stone") && !n.contains("brick"),
+        _ => n == t || n.ends_with(&format!("_{}", t.trim_end_matches('s'))),
+    }
+}
+
+impl Input {
+    fn matches(&self, slot: Option<(&str, i16)>) -> bool {
+        match (self, slot) {
+            (Input::Empty, None) => true,
+            (Input::Item(want, aux), Some((name, a))) => want == name && aux.is_none_or(|x| x == a),
+            (Input::Tag(tag), Some((name, _))) => in_tag(tag, name),
+            _ => false,
+        }
+    }
 }
 
 fn to_stack(d: &bedrock::protocol::v2168::types::NetworkItemInstanceDescriptor) -> (NetworkItemStackDescriptorV2, i8) {
@@ -37,7 +91,7 @@ fn to_stack(d: &bedrock::protocol::v2168::types::NetworkItemInstanceDescriptor) 
 pub fn get() -> &'static Recipes {
     static R: OnceLock<Recipes> = OnceLock::new();
     R.get_or_init(|| {
-        let mut r = Recipes { crafting: HashMap::new(), furnace: HashMap::new(), potion_mixes: HashMap::new(), container_mixes: HashMap::new(), smithing: HashMap::new(), trims: Default::default() };
+        let mut r = Recipes { crafting: HashMap::new(), furnace: HashMap::new(), potion_mixes: HashMap::new(), container_mixes: HashMap::new(), smithing: HashMap::new(), trims: Default::default(), grid: vec![] };
         let batch = crate::vanilla::batches().nth(8).expect("crafting data frame");
         let decoded = bedrock::network::codec::decode_packets_each::<crate::Protocol>(
             batch, None, None, usize::MAX, bedrock::network::codec::UnreadBytes::Warn,
@@ -61,11 +115,18 @@ pub fn get() -> &'static Recipes {
         for s in p.shaped_recipes.iter().chain(&p.shaped_chemistry_recipes) {
             if let Some(out) = s.production_list.first() {
                 r.crafting.insert(s.network_id, to_stack(out));
+                if s.recipe_tag == "crafting_table" && s.width >= 1 && s.height >= 1 {
+                    let shape = Some((s.width as usize, s.height as usize));
+                    r.grid.push(GridRecipe { shape, inputs: s.ingredients.iter().map(input).collect(), out: to_stack(out) });
+                }
             }
         }
         for s in p.shapeless_recipes.iter().chain(&p.shapeless_chemistry_recipes).chain(&p.user_data_shapeless_recipes) {
             if let Some(out) = s.production_list.first() {
                 r.crafting.insert(s.network_id, to_stack(out));
+                if s.recipe_tag == "crafting_table" {
+                    r.grid.push(GridRecipe { shape: None, inputs: s.ingredient_list.iter().map(input).collect(), out: to_stack(out) });
+                }
             }
         }
         for (from, to) in SMELTING {
@@ -80,6 +141,37 @@ pub fn get() -> &'static Recipes {
 }
 
 impl Recipes {
+    /// What a 3x3 grid (row by row: item name and aux) crafts, for crafters. Shaped recipes
+    /// may sit anywhere in the grid and match mirrored too.
+    pub fn craft_grid(&self, grid: &[Option<(&str, i16)>; 9]) -> Option<(NetworkItemStackDescriptorV2, i8)> {
+        let filled: Vec<usize> = (0..9).filter(|&i| grid[i].is_some()).collect();
+        let (&first, &last) = (filled.first()?, filled.last()?);
+        let cols: Vec<usize> = filled.iter().map(|i| i % 3).collect();
+        let (x0, x1) = (*cols.iter().min()?, *cols.iter().max()?);
+        let (y0, y1) = (first / 3, last / 3);
+        let (w, h) = (x1 - x0 + 1, y1 - y0 + 1);
+        let cell = |x: usize, y: usize| grid[(y0 + y) * 3 + x0 + x];
+        self.grid.iter().find(|r| match r.shape {
+            Some((rw, rh)) if (rw, rh) == (w, h) && r.inputs.len() == w * h => {
+                let fits = |mirror: bool| (0..h).all(|y| (0..w).all(|x| r.inputs[y * w + if mirror { w - 1 - x } else { x }].matches(cell(x, y))));
+                fits(false) || fits(true)
+            }
+            Some(_) => false,
+            None => {
+                let mut left: Vec<Option<(&str, i16)>> = filled.iter().map(|&i| grid[i]).collect();
+                let wanted: Vec<&Input> = r.inputs.iter().filter(|i| **i != Input::Empty).collect();
+                wanted.len() == left.len()
+                    && wanted.iter().all(|want| match left.iter().position(|s| want.matches(*s)) {
+                        Some(i) => {
+                            left.swap_remove(i);
+                            true
+                        }
+                        None => false,
+                    })
+            }
+        }).map(|r| r.out.clone())
+    }
+
     /// Brewing result (PNX BrewingRecipe / ContainerRecipe).
     pub fn brewed(&self, potion: &NetworkItemStackDescriptorV2, reagent: i16) -> Option<NetworkItemStackDescriptorV2> {
         let (id, aux, r) = (potion.id as i32, potion.aux_value as i32, reagent as i32);
@@ -281,5 +373,25 @@ mod tests {
         f.catch_up(&mut slots, 100.0);
         assert_eq!(slots[2].as_ref().unwrap().count, 3);
         assert_eq!(fuel_secs("minecraft:oak_planks"), Some(15.0));
+    }
+}
+
+#[cfg(test)]
+mod crafter_tests {
+    #[test]
+    fn grid_matches_shaped_shapeless_and_tags() {
+        crate::blocks::init();
+        let r = super::get();
+        let name = |out: Option<(bedrock::protocol::v2168::types::NetworkItemStackDescriptorV2, i8)>| out.and_then(|(i, n)| crate::items::name_of(i.id).map(|s| (s.to_string(), n)));
+        let p = Some(("minecraft:oak_planks", 0));
+        // Two planks stacked anywhere make 4 sticks (shaped, planks tag).
+        let sticks = name(r.craft_grid(&[None, None, None, None, p, None, None, p, None]));
+        assert_eq!(sticks, Some(("minecraft:stick".into(), 4)));
+        // A full 2x2 of planks is a crafting table, wherever it sits.
+        let table = name(r.craft_grid(&[p, p, None, p, p, None, None, None, None]));
+        assert_eq!(table.map(|t| t.0), Some("minecraft:crafting_table".into()));
+        // Nonsense makes nothing.
+        assert!(r.craft_grid(&[Some(("minecraft:dirt", 0)), None, None, None, None, None, None, None, None]).is_none());
+        assert!(r.craft_grid(&[None; 9]).is_none());
     }
 }

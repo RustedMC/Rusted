@@ -445,7 +445,7 @@ fn evaluate(w: &World, e: &mut Engine, p: Pos, wired: &mut HashSet<Pos>, step: &
                 step.blocks.push((p, with(b, &[("toggle_bit", State::Bool(on))])));
             }
         }
-        n if n == "tnt" || n == "noteblock" || n == "dispenser" || n == "dropper" || n.ends_with("_door") || n.ends_with("trapdoor") || n.ends_with("fence_gate") || n == "wooden_door" => {
+        n if n == "tnt" || n == "noteblock" || n == "dispenser" || n == "dropper" || n == "crafter" || n.ends_with("_door") || n.ends_with("trapdoor") || n.ends_with("fence_gate") || n == "wooden_door" => {
             // edge-triggered, only a change does anything (so players can still use doors)
             let key = if n.ends_with("_door") || n == "wooden_door" {
                 if int(b, "upper_block_bit") == 1 { (p.0, p.1 - 1, p.2) } else { p }
@@ -462,8 +462,8 @@ fn evaluate(w: &World, e: &mut Engine, p: Pos, wired: &mut HashSet<Pos>, step: &
             match n {
                 "tnt" if on => step.ignite.push(p),
                 "noteblock" if on => step.notes.push(p),
-                "dispenser" | "dropper" if on => step.dispense.push(p),
-                "tnt" | "noteblock" | "dispenser" | "dropper" => {}
+                "dispenser" | "dropper" | "crafter" if on => step.dispense.push(p),
+                "tnt" | "noteblock" | "dispenser" | "dropper" | "crafter" => {}
                 _ => {
                     let lower = w.get(key.0, key.1, key.2);
                     if int(lower, "open_bit") == on as i32 {

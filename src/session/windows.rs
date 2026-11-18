@@ -40,6 +40,7 @@ impl Session {
             containers::Kind::Enchanting => (ContainerType::Enchantment, ContainerEnumName::EnchantingInputContainer),
             containers::Kind::Beacon => (ContainerType::Beacon, ContainerEnumName::BeaconPaymentContainer),
             containers::Kind::Loom => (ContainerType::Loom, ContainerEnumName::LoomInputContainer),
+            containers::Kind::Crafter => (ContainerType::Crafter, ContainerEnumName::CrafterLevelEntityContainer),
         };
         self.open_kind = Some((kind, name.clone()));
         let mut out = vec![Protocol::ContainerOpenPacket(Box::new(ContainerOpenPacket {

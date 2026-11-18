@@ -100,11 +100,60 @@ pub(crate) fn redstone_tick(server: &players::Server, plates: &mut HashMap<(i32,
     }
 }
 
+/// A crafter got a redstone pulse: craft its grid's recipe once and push the result out the
+/// front, into a container there or onto the ground (vanilla crafter).
+fn craft(server: &players::Server, p: (i32, i32, i32), b: i32) {
+    let slots = server.containers.get(p);
+    let mut grid: [Option<(&str, i16)>; 9] = [None; 9];
+    for (i, s) in slots.iter().take(9).enumerate() {
+        grid[i] = s.as_ref().and_then(|s| items::name_of(s.item.id).map(|n| (n, s.item.aux_value as i16)));
+    }
+    let Some((item, count)) = crate::recipes::get().craft_grid(&grid) else {
+        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(level_event(1001, p)) }); // nothing to craft
+        return;
+    };
+    // Use up one of each input.
+    let mut left = slots;
+    for s in left.iter_mut().take(9) {
+        if let Some(st) = s {
+            st.count -= 1;
+            if st.count <= 0 {
+                *s = None;
+            }
+        }
+    }
+    server.containers.put(p, left);
+    let front = match blocks::state(b, "orientation") {
+        Some(blocks::State::Str(o)) => match o.split('_').next() {
+            Some("down") => (0, -1, 0),
+            Some("up") => (0, 1, 0),
+            Some("north") => (0, 0, -1),
+            Some("south") => (0, 0, 1),
+            Some("west") => (-1, 0, 0),
+            _ => (1, 0, 0),
+        },
+        _ => (0, 0, 1),
+    };
+    let to = (p.0 + front.0, p.1 + front.1, p.2 + front.2);
+    let mut out = crate::inventory::Stack { item: item.clone(), count: 1, net_id: 0 };
+    for _ in 0..count {
+        if !server.containers.put_one(&server.world, to, &out) {
+            let at = (to.0 as f32 + 0.5, to.1 as f32 + 0.3, to.2 as f32 + 0.5);
+            server.entities.drop_item_vel(server, out.item.clone(), 1, at, (front.0 as f32 * 0.2, front.1 as f32 * 0.2 + 0.1, front.2 as f32 * 0.2));
+        }
+        out.count = 1;
+    }
+    let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(level_event(1000, p)) });
+}
+
 /// Dispenser/dropper firing (PNX BlockDispenser). Droppers pass items on; dispensers
 /// shoot, place liquids, light TNT/fire, bone meal, or drop the item.
 pub(crate) fn dispense(server: &players::Server, p: (i32, i32, i32)) {
     let b = server.world.get(p.0, p.1, p.2);
     let Some(kind) = containers::kind(b) else { return };
+    if kind == containers::Kind::Crafter {
+        return craft(server, p, b);
+    }
     let face = match blocks::state(b, "facing_direction") {
         Some(blocks::State::Int(f)) => *f as u8,
         _ => 0,
@@ -282,4 +331,35 @@ pub(crate) fn fire_ticks(server: &players::Server, rng: &mut u64) {
     keep.sort_unstable();
     keep.dedup();
     growth::FIRES.lock().extend(keep);
+}
+
+#[cfg(test)]
+mod crafter_tests {
+    use super::*;
+
+    #[test]
+    fn pulsed_crafter_crafts_into_the_chest_in_front() {
+        let server = players::Server::new();
+        let crafter = blocks::with(blocks::any_state("minecraft:crafter").unwrap(), &[("orientation", blocks::State::Str("south_up".into()))]);
+        let at = (5, -60, 5);
+        server.world.set(at.0, at.1, at.2, crafter);
+        server.world.set(5, -60, 6, blocks::any_state("minecraft:chest").unwrap());
+        let plank = items::item_by_name("minecraft:oak_planks").unwrap();
+        let mut slots = vec![None; crate::inventory::CHEST_SLOTS];
+        slots[4] = Some(crate::inventory::Stack { item: plank.clone(), count: 3, net_id: 0 });
+        slots[7] = Some(crate::inventory::Stack { item: plank, count: 1, net_id: 0 });
+        server.containers.put(at, slots);
+        dispense(&server, at);
+        let left = server.containers.get(at);
+        assert_eq!(left[4].as_ref().map(|s| s.count), Some(2), "one plank used from each slot");
+        assert!(left[7].is_none());
+        let chest = server.containers.get((5, -60, 6));
+        let sticks: i32 = chest.iter().flatten().filter(|s| items::name_of(s.item.id) == Some("minecraft:stick")).map(|s| s.count as i32).sum();
+        assert_eq!(sticks, 4, "sticks went into the chest");
+        // Pulse again: a lone plank is a recipe too (a button).
+        dispense(&server, at);
+        assert_eq!(server.containers.get(at)[4].as_ref().map(|s| s.count), Some(1));
+        let chest = server.containers.get((5, -60, 6));
+        assert!(chest.iter().flatten().any(|s| items::name_of(s.item.id).is_some_and(|n| n.ends_with("button"))));
+    }
 }

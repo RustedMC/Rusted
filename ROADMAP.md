@@ -4,7 +4,7 @@ Rough order of what's next. See [PORTING.md](PORTING.md) for where each part sta
 
 ## Next up
 - Firework rockets launched from the ground, with their explosion effects
-- Cartography table, crafter (beacons, looms and lecterns are done)
+- Maps, then the cartography table (beacons, looms, lecterns and crafters are done)
 
 ## After that
 - PNX's full mob AI (memory, sensors, behaviours) to replace the current simpler AI

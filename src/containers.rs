@@ -38,6 +38,7 @@ pub enum Kind {
     Enchanting,
     Beacon,
     Loom,
+    Crafter,
     Shulker,
     Dispenser,
     Dropper,
@@ -141,6 +142,7 @@ pub fn kind(block: i32) -> Option<Kind> {
         "minecraft:smithing_table" => Some(Kind::Smithing),
         "minecraft:beacon" => Some(Kind::Beacon),
         "minecraft:loom" => Some(Kind::Loom),
+        "minecraft:crafter" => Some(Kind::Crafter),
         n if n.ends_with("shulker_box") => Some(Kind::Shulker),
         _ => None,
     }

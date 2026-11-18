@@ -128,6 +128,7 @@ fn place_of(info: &ItemStackRequestSlotInfo<Protocol>) -> Option<Place> {
         ContainerEnumName::CursorContainer => Some(Place::Cursor),
         ContainerEnumName::CreatedOutputContainer => Some(Place::Created),
         ContainerEnumName::LevelEntityContainer | ContainerEnumName::BarrelContainer if slot < 2 * CHEST_SLOTS => Some(Place::Open(slot)),
+        ContainerEnumName::CrafterLevelEntityContainer if slot < 9 => Some(Place::Open(slot)),
         ContainerEnumName::FurnaceIngredientContainer
         | ContainerEnumName::BlastFurnaceIngredientContainer
         | ContainerEnumName::SmokerIngredientContainer => Some(Place::Open(0)),

@@ -105,6 +105,18 @@ pub fn orient(block: i32, click: &Click) -> Vec<((i32, i32, i32), i32)> {
         };
         b = with(b, &[("minecraft:facing_direction", State::Str(dir.into()))]);
     }
+    if has_state(b, "orientation") {
+        // Crafters: the front (output) faces the player, the top points up or toward them.
+        let side = look.opposite().name();
+        let o = if click.pitch > 45.0 {
+            format!("up_{}", look.name())
+        } else if click.pitch < -45.0 {
+            format!("down_{}", look.name())
+        } else {
+            format!("{side}_up")
+        };
+        b = with(b, &[("orientation", State::Str(o))]);
+    }
     let bname = crate::blocks::entry(b).map_or("", |e| e.name.as_str());
     if bname.contains("repeater") || bname.contains("comparator") {
         // PNX diodes face the player and output the way the player looks
