@@ -74,6 +74,11 @@ Plugins with the same priority run in load order.
 | `on_entity_spawn(server, kind, pos) -> bool` | Mob about to spawn (natural, `/summon`, breeding) | `false` stops it |
 | `on_explosion(server, pos, power: f32) -> bool` | Creeper, TNT or respawn anchor about to explode | `false` stops it |
 | `on_mob_target(server, mob: i64, kind: &str, player) -> bool` | A hostile mob wants to go after a player | `false` leaves them alone |
+| `on_block_burn(server, pos, block: &str, spread: bool) -> bool` | Fire spreading to a block (`spread`) or burning one away | `false` stops it |
+| `on_explosion_blocks(server, at, blocks: &mut Vec<pos>)` | An explosion is about to break these blocks | Remove positions to keep them, clear for no block damage |
+| `on_entity_tame(server, player, mob, kind) -> bool` | Trying to tame a wolf, cat or horse | `false` stops it |
+| `on_entity_breed(server, kind, parents) -> bool` | Two mobs are about to breed | `false`: no baby |
+| `on_portal_create(server, player, kind: &str) -> bool` | Lighting a `"nether"` or `"end"` portal | `false` keeps it unlit |
 | `on_block_grow(server, pos, from: &str, to: &str) -> bool` | A block changes by itself: crops, saplings, grass spreading, leaves decaying, ice melting | `false` keeps it as it is |
 | `on_weather_change(server, weather: &str) -> bool` | Weather changing to `"clear"`, `"rain"` or `"thunder"` | `false` keeps it |
 

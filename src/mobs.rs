@@ -852,6 +852,11 @@ impl Mobs {
 
     /// A player right-clicked mob `id` holding `held`. Returns what to do with the held item.
     pub fn interact(&self, server: &Server, id: i64, held: Option<&str>, player: i64) -> Use {
+        // Asked before locking the mob list, so a plugin can look at mobs without a deadlock.
+        let tame_ok = match (self.kind_of(id), server.get(player)) {
+            (Some(k), Some(p)) if matches!(k, Kind::Wolf | Kind::Cat) || k.horse_like() => server.plugins.entity_tame(server, &p, id, k.identifier()),
+            _ => true,
+        };
         let mut mobs = self.mobs.lock();
         let Some(m) = mobs.get_mut(&id) else { return Use::Nothing };
         let held = held.unwrap_or("");
@@ -918,7 +923,7 @@ impl Mobs {
             Kind::Cat => held.ends_with(":cod") || held.ends_with(":salmon"),
             _ => false,
         };
-        if tame_food && m.owner.is_none() {
+        if tame_food && m.owner.is_none() && tame_ok {
             if self.rand().is_multiple_of(3) {
                 m.owner = Some(player);
                 m.aggro = None;
@@ -1215,7 +1220,8 @@ impl Mobs {
                     if m.buck > 0 {
                         m.buck -= 1;
                         if m.buck == 0 {
-                            if self.rand() % 100 < m.temper {
+                            let tame_ok = server.get(r).is_none_or(|p| server.plugins.entity_tame(server, &p, id, m.kind.identifier()));
+                            if tame_ok && self.rand() % 100 < m.temper {
                                 m.owner = Some(r);
                                 out.extend([event(id, ActorEvent::TamingSucceeded), data_packet(&m)]);
                             } else {
@@ -2389,6 +2395,11 @@ impl Mobs {
 
     /// Two animals in love met: both cool down and a baby appears between them.
     fn breed(&self, server: &Server, m: &mut Mob, partner: i64, out: &mut Vec<Protocol>) {
+        if !server.plugins.entity_breed(server, m.kind.identifier(), (m.id, partner)) {
+            m.love = 0;
+            m.cooldown = BREED_COOLDOWN;
+            return;
+        }
         let Some(p) = self.mobs.lock().get_mut(&partner).map(|p| {
             p.love = 0;
             p.cooldown = BREED_COOLDOWN;
@@ -2747,14 +2758,18 @@ pub fn explode(server: &Server, at: (f32, f32, f32), power: f32, by: &'static st
                     ignite_tnt(server, (x, y, z), 5 + ((x ^ y ^ z) & 7) as u32 * 2);
                     continue;
                 }
-                server.set_block_quiet(0, x, y, z, crate::world::AIR);
                 blown.push((x, y, z));
-                // A third of blown-up blocks drop (vanilla creeper yield), as if mined.
-                if (x * 31 + y * 17 + z * 7).rem_euclid(3) == 0 {
-                    for (item, n) in crate::drops::drops(b, (x, y, z), Some("minecraft:diamond_pickaxe")) {
-                        server.entities.drop_item(server, item, n, (x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5));
-                    }
-                }
+            }
+        }
+    }
+    server.plugins.explosion_blocks(server, at, &mut blown);
+    for &(x, y, z) in &blown {
+        let b = w.get(x, y, z);
+        server.set_block_quiet(0, x, y, z, crate::world::AIR);
+        // A third of blown-up blocks drop (vanilla creeper yield), as if mined.
+        if (x * 31 + y * 17 + z * 7).rem_euclid(3) == 0 {
+            for (item, n) in crate::drops::drops(b, (x, y, z), Some("minecraft:diamond_pickaxe")) {
+                server.entities.drop_item(server, item, n, (x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5));
             }
         }
     }

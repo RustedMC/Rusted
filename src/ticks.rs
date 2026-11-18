@@ -319,6 +319,11 @@ pub(crate) fn fire_ticks(server: &players::Server, rng: &mut u64) {
         }
         for (q, b) in changes {
             let old = server.world.get(q.0, q.1, q.2);
+            let spread = blocks::entry(b).is_some_and(|e| e.name == "minecraft:fire");
+            let burned = b == world::AIR && old != world::AIR;
+            if q != p && (spread || burned) && !server.plugins.block_burn(server, q, blocks::entry(old).map_or("", |e| e.name.as_str()), spread) {
+                continue;
+            }
             if q != p && blocks::entry(old).is_some_and(|e| e.name == "minecraft:tnt") {
                 mobs::ignite_tnt(server, q, 40);
                 continue;

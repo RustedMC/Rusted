@@ -233,7 +233,10 @@ impl Session {
             };
             if let Some(o) = useblock::use_block(&self.server.world, (p.x, p.y, p.z), &ctx) {
                 apply_use(&self.server, self.id, (p.x, p.y, p.z), &o);
-                if clicked_name == "minecraft:end_portal_frame" && let Some(portal) = portal::light_end(&self.server.world, (p.x, p.y, p.z)) {
+                if clicked_name == "minecraft:end_portal_frame"
+                    && let Some(portal) = portal::light_end(&self.server.world, (p.x, p.y, p.z))
+                    && self.server.get(self.id).is_none_or(|me| self.server.plugins.portal_create(&self.server, &me, "end"))
+                {
                     for ((bx, by, bz), b) in portal {
                         self.server.set_block_quiet(self.id, bx, by, bz, b);
                     }
@@ -279,7 +282,9 @@ impl Session {
         if held_name == "minecraft:flint_and_steel" && spawn::can_build(&self.mode) {
             let (ox, oy, oz) = placement::face_offset(u.block_face);
             let at = (p.x + ox, p.y + oy, p.z + oz);
-            if let Some(portal) = portal::light_nether(&self.server.world, at) {
+            if let Some(portal) = portal::light_nether(&self.server.world, at)
+                && self.server.get(self.id).is_none_or(|me| self.server.plugins.portal_create(&self.server, &me, "nether"))
+            {
                 for ((bx, by, bz), b) in portal {
                     self.server.set_block_quiet(self.id, bx, by, bz, b);
                 }

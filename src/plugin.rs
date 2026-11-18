@@ -248,6 +248,31 @@ pub trait Plugin: Send + Sync {
         true
     }
 
+    /// Fire is spreading to `pos` (`spread`) or burning away the block there. Return false to stop it.
+    fn on_block_burn(&self, _server: &Server, _pos: (i32, i32, i32), _block: &str, _spread: bool) -> bool {
+        true
+    }
+
+    /// An explosion at `at` is about to break `blocks`. Remove positions to keep those blocks
+    /// (clear it for a blast that only hurts mobs and players).
+    fn on_explosion_blocks(&self, _server: &Server, _at: (f32, f32, f32), _blocks: &mut Vec<(i32, i32, i32)>) {}
+
+    /// Player is trying to tame mob `mob` of `kind` (feeding a wolf or cat, riding a horse).
+    /// Return false to stop it.
+    fn on_entity_tame(&self, _server: &Server, _player: &PlayerInfo, _mob: i64, _kind: &str) -> bool {
+        true
+    }
+
+    /// Two mobs of `kind` are about to breed. Return false: no baby.
+    fn on_entity_breed(&self, _server: &Server, _kind: &str, _parents: (i64, i64)) -> bool {
+        true
+    }
+
+    /// Player is lighting a portal, `"nether"` or `"end"`. Return false to keep it unlit.
+    fn on_portal_create(&self, _server: &Server, _player: &PlayerInfo, _kind: &str) -> bool {
+        true
+    }
+
     /// (name, description) of commands this plugin handles, for autocomplete.
     fn commands(&self) -> Vec<(&'static str, &'static str)> {
         vec![]
@@ -469,6 +494,26 @@ impl Plugins {
 
     pub fn mob_target(&self, s: &Server, mob: i64, kind: &str, player: &PlayerInfo) -> bool {
         self.cancellable(|pl| pl.on_mob_target(s, mob, kind, player))
+    }
+
+    pub fn block_burn(&self, s: &Server, pos: (i32, i32, i32), block: &str, spread: bool) -> bool {
+        self.cancellable(|pl| pl.on_block_burn(s, pos, block, spread))
+    }
+
+    pub fn explosion_blocks(&self, s: &Server, at: (f32, f32, f32), blocks: &mut Vec<(i32, i32, i32)>) {
+        self.each(|pl| pl.on_explosion_blocks(s, at, blocks));
+    }
+
+    pub fn entity_tame(&self, s: &Server, p: &PlayerInfo, mob: i64, kind: &str) -> bool {
+        self.cancellable(|pl| pl.on_entity_tame(s, p, mob, kind))
+    }
+
+    pub fn entity_breed(&self, s: &Server, kind: &str, parents: (i64, i64)) -> bool {
+        self.cancellable(|pl| pl.on_entity_breed(s, kind, parents))
+    }
+
+    pub fn portal_create(&self, s: &Server, p: &PlayerInfo, kind: &str) -> bool {
+        self.cancellable(|pl| pl.on_portal_create(s, p, kind))
     }
 
     /// The first refusal message any plugin gives, if one does.
