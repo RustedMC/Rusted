@@ -2308,7 +2308,7 @@ impl Mobs {
                 a.pos = next;
             }
             a.vel.1 -= ARROW_GRAVITY;
-            a.vel = (a.vel.0 * 0.99, a.vel.1 * 0.99, a.vel.2 * 0.99);
+            a.vel = (a.vel.0 * 0.9801, a.vel.1 * 0.9801, a.vel.2 * 0.9801); // 0.99 drag, twice
             out.push(Protocol::MoveActorAbsolutePacket(Box::new(bedrock::protocol::v662::packets::MoveActorAbsolutePacket {
                 move_data: bedrock::protocol::v662::types::MoveActorAbsoluteData {
                     actor_runtime_id: ActorRuntimeID(a.id as u64),
@@ -2775,7 +2775,9 @@ impl Mobs {
 }
 
 const HOSTILE_CAP: usize = 120;
-const ARROW_GRAVITY: f32 = 0.05;
+// PNX EntityArrow: 0.05 a game tick. Velocities here are per 10 Hz tick (two game ticks of
+// travel), so the speed lost each tick is 2 x 2 x 0.05.
+const ARROW_GRAVITY: f32 = 0.2;
 
 fn dist2(a: (f32, f32, f32), b: (f32, f32, f32)) -> f32 {
     (a.0 - b.0).powi(2) + (a.1 - b.1).powi(2) + (a.2 - b.2).powi(2)

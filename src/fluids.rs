@@ -91,13 +91,79 @@ fn read(id: i32) -> Option<(Kind, Level)> {
 }
 
 fn solid(id: i32) -> bool {
-    id != AIR && read(id).is_none()
+    id != AIR && read(id).is_none() && !washable(id)
+}
+
+/// Blocks flowing water and lava break and replace: plants, torches, rails, redstone bits
+/// (PNX `Block.canBeFlowedInto`).
+fn washable(id: i32) -> bool {
+    use crate::overworld::feature::blocks::is_plant;
+    is_plant(id)
+        || crate::blocks::entry(id).is_some_and(|e| {
+            let n = e.name.trim_start_matches("minecraft:");
+            n.contains("torch") || n.contains("rail") || n.contains("sapling") || n.ends_with("_button") || n.ends_with("carpet")
+                || matches!(n, "redstone_wire" | "unpowered_repeater" | "powered_repeater" | "unpowered_comparator" | "powered_comparator" | "fire" | "soul_fire" | "tripwire" | "trip_wire" | "lever")
+        })
+}
+
+const SIDES: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+
+/// Which ways a fluid at `p` spreads: toward the nearest spot it can fall from, looking up
+/// to 4 blocks (water) or 2 (lava) away; every way if there's none (vanilla getOptimalFlowDirections).
+fn flow_dirs(world: &World, p: (i32, i32, i32), kind: Kind) -> [bool; 4] {
+    let reach = match kind {
+        Kind::Water => 4,
+        Kind::Lava => 2,
+    };
+    let open = |x: i32, y: i32, z: i32| !solid(world.get(x, y, z)) && read(world.get(x, y, z)).is_none_or(|(k, l)| k == kind && l != Level::Source);
+    let drop_at = |x: i32, z: i32| !solid(world.get(x, p.1 - 1, z));
+    let mut cost = [i32::MAX; 4];
+    for (i, (dx, dz)) in SIDES.into_iter().enumerate() {
+        let start = (p.0 + dx, p.2 + dz);
+        if !open(start.0, p.1, start.1) {
+            continue;
+        }
+        // Breadth-first over open blocks on this level.
+        let mut seen = std::collections::HashSet::from([start]);
+        let mut edge = vec![start];
+        for d in 0..reach {
+            if edge.iter().any(|&(x, z)| drop_at(x, z)) {
+                cost[i] = d;
+                break;
+            }
+            let mut next = Vec::new();
+            for (x, z) in edge {
+                for (ex, ez) in SIDES {
+                    let q = (x + ex, z + ez);
+                    if q != (p.0, p.2) && open(q.0, p.1, q.1) && seen.insert(q) {
+                        next.push(q);
+                    }
+                }
+            }
+            edge = next;
+        }
+    }
+    let best = *cost.iter().min().unwrap();
+    if best == i32::MAX {
+        return [true; 4];
+    }
+    cost.map(|c| c == best)
 }
 
 fn next_state(world: &World, (x, y, z): (i32, i32, i32)) -> Option<i32> {
     let current = world.get(x, y, z);
     let here = read(current);
-    if here.is_some_and(|(_, l)| l == Level::Source) || (current != AIR && here.is_none()) {
+    // Lava touching water hardens: a source into obsidian, flowing lava into cobblestone.
+    if let Some((Kind::Lava, level)) = here {
+        let wet = [(1, 0, 0), (-1, 0, 0), (0, 0, 1), (0, 0, -1), (0, 1, 0)]
+            .iter()
+            .any(|(dx, dy, dz)| read(world.get(x + dx, y + dy, z + dz)).is_some_and(|(k, _)| k == Kind::Water));
+        if wet {
+            let name = if level == Level::Source { "minecraft:obsidian" } else { "minecraft:cobblestone" };
+            return crate::blocks::any_state(name);
+        }
+    }
+    if here.is_some_and(|(_, l)| l == Level::Source) || (current != AIR && here.is_none() && !washable(current)) {
         return None; // sources stay; solid blocks are never replaced
     }
     let kinds: &[Kind] = match here {
@@ -118,6 +184,11 @@ fn next_state(world: &World, (x, y, z): (i32, i32, i32)) -> Option<i32> {
                 let Some(level) = is(world.get(nx, y, nz)) else { continue };
                 if level == Level::Source {
                     sources += 1;
+                }
+                // The neighbour only flows this way if it's one of its best ways to a drop.
+                let back = SIDES.iter().position(|&d| d == (-dx, -dz)).unwrap();
+                if !flow_dirs(world, (nx, y, nz), kind)[back] {
+                    continue;
                 }
                 // only spread sideways once it can't fall any more
                 let below = world.get(nx, y - 1, nz);
@@ -273,5 +344,37 @@ mod tests {
         f.notify((2, -60, 0));
         run(&w, &f);
         assert_eq!(read(w.get(1, -60, 0)), Some((Kind::Water, Level::Source)));
+    }
+
+    #[test]
+    fn water_heads_for_holes_washes_plants_and_hardens_lava() {
+        // A hole 2 blocks east: the water goes that way only, not west.
+        let w = World::default();
+        let f = Fluids::default();
+        w.set(2, -61, 0, AIR);
+        w.set(0, -60, 0, Kind::Water.source());
+        f.notify((0, -60, 0));
+        run(&w, &f);
+        assert!(read(w.get(1, -60, 0)).is_some(), "flows toward the hole");
+        assert_eq!(w.get(-1, -60, 0), AIR, "not away from it");
+
+        // Tall grass gets washed away.
+        let w = World::default();
+        let f = Fluids::default();
+        let grass = crate::blocks::any_state("minecraft:short_grass").unwrap();
+        w.set(1, -60, 0, grass);
+        w.set(0, -60, 0, Kind::Water.source());
+        f.notify((0, -60, 0));
+        run(&w, &f);
+        assert!(read(w.get(1, -60, 0)).is_some(), "water replaced the grass");
+
+        // Lava source next to water: obsidian.
+        let w = World::default();
+        let f = Fluids::default();
+        w.set(5, -60, 5, Kind::Lava.source());
+        w.set(6, -60, 5, Kind::Water.source());
+        f.notify((5, -60, 5));
+        run(&w, &f);
+        assert_eq!(crate::blocks::entry(w.get(5, -60, 5)).map(|e| e.name.as_str()), Some("minecraft:obsidian"));
     }
 }
