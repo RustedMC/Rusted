@@ -86,6 +86,7 @@ pub enum Kind {
     EnderDragon,
     EndCrystal,
     Shulker,
+    Boat,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -134,7 +135,7 @@ impl Kind {
 
     /// Mobs a player can sit on. Pigs, striders and camels need a saddle first.
     pub fn rideable(self) -> bool {
-        self.horse_like() || matches!(self, Kind::Pig | Kind::Strider | Kind::Camel)
+        self.horse_like() || matches!(self, Kind::Pig | Kind::Strider | Kind::Camel | Kind::Boat)
     }
 
     /// How far the rider's feet sit above the mob's feet.
@@ -145,6 +146,7 @@ impl Kind {
             Kind::Pig => 0.65,
             Kind::Strider => 1.4,
             Kind::Camel => 1.65,
+            Kind::Boat => 0.1,
             _ => 1.0,
         }
     }
@@ -163,7 +165,7 @@ impl Kind {
     }
 
     pub const PASSIVE: [Kind; 4] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken];
-    pub const ALL: [Kind; 71] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken, Kind::Zombie, Kind::Skeleton, Kind::Creeper, Kind::Spider, Kind::Enderman, Kind::Villager, Kind::IronGolem, Kind::Wolf, Kind::Cat, Kind::Squid, Kind::Cod, Kind::Salmon, Kind::Drowned, Kind::Rabbit, Kind::Horse, Kind::Donkey, Kind::Mule, Kind::Llama, Kind::Goat, Kind::Fox, Kind::Panda, Kind::PolarBear, Kind::Mooshroom, Kind::Ocelot, Kind::Turtle, Kind::Armadillo, Kind::Camel, Kind::Sniffer, Kind::Frog, Kind::Axolotl, Kind::GlowSquid, Kind::TropicalFish, Kind::Pufferfish, Kind::Dolphin, Kind::Bat, Kind::Parrot, Kind::Bee, Kind::Allay, Kind::Husk, Kind::Stray, Kind::Bogged, Kind::ZombieVillager, Kind::CaveSpider, Kind::Silverfish, Kind::Witch, Kind::Slime, Kind::Phantom, Kind::Pillager, Kind::Vindicator, Kind::Evoker, Kind::Ravager, Kind::Vex, Kind::Guardian, Kind::ElderGuardian, Kind::Breeze, Kind::Warden, Kind::WitherSkeleton, Kind::Blaze, Kind::Ghast, Kind::MagmaCube, Kind::Piglin, Kind::ZombiePigman, Kind::Hoglin, Kind::Strider, Kind::EnderDragon, Kind::EndCrystal, Kind::Shulker];
+    pub const ALL: [Kind; 72] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken, Kind::Zombie, Kind::Skeleton, Kind::Creeper, Kind::Spider, Kind::Enderman, Kind::Villager, Kind::IronGolem, Kind::Wolf, Kind::Cat, Kind::Squid, Kind::Cod, Kind::Salmon, Kind::Drowned, Kind::Rabbit, Kind::Horse, Kind::Donkey, Kind::Mule, Kind::Llama, Kind::Goat, Kind::Fox, Kind::Panda, Kind::PolarBear, Kind::Mooshroom, Kind::Ocelot, Kind::Turtle, Kind::Armadillo, Kind::Camel, Kind::Sniffer, Kind::Frog, Kind::Axolotl, Kind::GlowSquid, Kind::TropicalFish, Kind::Pufferfish, Kind::Dolphin, Kind::Bat, Kind::Parrot, Kind::Bee, Kind::Allay, Kind::Husk, Kind::Stray, Kind::Bogged, Kind::ZombieVillager, Kind::CaveSpider, Kind::Silverfish, Kind::Witch, Kind::Slime, Kind::Phantom, Kind::Pillager, Kind::Vindicator, Kind::Evoker, Kind::Ravager, Kind::Vex, Kind::Guardian, Kind::ElderGuardian, Kind::Breeze, Kind::Warden, Kind::WitherSkeleton, Kind::Blaze, Kind::Ghast, Kind::MagmaCube, Kind::Piglin, Kind::ZombiePigman, Kind::Hoglin, Kind::Strider, Kind::EnderDragon, Kind::EndCrystal, Kind::Shulker, Kind::Boat];
 
     pub fn spec(self) -> &'static Spec {
         match self {
@@ -238,6 +240,7 @@ impl Kind {
             Kind::EndCrystal => &Spec { id: "minecraft:ender_crystal", display: "End Crystal", health: 1.0, size: (2.0, 2.0), speed: 0.0, melee: 0.0, class: Class::Passive, food: &[], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
             Kind::Shulker => &Spec { id: "minecraft:shulker", display: "Shulker", health: 30.0, size: (1.0, 1.0), speed: 0.0, melee: 0.0, class: Class::Hostile, food: &[], drops: &[("minecraft:shulker_shell", 0, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: Some("minecraft:shulker_bullet"), hit_effect: None },
             Kind::Strider => &Spec { id: "minecraft:strider", display: "Strider", health: 20.0, size: (0.9, 1.7), speed: 0.1, melee: 0.0, class: Class::Passive, food: &["minecraft:warped_fungus"], drops: &[("minecraft:string", 0, 5)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Boat => &Spec { id: "minecraft:boat", display: "Boat", health: 4.0, size: (1.4, 0.455), speed: 0.0, melee: 0.0, class: Class::Passive, food: &[], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
         }
     }
 
@@ -555,6 +558,9 @@ fn data_of(m: &Mob) -> Vec<DataItem<Protocol>> {
     if let Some(DataItem { data_item_type: T::Int64(f), .. }) = d.first_mut() {
         *f |= bits;
     }
+    if m.kind == Kind::Boat {
+        d.push(DataItem { data_item_id: Variant, data_item_type: T::Int(m.color as i32) });
+    }
     if m.kind == Kind::Sheep {
         d.push(DataItem { data_item_id: ColorIndex, data_item_type: T::Byte(m.color as i8) });
     }
@@ -592,6 +598,26 @@ fn sheep_color(r: u32) -> u8 {
         9_684..9_984 => 12,
         _ => 6,
     }
+}
+
+/// Boat wood types in Bedrock's variant order.
+pub const BOAT_WOOD: [&str; 10] = ["oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "bamboo", "cherry", "pale_oak"];
+
+/// The item a boat of this wood drops as (bamboo ones are rafts).
+pub fn boat_item(wood: u8) -> String {
+    match BOAT_WOOD.get(wood as usize).copied().unwrap_or("oak") {
+        "bamboo" => "minecraft:bamboo_raft".into(),
+        w => format!("minecraft:{w}_boat"),
+    }
+}
+
+/// Which boat a held item places, if any. Chest boats aren't supported yet.
+pub fn boat_wood(item: &str) -> Option<u8> {
+    let wood = match item.strip_prefix("minecraft:")? {
+        "bamboo_raft" => "bamboo",
+        n => n.strip_suffix("_boat").filter(|w| !w.ends_with("_chest"))?,
+    };
+    BOAT_WOOD.iter().position(|w| *w == wood).map(|i| i as u8)
 }
 
 const WOOL: [&str; 16] = [
@@ -729,6 +755,19 @@ impl Mobs {
         self.mobs.lock().len()
     }
 
+    /// Puts a boat of `wood` (an index into BOAT_WOOD) at `pos`, facing `yaw`.
+    pub fn spawn_boat(&self, server: &Server, wood: u8, pos: (f32, f32, f32), yaw: f32) -> i64 {
+        let id = self.spawn(server, Kind::Boat, pos);
+        let packet = self.mobs.lock().get_mut(&id).map(|m| {
+            (m.baby, m.color, m.yaw, m.head_yaw) = (0, wood, yaw, yaw);
+            data_packet(m)
+        });
+        if let Some(p) = packet {
+            broadcast(server, p);
+        }
+        id
+    }
+
     pub fn spawn(&self, server: &Server, kind: Kind, pos: (f32, f32, f32)) -> i64 {
         self.spawn_with(server, kind, pos, false)
     }
@@ -839,7 +878,7 @@ impl Mobs {
                 broadcast(server, event(id, ActorEvent::Feed));
                 return Use::Consume;
             }
-            let can_ride = m.kind.horse_like() || m.saddled;
+            let can_ride = m.kind.horse_like() || m.saddled || m.kind == Kind::Boat;
             if can_ride && m.rider.is_none() && !m.kind.food(held) {
                 m.rider = Some(player);
                 m.path.clear();
@@ -1093,13 +1132,16 @@ impl Mobs {
             }
             if let Some(p) = attacker && !baby {
                 let points = match kind {
-                    Kind::IronGolem | Kind::Villager => 0,
+                    Kind::IronGolem | Kind::Villager | Kind::Boat => 0,
                     k if k.hostile() => 5,
                     _ => 1 + (self.rand() % 3) as i32,
                 };
                 if points > 0 {
                     let _ = server.events.send(Event::Xp { to: p, points });
                 }
+            }
+            if kind == Kind::Boat && let Some(it) = crate::items::item_by_name(&boat_item(slime)) {
+                server.entities.drop_item(server, it, 1, (pos.0, pos.1 + 0.5, pos.2));
             }
             for &(item, lo, hi) in kind.drops() {
                 // Looting raises the most of each drop by its level (PNX `EntityLiving.getDrops`).
@@ -1177,8 +1219,8 @@ impl Mobs {
                     out.push(event(id, ActorEvent::InLoveHearts));
                 }
             }
-            if m.kind == Kind::EndCrystal {
-                continue; // sits on its pillar
+            if matches!(m.kind, Kind::EndCrystal | Kind::Boat) {
+                continue; // crystals sit on their pillar, boats stay where they were left
             }
             m.weak = m.weak.saturating_sub(1);
             if m.curing > 0 {
@@ -2841,7 +2883,7 @@ mod tests {
         assert!((2..=4).contains(&kids), "split into {kids}");
         assert!(server.mobs.count() >= before + 3);
         assert_eq!(Kind::from_name("cave_spider").map(|k| k.spec().hit_effect), Some(Some((19, 7))));
-        assert_eq!(Kind::ALL.len(), 71);
+        assert_eq!(Kind::ALL.len(), 72);
 
         // An ender pearl thrown straight down lands and teleports its thrower.
         let mut rx = server.events.subscribe();
@@ -2961,6 +3003,21 @@ mod tests {
         }
         let m = server.mobs.mobs.lock()[&wild].clone();
         assert!(m.rider.is_none() && m.owner.is_none() && m.temper == 5, "bucked: {:?} {:?} {}", m.rider, m.owner, m.temper);
+
+        // Boats: every wood maps to its item and back, chest boats aren't placed.
+        for w in 0..BOAT_WOOD.len() as u8 {
+            assert_eq!(boat_wood(&boat_item(w)), Some(w), "{}", boat_item(w));
+        }
+        assert_eq!(boat_item(7), "minecraft:bamboo_raft");
+        assert_eq!(boat_wood("minecraft:oak_chest_boat"), None);
+        assert_eq!(boat_wood("minecraft:boat"), None);
+        // Placed boats are never babies, need no saddle, and don't drift off on their own.
+        let boat = server.mobs.spawn_boat(&server, 2, at(60.5), 45.0);
+        server.mobs.tick(&server);
+        let b = server.mobs.mobs.lock()[&boat].clone();
+        assert!(b.baby == 0 && b.color == 2 && b.pos == at(60.5), "{:?}", b.pos);
+        assert!(matches!(server.mobs.interact(&server, boat, None, 7), Use::Mount));
+        server.mobs.dismount(&server, 7);
 
         // Saddles and temper are saved with the world.
         let file = std::env::temp_dir().join(format!("rusted_ride_{}.txt", std::process::id()));

@@ -82,6 +82,20 @@ impl Session {
         }
         let held_name = items::name_of(u.held_item.id).unwrap_or("");
         let clicked_name = blocks::entry(clicked).map_or("", |e| e.name.as_str());
+        // Boats go on the block clicked, or float on water.
+        if let Some(wood) = mobs::boat_wood(held_name)
+            && !matches!(self.mode, GameType::Spectator)
+            && let Some(me) = self.server.get(self.id)
+        {
+            let water = crate::overworld::feature::blocks::is_water(clicked);
+            let y = if water { p.y as f32 + 0.9 } else { p.y as f32 + 1.0 };
+            self.server.mobs.spawn_boat(&self.server, wood, (p.x as f32 + 0.5, y, p.z as f32 + 0.5), me.rot.1);
+            if survival_like(&self.mode) {
+                self.inv.use_one(self.selected_slot as usize);
+                let _ = self.conn.send(&[self.inv.content_packet()]).await;
+            }
+            return;
+        }
         // Beds set your spawn point (sleeping isn't simulated yet).
         if !self.sneaking && (clicked_name.ends_with("_bed") || clicked_name == "minecraft:bed") {
             self.use_bed(u).await;
