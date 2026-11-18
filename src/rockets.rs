@@ -18,6 +18,12 @@ struct Rocket {
     lifetime: u32,
     /// Shot from a crossbow: flies straight instead of climbing faster and faster.
     shot: bool,
+    /// Firework stars it carries; only rockets with some hurt when they burst.
+    stars: usize,
+    /// Who fired it, so the burst doesn't count as their own kill.
+    by: Option<i64>,
+    /// Boosting a gliding player: it rides along with them and never hurts anyone.
+    follow: Option<i64>,
 }
 
 static ROCKETS: Mutex<Vec<Rocket>> = Mutex::new(Vec::new());
@@ -30,6 +36,10 @@ fn relay(server: &Server, p: Protocol) {
 pub fn launch(server: &Server, at: (f32, f32, f32), item_data: &[u8]) {
     let id = crate::players::next_id();
     let fireworks = ItemData::read(item_data).get("Fireworks").cloned().unwrap_or(Tag::Compound(vec![]));
+    let stars = match &fireworks {
+        Tag::Compound(f) => f.iter().find(|(k, _)| k == "Explosions").map_or(0, |(_, v)| if let Tag::List(_, l) = v { l.len() } else { 0 }),
+        _ => 0,
+    };
     let flight = match &fireworks {
         Tag::Compound(f) => f.iter().find(|(k, _)| k == "Flight").and_then(|(_, v)| if let Tag::Byte(b) = v { Some(*b as u32) } else { None }).unwrap_or(1),
         _ => 1,
@@ -61,27 +71,60 @@ pub fn launch(server: &Server, at: (f32, f32, f32), item_data: &[u8]) {
     }));
     relay(server, add);
     relay(server, crate::packets::play_sound("firework.launch", at));
-    ROCKETS.lock().push(Rocket { id, pos: at, vel: (0.0, 0.05, 0.0), age: 0, lifetime, shot: false });
+    ROCKETS.lock().push(Rocket { id, pos: at, vel: (0.0, 0.05, 0.0), age: 0, lifetime, shot: false, stars, by: None, follow: None });
 }
 
 /// A rocket fired from a crossbow at `vel` (blocks a game tick).
-pub fn shoot(server: &Server, from: (f32, f32, f32), vel: (f32, f32, f32)) {
-    launch(server, from, &[]);
+pub fn shoot(server: &Server, from: (f32, f32, f32), vel: (f32, f32, f32), item_data: &[u8], by: i64) {
+    launch(server, from, item_data);
     if let Some(r) = ROCKETS.lock().last_mut() {
-        (r.vel, r.shot) = (vel, true);
+        (r.vel, r.shot, r.by) = (vel, true, Some(by));
+    }
+}
+
+/// The rocket that boosts a gliding player: shown flying with them until it burns out.
+pub fn boost(server: &Server, player: i64, at: (f32, f32, f32), item_data: &[u8]) {
+    launch(server, at, item_data);
+    if let Some(r) = ROCKETS.lock().last_mut() {
+        (r.follow, r.stars) = (Some(player), 0);
+    }
+}
+
+/// A burst with stars hurts what's within 5 blocks: 5 + 2 a star at the centre, less further
+/// out (vanilla FireworkRocketEntity.explode).
+fn burst_damage(server: &Server, at: (f32, f32, f32), stars: usize, by: Option<i64>) {
+    if stars == 0 {
+        return;
+    }
+    let base = 5.0 + 2.0 * stars as f32;
+    let scaled = |d: f32| base * ((5.0 - d) / 5.0).max(0.0).sqrt();
+    for p in server.all() {
+        let d = ((p.pos.0 - at.0).powi(2) + (p.pos.1 - 1.0 - at.1).powi(2) + (p.pos.2 - at.2).powi(2)).sqrt();
+        if d <= 5.0 {
+            let _ = server.events.send(Event::Damage { to: p.id, damage: crate::health::Damage::Explosion(scaled(d), "Firework Rocket"), knock: (0.0, 0.0, 0.0) });
+        }
+    }
+    for (id, d) in server.mobs.near(at, 5.0) {
+        server.mobs.hurt(server, id, scaled(d), at, by);
     }
 }
 
 /// Moves rockets and bursts the ones that are done. Run at 10 Hz.
 pub fn tick(server: &Server) {
     let mut out = Vec::new();
+    let mut bursts = Vec::new();
     ROCKETS.lock().retain_mut(|r| {
-        for _ in 0..2 {
-            if !r.shot {
-                r.vel = (r.vel.0 * 1.15, r.vel.1 + 0.04, r.vel.2 * 1.15);
+        if let Some(p) = r.follow.and_then(|id| server.get(id)) {
+            r.pos = (p.pos.0, p.pos.1 - 1.0, p.pos.2);
+            r.age += 2;
+        } else {
+            for _ in 0..2 {
+                if !r.shot {
+                    r.vel = (r.vel.0 * 1.15, r.vel.1 + 0.04, r.vel.2 * 1.15);
+                }
+                r.pos = (r.pos.0 + r.vel.0, r.pos.1 + r.vel.1, r.pos.2 + r.vel.2);
+                r.age += 1;
             }
-            r.pos = (r.pos.0 + r.vel.0, r.pos.1 + r.vel.1, r.pos.2 + r.vel.2);
-            r.age += 1;
         }
         if r.age >= r.lifetime {
             use bedrock::protocol::v975::enums::ActorEvent;
@@ -92,6 +135,7 @@ pub fn tick(server: &Server) {
                 fire_at_position: None,
             })));
             out.push(crate::packets::play_sound("firework.large_blast", r.pos));
+            bursts.push((r.pos, r.stars, r.by));
             out.push(Protocol::RemoveActorPacket(Box::new(bedrock::protocol::v662::packets::RemoveActorPacket { target_actor_id: ActorUniqueID(r.id) })));
             return false;
         }
@@ -102,6 +146,9 @@ pub fn tick(server: &Server) {
     });
     for p in out {
         relay(server, p);
+    }
+    for (at, stars, by) in bursts {
+        burst_damage(server, at, stars, by);
     }
 }
 

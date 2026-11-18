@@ -33,12 +33,23 @@ impl Session {
             let ammo = |n: Option<&str>| matches!(n, Some("minecraft:arrow" | "minecraft:firework_rocket"));
             let ammo_slot = std::iter::once(inventory::OFFHAND).chain(0..36).find(|&i| ammo(self.inv.held(i).and_then(|s| items::name_of(s.item.id))));
             let loaded = ammo_slot.and_then(|i| self.inv.held(i)).and_then(|s| items::name_of(s.item.id)).unwrap_or("minecraft:arrow");
+            // A rocket keeps its stars inside the crossbow (chargedItem's tag).
+            let ammo_tag = ammo_slot.and_then(|i| self.inv.held(i)).map(|s| crate::itemdata::ItemData::read(&s.item.user_data_buffer).nbt).unwrap_or_default();
             if survival_like(&self.mode) {
                 let Some(a) = ammo_slot else { return };
                 self.inv.use_one(a);
             }
             let mut item = st.item.clone();
             item.user_data_buffer = crossbow_loaded(&data, Some(loaded));
+            if !ammo_tag.is_empty() {
+                use crate::itemdata::{ItemData, Tag};
+                let mut d = ItemData::read(&item.user_data_buffer);
+                if let Some(Tag::Compound(mut c)) = d.get("chargedItem").cloned() {
+                    c.push(("tag".into(), Tag::Compound(ammo_tag)));
+                    d.set("chargedItem", Tag::Compound(c));
+                    item.user_data_buffer = d.write();
+                }
+            }
             self.inv.set_slot(slot, item, st.count);
             let _ = self.server.events.send(players::Event::Relay { from: 0, packet: Box::new(play_sound("crossbow.loading.end", me.pos)) });
             let _ = self.conn.send(&[self.inv.content_packet()]).await;
@@ -74,13 +85,27 @@ impl Session {
         }
         let Some(me) = self.server.get(self.id) else { return false };
         let spread: &[f32] = if enchant::level(&data, enchant::MULTISHOT) > 0 { &[0.0, -10.0, 10.0] } else { &[0.0] };
+        // The rocket's own data (its stars), rebuilt from the crossbow's chargedItem tag.
+        let rocket_data = match crate::itemdata::ItemData::read(&data).get("chargedItem") {
+            Some(crate::itemdata::Tag::Compound(c)) => match c.iter().find(|(k, _)| k == "tag") {
+                Some((_, crate::itemdata::Tag::Compound(t))) => {
+                    let mut d = crate::itemdata::ItemData::read(&[]);
+                    for (k, v) in t {
+                        d.set(k, v.clone());
+                    }
+                    d.write()
+                }
+                _ => vec![],
+            },
+            _ => vec![],
+        };
         let rocket = matches!(crate::itemdata::ItemData::read(&data).get("chargedItem"), Some(crate::itemdata::Tag::Compound(c)) if c.iter().any(|(k, v)| k == "Name" && matches!(v, crate::itemdata::Tag::String(n) if n == "minecraft:firework_rocket")));
         for (i, d) in spread.iter().enumerate() {
             if rocket {
                 // A loaded rocket flies straight where you aim and bursts (vanilla crossbow fireworks).
                 let (pitch, yaw) = (me.rot.0.to_radians(), (me.rot.1 + d).to_radians());
                 let dir = (-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos());
-                crate::rockets::shoot(&self.server, (me.pos.0, me.pos.1 - 0.1, me.pos.2), (dir.0 * 1.6, dir.1 * 1.6, dir.2 * 1.6));
+                crate::rockets::shoot(&self.server, (me.pos.0, me.pos.1 - 0.1, me.pos.2), (dir.0 * 1.6, dir.1 * 1.6, dir.2 * 1.6), &rocket_data, self.id);
                 continue;
             }
             // Only the middle arrow can be picked back up, like vanilla.

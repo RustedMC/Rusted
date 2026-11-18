@@ -258,6 +258,18 @@ pub(crate) fn dispense(server: &players::Server, p: (i32, i32, i32)) {
 pub(crate) fn hopper_ticks(server: &players::Server) {
     server.containers.tick_hoppers(&server.world);
     let hoppers: Vec<_> = server.containers.hoppers.lock().iter().copied().collect();
+    // A chest minecart over a hopper (or in it) gets emptied into it, like a chest would.
+    let carts = server.mobs.chest_carts();
+    for &h in &hoppers {
+        for &(at, store) in &carts {
+            if at == (h.0, h.1 + 1, h.2) || at == h {
+                if let Some(loot) = crate::loot::take(store, crate::inventory::CHEST_SLOTS) {
+                    server.containers.put(store, loot);
+                }
+                server.containers.move_one(store, 0..crate::inventory::CHEST_SLOTS, h, 0..5);
+            }
+        }
+    }
     for h in hoppers {
         server.entities.suck(server, h, |stack| server.containers.hopper_insert(h, stack));
     }

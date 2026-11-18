@@ -8,6 +8,8 @@
 /// What a mob can be doing, highest priority first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Behavior {
+    /// A tamed pet told to sit: stays put whatever happens.
+    Sit,
     /// Hurt: run away for a while.
     Panic,
     /// Hostiles: go after the target player.
@@ -22,6 +24,8 @@ pub enum Behavior {
     HuntVillager,
     /// A baby too far from its parent: walk back to it.
     FollowParent,
+    /// A tamed pet more than 6 blocks from its owner: catch up (teleport if very far).
+    FollowOwner,
     /// Burning in daylight (skeletons, strays), or a villager outside at night: find a roof.
     SeekShade,
     /// Villagers by day: walk back to their job block.
@@ -37,6 +41,7 @@ pub enum Behavior {
 impl Behavior {
     pub fn priority(self) -> u8 {
         match self {
+            Behavior::Sit => 12,
             Behavior::Panic => 11,
             Behavior::Attack => 10,
             Behavior::Breed => 9,
@@ -44,6 +49,7 @@ impl Behavior {
             Behavior::Search => 7,
             Behavior::HuntVillager => 6,
             Behavior::FollowParent => 5,
+            Behavior::FollowOwner => 5,
             Behavior::SeekShade => 4,
             Behavior::GoToWork => 3,
             Behavior::EatGrass => 2,
@@ -57,6 +63,7 @@ impl Behavior {
         match self {
             Behavior::Panic => 2.0,
             Behavior::Breed | Behavior::FollowParent | Behavior::SeekShade => 1.2,
+            Behavior::FollowOwner => 1.4,
             _ => 1.0,
         }
     }
@@ -86,6 +93,10 @@ pub struct Memory {
     pub work: Option<(i32, i32, i32)>,
     /// Villagers: outside at night, wanting a roof.
     pub wants_cover: bool,
+    /// Tamed pets: where the owner is and how far (squared).
+    pub owner_at: Option<((f32, f32, f32), f32)>,
+    /// Golems and wolves: a mob they're fighting.
+    pub prey: Option<(i64, (f32, f32, f32))>,
 }
 
 /// A mob's AI state: its memory, what it's doing and since when.
@@ -115,6 +126,8 @@ pub struct Facts {
     pub roll: u32,
     /// Burning in daylight, and the kind that looks for shade.
     pub sunburnt: bool,
+    /// A pet told to sit.
+    pub sitting: bool,
 }
 
 /// Babies wander back when their parent is further than this (squared).
@@ -125,8 +138,10 @@ impl Brain {
     fn applies(&self, b: Behavior, f: &Facts) -> bool {
         let m = &self.memory;
         match b {
+            Behavior::Sit => f.sitting,
             Behavior::Panic => f.panicking,
-            Behavior::Attack => m.target.is_some(),
+            Behavior::Attack => m.target.is_some() || m.prey.is_some(),
+            Behavior::FollowOwner => m.owner_at.is_some_and(|(_, d2)| d2 > 6.0 * 6.0),
             Behavior::HuntVillager => m.villager.is_some(),
             Behavior::Search => m.last_seen.is_some_and(|(_, left)| left > 0),
             Behavior::SeekShade => f.sunburnt,
@@ -145,7 +160,8 @@ impl Brain {
     /// Picks what to do this tick. Returns the new behaviour if it changed (the caller then
     /// drops the old one's path and starts the new one).
     pub fn decide(&mut self, f: &Facts) -> Option<Behavior> {
-        const ALL: [Behavior; 12] = [
+        const ALL: [Behavior; 14] = [
+            Behavior::Sit,
             Behavior::Panic,
             Behavior::Attack,
             Behavior::Breed,
@@ -153,6 +169,7 @@ impl Brain {
             Behavior::Search,
             Behavior::HuntVillager,
             Behavior::FollowParent,
+            Behavior::FollowOwner,
             Behavior::SeekShade,
             Behavior::GoToWork,
             Behavior::EatGrass,
@@ -261,5 +278,19 @@ mod tests {
         assert_eq!(v.decide(&Facts { sunburnt: true, ..calm }), Some(Behavior::SeekShade));
         // A zombie: run.
         assert_eq!(v.decide(&Facts { panicking: true, ..calm }), Some(Behavior::Panic));
+    }
+
+    #[test]
+    fn pets_sit_fight_and_follow() {
+        let mut w = brain();
+        let calm = Facts { roll: 999, ..Default::default() };
+        w.memory.owner_at = Some(((10.0, 0.0, 0.0), 100.0));
+        assert_eq!(w.decide(&calm), Some(Behavior::FollowOwner));
+        w.memory.prey = Some((3, (1.0, 0.0, 0.0)));
+        assert_eq!(w.decide(&calm), Some(Behavior::Attack), "fighting beats following");
+        assert_eq!(w.decide(&Facts { sitting: true, ..calm }), Some(Behavior::Sit), "sitting beats everything");
+        w.memory.prey = None;
+        w.memory.owner_at = Some(((1.0, 0.0, 0.0), 1.0));
+        assert_eq!(w.decide(&calm), Some(Behavior::Idle), "close to the owner: nothing to do");
     }
 }

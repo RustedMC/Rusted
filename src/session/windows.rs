@@ -86,6 +86,11 @@ impl Session {
 
     /// Opens a chest minecart's 27 slots, kept in the container store at `store`.
     pub(super) async fn open_cart(&mut self, cart: i64, store: (i32, i32, i32)) {
+        if let Some(me) = self.server.get(self.id)
+            && !self.server.plugins.container_open(&self.server, &me, store, "minecraft:chest_minecart")
+        {
+            return;
+        }
         if let (Some(pos), Some(slots)) = (self.open_container.take(), self.inv.open.take()) {
             close_open(&self.server, pos, slots, self.open_pair.take());
         }

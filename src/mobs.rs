@@ -1063,6 +1063,23 @@ impl Mobs {
         }
     }
 
+    /// Chest minecarts: the block each is in and its container-store key.
+    pub fn chest_carts(&self) -> Vec<((i32, i32, i32), (i32, i32, i32))> {
+        self.mobs.lock().values()
+            .filter(|m| m.dying == 0 && m.kind == Kind::ChestMinecart)
+            .filter_map(|m| m.home.map(|h| ((m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32), cart_store(h))))
+            .collect()
+    }
+
+    /// Living mobs (not carts, boats or crystals) within `radius` of `at`: (id, distance).
+    pub fn near(&self, at: (f32, f32, f32), radius: f32) -> Vec<(i64, f32)> {
+        self.mobs.lock().values()
+            .filter(|m| m.dying == 0 && !matches!(m.kind, Kind::Boat | Kind::Minecart | Kind::ChestMinecart | Kind::EndCrystal))
+            .map(|m| (m.id, dist2(m.pos, at).sqrt()))
+            .filter(|&(_, d)| d <= radius)
+            .collect()
+    }
+
     pub fn hurt(&self, server: &Server, id: i64, damage: f32, from: (f32, f32, f32), attacker: Option<i64>) {
         self.hurt_with(server, id, damage, from, attacker, Hit::default());
     }
@@ -1868,72 +1885,82 @@ impl Mobs {
     /// Golems guard (hostile mobs nearby, or a player who attacked a villager), wolves and
     /// cats follow and defend their owner. Untamed wolves bite back when hit.
     fn defend(&self, server: &Server, m: &mut Mob) {
+        use crate::ai::Behavior as B;
         m.attack_cd = m.attack_cd.saturating_sub(1);
-        if m.sitting {
-            m.path.clear();
-            m.vel.0 = 0.0;
-            m.vel.2 = 0.0;
-            return;
-        }
-        // Current prey still alive?
-        if let Some(prey) = m.prey {
-            let at = self.mobs.lock().get(&prey).filter(|o| o.dying == 0).map(|o| o.pos);
-            match at {
-                Some(at) if dist2(at, m.pos) < 24.0 * 24.0 => return self.chase_and_hit(server, m, prey, at),
-                _ => m.prey = None,
-            }
-        }
-        if m.kind == Kind::IronGolem && self.rand().is_multiple_of(10) {
+        // Sense: prey still alive and close, a golem spotting hostiles, an angry-at player, the owner.
+        let prey = m.prey.and_then(|id| self.mobs.lock().get(&id).filter(|o| o.dying == 0).map(|o| (id, o.pos))).filter(|(_, at)| dist2(*at, m.pos) < 24.0 * 24.0);
+        m.prey = prey.map(|p| p.0);
+        if m.prey.is_none() && m.kind == Kind::IronGolem && self.rand().is_multiple_of(10) {
             m.prey = self.nearest(m, 16.0, |o| o.kind.hostile() && o.kind != Kind::Creeper).map(|(id, _)| id);
         }
-        // Angry at a player (hit a golem/untamed wolf, or a villager near a golem).
-        if let Some(pid) = m.aggro
-            && let Some(p) = server.get(pid)
-            && self.targetable.lock().contains(&pid)
-        {
-            let feet_p = (p.pos.0, p.pos.1 - 1.62, p.pos.2);
-            let reach = 1.6 + m.kind.size().0 / 2.0;
-            if dist2(feet_p, m.pos) < reach * reach {
-                m.path.clear();
-                if m.attack_cd == 0 {
-                    m.attack_cd = TPS;
-                    let (dx, dz) = (feet_p.0 - m.pos.0, feet_p.2 - m.pos.2);
-                    let len = (dx * dx + dz * dz).sqrt().max(0.01);
-                    let fling = if m.kind == Kind::IronGolem { 0.6 } else { 0.3 };
-                    let _ = server.events.send(Event::Damage {
-                        to: pid,
-                        damage: crate::health::Damage::Mob(m.kind.melee() * difficulty_scale().max(0.5), m.kind.display()),
-                        knock: (dx / len * 0.4, fling, dz / len * 0.4),
-                    });
-                }
-            } else if m.path.is_empty() || self.rand().is_multiple_of(8) {
-                let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
-                m.path = path(&server.world, feet, (feet_p.0.floor() as i32, feet_p.1.floor() as i32, feet_p.2.floor() as i32), 160);
-            }
-            self.steer(m);
-            return;
+        let prey = prey.or_else(|| m.prey.and_then(|id| self.mobs.lock().get(&id).map(|o| (id, o.pos))));
+        let angry = m.aggro.and_then(|pid| server.get(pid)).filter(|p| self.targetable.lock().contains(&p.id));
+        if angry.is_none() {
+            m.aggro = None;
         }
-        m.aggro = None;
-        // Tamed pets stay near the owner (teleport if left far behind). Horses just stay put.
-        if let Some(o) = m.owner.filter(|_| !m.kind.rideable()).and_then(|o| server.get(o)) {
-            let feet_o = (o.pos.0, o.pos.1 - 1.62, o.pos.2);
-            let d2 = dist2(feet_o, m.pos);
-            if d2 > 20.0 * 20.0 {
-                m.pos = (feet_o.0 + 1.0, feet_o.1, feet_o.2 + 1.0);
+        let owner = m.owner.filter(|_| !m.kind.rideable()).and_then(|o| server.get(o));
+        let pos = m.pos;
+        let mem = &mut m.brain.memory;
+        mem.prey = prey;
+        mem.target = angry.as_ref().map(|p| (p.id, (p.pos.0, p.pos.1 - 1.62, p.pos.2), dist2((p.pos.0, p.pos.1 - 1.62, p.pos.2), pos)));
+        mem.owner_at = owner.as_ref().map(|o| ((o.pos.0, o.pos.1 - 1.62, o.pos.2), dist2((o.pos.0, o.pos.1 - 1.62, o.pos.2), pos)));
+        let facts = crate::ai::Facts { sitting: m.sitting, has_path: !m.path.is_empty(), roll: self.rand() % 1000, ..Default::default() };
+        if m.brain.decide(&facts).is_some() {
+            m.path.clear();
+        }
+        let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+        match m.brain.doing {
+            B::Sit => {
                 m.path.clear();
-            } else if d2 > 6.0 * 6.0 {
-                if m.path.is_empty() || self.rand().is_multiple_of(10) {
-                    let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
-                    m.path = path(&server.world, feet, (feet_o.0.floor() as i32, feet_o.1.floor() as i32, feet_o.2.floor() as i32), 160);
+                m.vel.0 = 0.0;
+                m.vel.2 = 0.0;
+            }
+            B::Attack => {
+                if let Some((id, at)) = m.brain.memory.prey {
+                    return self.chase_and_hit(server, m, id, at);
+                }
+                let Some((pid, feet_p, d2)) = m.brain.memory.target else { return };
+                let reach = 1.6 + m.kind.size().0 / 2.0;
+                if d2 < reach * reach {
+                    m.path.clear();
+                    if m.attack_cd == 0 {
+                        m.attack_cd = MELEE_COOLDOWN;
+                        let (dx, dz) = (feet_p.0 - m.pos.0, feet_p.2 - m.pos.2);
+                        let len = (dx * dx + dz * dz).sqrt().max(0.01);
+                        let fling = if m.kind == Kind::IronGolem { 0.6 } else { 0.3 };
+                        let _ = server.events.send(Event::Damage {
+                            to: pid,
+                            damage: crate::health::Damage::Mob(m.kind.melee() * difficulty_scale().max(0.5), m.kind.display()),
+                            knock: (dx / len * 0.4, fling, dz / len * 0.4),
+                        });
+                    }
+                } else if m.path.is_empty() || self.rand().is_multiple_of(8) {
+                    m.path = path(&server.world, feet, (feet_p.0.floor() as i32, feet_p.1.floor() as i32, feet_p.2.floor() as i32), 160);
                 }
                 self.steer(m);
-            } else {
-                m.path.clear();
-                m.head_yaw = (-(o.pos.0 - m.pos.0)).atan2(o.pos.2 - m.pos.2).to_degrees();
             }
-            return;
+            B::FollowOwner => {
+                let Some((feet_o, d2)) = m.brain.memory.owner_at else { return };
+                if d2 > 20.0 * 20.0 {
+                    // Left far behind: appear next to the owner.
+                    m.pos = (feet_o.0 + 1.0, feet_o.1, feet_o.2 + 1.0);
+                    m.path.clear();
+                } else {
+                    if m.path.is_empty() || self.rand().is_multiple_of(10) {
+                        m.path = path(&server.world, feet, (feet_o.0.floor() as i32, feet_o.1.floor() as i32, feet_o.2.floor() as i32), 160);
+                    }
+                    self.steer(m);
+                }
+            }
+            _ => match m.brain.memory.owner_at {
+                // Near the owner: stay by them, looking their way.
+                Some((o, _)) => {
+                    m.path.clear();
+                    m.head_yaw = (-(o.0 - m.pos.0)).atan2(o.2 - m.pos.2).to_degrees();
+                }
+                None => self.wander(server, m),
+            },
         }
-        self.wander(server, m);
     }
 
     /// Villagers wander and run from zombies.
@@ -2428,6 +2455,7 @@ impl Mobs {
             has_path: !m.path.is_empty(),
             roll: self.rand() % 1000,
             sunburnt: m.brain.memory.wants_cover,
+            sitting: false,
         };
         if m.brain.decide(&facts).is_some() {
             m.path.clear(); // the old behaviour's walk is over
@@ -2515,7 +2543,7 @@ impl Mobs {
                 }
             }
             // hostile behaviours; passive memory never has a target, villager or sunburn
-            B::Idle | B::Attack | B::HuntVillager | B::Search => {}
+            B::Idle | B::Attack | B::HuntVillager | B::Search | B::Sit | B::FollowOwner => {}
         }
         // Core behaviour, alongside the rest: look at a nearby player when standing still,
         // glance around now and then, otherwise look where it's going.

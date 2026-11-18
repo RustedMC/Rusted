@@ -65,7 +65,8 @@ impl Session {
                 server_tick: 0,
             }));
             let _ = self.conn.send(&[boost]).await;
-            let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(play_sound("firework.launch", me.pos)) });
+            let data = self.inv.held(self.selected_slot as usize).map(|s| s.item.user_data_buffer.clone()).unwrap_or_default();
+            crate::rockets::boost(&self.server, self.id, me.pos, &data);
             if survival_like(&self.mode) {
                 self.inv.use_one(self.selected_slot as usize);
                 let _ = self.conn.send(&[self.inv.content_packet()]).await;

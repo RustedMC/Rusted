@@ -310,7 +310,7 @@ impl Containers {
     }
 
     /// Moves one item between containers (PNX hopper transfer), true if anything moved.
-    fn move_one(&self, from: (i32, i32, i32), from_slots: std::ops::Range<usize>, to: (i32, i32, i32), to_slots: std::ops::Range<usize>) -> bool {
+    pub(crate) fn move_one(&self, from: (i32, i32, i32), from_slots: std::ops::Range<usize>, to: (i32, i32, i32), to_slots: std::ops::Range<usize>) -> bool {
         let mut map = self.map.lock();
         let src = map.get(&from).cloned().unwrap_or_else(|| vec![None; CHEST_SLOTS]);
         let mut dst = map.get(&to).cloned().unwrap_or_else(|| vec![None; CHEST_SLOTS]);
