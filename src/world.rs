@@ -745,6 +745,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(debug_assertions, ignore = "timing only means something in release builds")]
     fn terrain_chunks_are_fast_enough() {
         // crossing into a new chunk needs ~17 chunks, a fresh join ~200
         let w = World::normal(5);

@@ -217,7 +217,12 @@ pub(crate) async fn hurt(conn: &mut dims::DimConn, server: &players::Server, id:
             let _ = server.events.send(players::Event::Effect { to: id, effect, amplifier, ticks });
         }
         let totem = Protocol::ActorEventPacket(Box::new(ActorEventPacket { target_runtime_id: ActorRuntimeID(id as u64), event_id: E::TalismanActivate, data: 0, fire_at_position: None }));
-        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(totem) });
+        // The pop animation and sound go to this player first, before the totem leaves their hand.
+        let pos = server.get(id).map_or((0.0, 0.0, 0.0), |p| p.pos);
+        let sound = play_sound("random.totem", pos);
+        let _ = conn.send(&[totem.clone(), sound.clone()]).await;
+        let _ = server.events.send(players::Event::Relay { from: id, packet: Box::new(totem) });
+        let _ = server.events.send(players::Event::Relay { from: id, packet: Box::new(sound) });
         let _ = conn.send(&[spawn::health_packet(id, hp.health), inv.content_packet()]).await;
         return;
     }

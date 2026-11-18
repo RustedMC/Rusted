@@ -74,6 +74,11 @@ impl Session {
         mode: GameType,
     ) -> Option<Session> {
         let (id, name) = (me.id, me.name.clone());
+        // Logged in again while the old connection is still around (a client retry): drop the old one.
+        for old in server.all().into_iter().filter(|p| p.name == name && p.id != id) {
+            server.kick(old.id, "Logged in from another location");
+            server.leave(old.id);
+        }
         let events = server.events.subscribe();
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<(String, Option<i64>)>();
         // Show everyone already online (and ourselves in the player list), then announce us.

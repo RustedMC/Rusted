@@ -139,17 +139,21 @@ impl Kind {
         self.horse_like() || matches!(self, Kind::Pig | Kind::Strider | Kind::Camel | Kind::Boat | Kind::Minecart)
     }
 
-    /// How far the rider's feet sit above the mob's feet.
-    fn seat_height(self) -> f32 {
-        match self {
-            Kind::Horse | Kind::Mule => 1.1,
-            Kind::Donkey => 0.95,
-            Kind::Pig => 0.65,
-            Kind::Strider => 1.4,
-            Kind::Camel => 1.65,
-            Kind::Boat => 0.1,
-            _ => 1.0,
-        }
+    /// Where the rider's position (their eye) sits above the mob's feet: the seat from the
+    /// mob's ride component plus a seated player's eye height (PNX getSeatOffsetFor).
+    fn seat_offset(self) -> f32 {
+        const PLAYER: f32 = 1.8 * 0.9 * 0.753_086_4;
+        PLAYER
+            + match self {
+                Kind::Horse => 1.1,
+                Kind::Donkey => 0.925,
+                Kind::Mule => 0.975,
+                Kind::Pig => 0.63,
+                Kind::Strider => 1.7 - 0.13,
+                Kind::Camel => 1.905,
+                Kind::Boat => -0.2,
+                _ => 0.0,
+            }
     }
 
     /// Temper an untamed horse gains from a snack (vanilla horse feeding values).
@@ -723,14 +727,21 @@ fn link_packet(vehicle: i64, rider: i64, on: bool) -> Protocol {
     }))
 }
 
-/// The player's RIDING flag (bit 2), so they sit instead of stand.
-fn rider_flag(player: i64, on: bool) -> Protocol {
+/// The player's RIDING flag (bit 2), so they sit instead of stand, and their seat: where the
+/// client draws them on the mob, and for boats how far they can turn (PNX applySeatOffsets).
+fn rider_flag(player: i64, on: bool, kind: Kind) -> Protocol {
+    let item = |id, t| DataItem { data_item_id: id, data_item_type: t };
+    let boat = on && kind == Kind::Boat;
     Protocol::SetActorDataPacket(Box::new(bedrock::protocol::v662::packets::SetActorDataPacket {
         target_runtime_id: ActorRuntimeID(player as u64),
-        actor_data: vec![DataItem {
-            data_item_id: ActorDataIDs::Reserved0,
-            data_item_type: DataItemType::Int64(crate::spawn::FLAGS | (on as i64) << 2),
-        }],
+        actor_data: vec![
+            item(ActorDataIDs::Reserved0, DataItemType::Int64(crate::spawn::FLAGS | (on as i64) << 2)),
+            item(ActorDataIDs::Reserved056, DataItemType::Vec3((0.0, if on { kind.seat_offset() } else { 0.0 }, 0.0))),
+            item(ActorDataIDs::SeatLockPassengerRotation, DataItemType::Byte(boat as i8)),
+            item(ActorDataIDs::SeatLockPassengerRotationDegrees, DataItemType::Float(if boat { 90.0 } else { 0.0 })),
+            item(ActorDataIDs::SeatRotationOffset, DataItemType::Byte(boat as i8)),
+            item(ActorDataIDs::SeatRotationOffsetDegrees, DataItemType::Float(if boat { -90.0 } else { 0.0 })),
+        ],
         synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
         tick: 0,
     }))
@@ -906,10 +917,10 @@ impl Mobs {
             if can_ride && m.rider.is_none() && !m.kind.food(held) {
                 m.rider = Some(player);
                 m.path.clear();
-                if m.owner.is_none() {
+                if m.owner.is_none() && m.kind.horse_like() {
                     m.buck = 40 + self.rand() % 60;
                 }
-                let packets = [link_packet(id, player, true), rider_flag(player, true), data_packet(m)];
+                let packets = [link_packet(id, player, true), rider_flag(player, true, m.kind), data_packet(m)];
                 drop(mobs);
                 for p in packets {
                     broadcast(server, p);
@@ -978,7 +989,9 @@ impl Mobs {
                 m.push = forward.then_some(yaw);
                 return;
             }
-            m.pos = (eye.0, eye.1 - 1.62 - m.kind.seat_height(), eye.2);
+            m.pos = (eye.0, eye.1 - m.kind.seat_offset(), eye.2);
+            // A boat's rider sits turned 90 degrees from it (the seat's rotation offset).
+            let yaw = if m.kind == Kind::Boat { yaw + 90.0 } else { yaw };
             m.yaw = yaw;
             m.head_yaw = yaw;
             m.vel = (0.0, 0.0, 0.0);
@@ -991,7 +1004,7 @@ impl Mobs {
         let Some(m) = mobs.values_mut().find(|m| m.rider == Some(player)) else { return };
         m.rider = None;
         m.buck = 0;
-        let packets = [link_packet(m.id, player, false), rider_flag(player, false), data_packet(m)];
+        let packets = [link_packet(m.id, player, false), rider_flag(player, false, m.kind), data_packet(m)];
         drop(mobs);
         for p in packets {
             broadcast(server, p);
@@ -1214,7 +1227,7 @@ impl Mobs {
                 use bedrock::protocol::v975::enums::ActorEvent;
                 if server.get(r).is_none() || m.health <= 0.0 {
                     m.rider = None;
-                    out.extend([link_packet(id, r, false), rider_flag(r, false), data_packet(&m)]);
+                    out.extend([link_packet(id, r, false), rider_flag(r, false, m.kind), data_packet(&m)]);
                 } else {
                     // An untamed horse decides after a few seconds: keep the rider (tamed) or buck.
                     if m.buck > 0 {
@@ -1227,7 +1240,7 @@ impl Mobs {
                             } else {
                                 m.temper = (m.temper + 5).min(100);
                                 m.rider = None;
-                                out.extend([event(id, ActorEvent::TamingFailed), link_packet(id, r, false), rider_flag(r, false), data_packet(&m)]);
+                                out.extend([event(id, ActorEvent::TamingFailed), link_packet(id, r, false), rider_flag(r, false, m.kind), data_packet(&m)]);
                                 out.push(sound("mob.horse.angry", m.pos));
                             }
                         }
@@ -1443,7 +1456,7 @@ impl Mobs {
                 }
                 if rail.kind == RailKind::Activator && rail.on && let Some(r) = m.rider.take() {
                     // A powered activator rail throws the rider out.
-                    out.extend([link_packet(m.id, r, false), rider_flag(r, false), data_packet(m)]);
+                    out.extend([link_packet(m.id, r, false), rider_flag(r, false, m.kind), data_packet(m)]);
                 }
             }
             None => {

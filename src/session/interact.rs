@@ -425,20 +425,33 @@ impl Session {
             }
             return;
         }
-        if u.held_item.block_runtime_id == 0 {
+        // Items whose block has another name carry no block id from the client.
+        let block_id = match (u.held_item.block_runtime_id, held) {
+            (0, "minecraft:redstone") => blocks::any_state("minecraft:redstone_wire"),
+            (0, "minecraft:repeater") => blocks::any_state("minecraft:unpowered_repeater"),
+            (0, "minecraft:comparator") => blocks::any_state("minecraft:unpowered_comparator"),
+            (0, "minecraft:string") => blocks::any_state("minecraft:trip_wire"),
+            (0, "minecraft:sugar_cane") => blocks::any_state("minecraft:reeds"),
+            (0, n) => blocks::any_state(n),
+            (id, _) => Some(id as i32),
+        };
+        let Some(block_id) = block_id else {
             return; // nothing placeable in hand
-        }
-        let (x, y, z) = (p.x + dx, p.y + dy, p.z + dz);
+        };
+        use crate::overworld::feature::blocks::{is_solid, replaceable};
+        // Clicking grass, snow layers, water and the like places into that block (vanilla canBeReplaced).
+        let (x, y, z) = if replaceable(self.server.world.get(p.x, p.y, p.z)) { (p.x, p.y, p.z) } else { (p.x + dx, p.y + dy, p.z + dz) };
         let (pitch, yaw) = self.server.get(self.id).map(|me| me.rot).unwrap_or_default();
         let click = placement::Click { face: u.block_face, click_y: u.click_position.1, yaw, pitch };
-        let parts: Vec<_> = placement::orient(u.held_item.block_runtime_id as i32, &click)
+        let parts: Vec<_> = placement::orient(block_id, &click)
             .into_iter()
             .map(|(o, b)| (o, if blocks::has_state(b, "persistent_bit") { blocks::with(b, &[("persistent_bit", blocks::State::Bool(true))]) } else { b }))
             .collect();
         // All parts (both door halves, both bed halves) need free space.
-        let fits = spawn::can_build(&self.mode) && !parts.is_empty() && parts.iter().all(|((ox, oy, oz), _)| {
+        let fits = spawn::can_build(&self.mode) && !parts.is_empty() && parts.iter().all(|((ox, oy, oz), b)| {
             let (bx, by, bz) = (x + ox, y + oy, z + oz);
-            self.server.world.get(bx, by, bz) == world::AIR && !self.server.occupied(bx, by, bz)
+            // Torches, flowers, rails and other pass-through blocks can go where a player stands.
+            replaceable(self.server.world.get(bx, by, bz)) && !(is_solid(*b) && self.server.occupied(bx, by, bz))
         }) && self.server.get(self.id).is_some_and(|me| {
             parts.iter().all(|((ox, oy, oz), b)| self.server.plugins.block_place(&self.server, &me, (x + ox, y + oy, z + oz), *b))
         });

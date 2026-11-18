@@ -36,6 +36,7 @@ impl Session {
                         self.server.plugins.sneak(&self.server, &me, true);
                     }
                     self.inv.sneaking = true;
+                    self.raise_shield();
                     self.get_off();
                 }
                 Input::StopSneaking => {
@@ -44,6 +45,7 @@ impl Session {
                         self.server.plugins.sneak(&self.server, &me, false);
                     }
                     self.inv.sneaking = false;
+                    self.raise_shield();
                 }
                 Input::StartSprinting | Input::StopSprinting => {
                     self.sprinting = matches!(flag, Input::StartSprinting);
@@ -187,5 +189,21 @@ impl Session {
         self.last_pos = None;
         let _ = self.conn.send(&[self.food.packet(self.id)]).await;
         GO
+    }
+
+    /// Shows the shield raised while sneaking with one (the BLOCKING flag, 72).
+    pub(super) fn raise_shield(&self) {
+        use bedrock::protocol::v662::types::{ActorRuntimeID, DataItem, PropertySyncData};
+        let up = self.inv.shield().is_some();
+        let packet = Protocol::SetActorDataPacket(Box::new(bedrock::protocol::v662::packets::SetActorDataPacket {
+            target_runtime_id: ActorRuntimeID(self.id as u64),
+            actor_data: vec![DataItem {
+                data_item_id: bedrock::protocol::v924::enums::ActorDataIDs::Reserved092,
+                data_item_type: bedrock::protocol::v2168::enums::DataItemType::Int64(spawn::FLAGS_EXTENDED | (up as i64) << (72 - 64)),
+            }],
+            synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
+            tick: 0,
+        }));
+        let _ = self.server.events.send(crate::players::Event::Relay { from: 0, packet: Box::new(packet) });
     }
 }

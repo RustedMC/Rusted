@@ -138,7 +138,8 @@ fn place_of(info: &ItemStackRequestSlotInfo<Protocol>) -> Option<Place> {
         | ContainerEnumName::InventoryContainer
         | ContainerEnumName::CombinedHotbarAndInventoryContainer if slot < MAIN => Some(Place::Main(slot)),
         ContainerEnumName::ArmorContainer if slot < 4 => Some(Place::Main(ARMOR + slot)),
-        ContainerEnumName::OffhandContainer if slot == 0 => Some(Place::Main(OFFHAND)),
+        // The client numbers the offhand slot 1 in stack requests (0 in older versions).
+        ContainerEnumName::OffhandContainer if slot <= 1 => Some(Place::Main(OFFHAND)),
         ContainerEnumName::CursorContainer => Some(Place::Cursor),
         ContainerEnumName::CreatedOutputContainer => Some(Place::Created),
         ContainerEnumName::LevelEntityContainer | ContainerEnumName::BarrelContainer if slot < 2 * CHEST_SLOTS => Some(Place::Open(slot)),

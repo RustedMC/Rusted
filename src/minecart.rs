@@ -187,7 +187,9 @@ pub fn placed(w: &World, at: (i32, i32, i32)) -> Vec<((i32, i32, i32), i32)> {
     let with_shape = |r: Rail, shape: u8| crate::blocks::with(w.get(r.at.0, r.at.1, r.at.2), &[("rail_direction", State::Int(shape as i32))]);
     let curves = |r: Rail| r.kind == RailKind::Plain;
     let mut out = vec![(at, with_shape(r, shape_for(w, at, curves(r))))];
-    // Apply the new rail's shape before reshaping neighbours toward it.
+    // Apply the new rail's shape while reshaping neighbours toward it, then put the old one
+    // back so the caller's set_block sees a change and tells the clients.
+    let before = w.get(at.0, at.1, at.2);
     w.set(at.0, at.1, at.2, out[0].1);
     for (dx, dz) in [(0, -1), (0, 1), (-1, 0), (1, 0)] {
         for dy in -1..=1 {
@@ -202,6 +204,7 @@ pub fn placed(w: &World, at: (i32, i32, i32)) -> Vec<((i32, i32, i32), i32)> {
             }
         }
     }
+    w.set(at.0, at.1, at.2, before);
     out
 }
 
