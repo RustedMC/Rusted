@@ -9,6 +9,10 @@
   <a href="https://discord.gg/gpgFFtCc6N"><img src="https://img.shields.io/badge/discord-join-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="discord"></a>
 </p>
 
+<p align="center">
+  <a href="https://discord.gg/gpgFFtCc6N"><img src="assets/discord-button.svg" alt="Join the Discord" height="48"></a>
+</p>
+
 A Minecraft: Bedrock Edition server written in Rust, ported from
 [PowerNukkitX](https://github.com/PowerNukkitX/PowerNukkitX).
 
