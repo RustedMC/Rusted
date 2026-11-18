@@ -1577,14 +1577,10 @@ impl Mobs {
                 return false;
             }
             B::SeekShade => {
-                if m.path.is_empty() {
-                    // A spot within 8 blocks with something overhead.
-                    let shade = (0..40)
-                        .map(|_| (feet.0 + (self.rand() % 17) as i32 - 8, feet.1, feet.2 + (self.rand() % 17) as i32 - 8))
-                        .find(|&q| standable(w, q) && !sky(w, q));
-                    if let Some(q) = shade {
-                        m.path = path(w, feet, q, 160);
-                    }
+                if m.path.is_empty()
+                    && let Some(q) = self.find_cover(w, feet)
+                {
+                    m.path = path(w, feet, q, 160);
                 }
                 self.steer(m);
                 return false;
@@ -1900,17 +1896,14 @@ impl Mobs {
         {
             j.uses.clear();
         }
-        if let Some((_, zp)) = self.nearest(m, 8.0, |o| matches!(o.kind, Kind::Zombie | Kind::Drowned)) {
-            if m.path.is_empty() || self.rand().is_multiple_of(10) {
-                let (dx, dz) = (m.pos.0 - zp.0, m.pos.2 - zp.2);
-                let len = (dx * dx + dz * dz).sqrt().max(0.01);
-                let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
-                let goal = (feet.0 + (dx / len * 8.0) as i32, feet.1, feet.2 + (dz / len * 8.0) as i32);
-                m.path = path(&server.world, feet, goal, 120);
-            }
-            self.steer(m);
-            return;
-        }
+        // What the brain needs on top of the usual: zombies to run from, the job block by day,
+        // and whether it's caught outside at night.
+        let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+        let t = server.time().rem_euclid(24_000);
+        let night = (12_500..23_500).contains(&t);
+        m.brain.memory.threat = self.nearest(m, 8.0, |o| matches!(o.kind, Kind::Zombie | Kind::Drowned | Kind::Husk | Kind::ZombieVillager)).map(|(_, p)| p);
+        m.brain.memory.work = m.job.as_ref().and_then(|j| j.site).filter(|s| !night && dist2(m.pos, (s.0 as f32 + 0.5, s.1 as f32, s.2 as f32 + 0.5)) > 9.0);
+        m.brain.memory.wants_cover = night && m.baby == 0 && sky(&server.world, feet);
         let _ = self.think(server, m);
     }
 
@@ -1925,6 +1918,15 @@ impl Mobs {
                 out.push(event(m.id, ActorEvent::Hurt));
             }
             return;
+        }
+        // A player within 4 blocks: dart the other way (vanilla fish flee goal).
+        if m.panic == 0
+            && let Some(p) = server.all().into_iter().find(|p| dist2((p.pos.0, p.pos.1 - 1.0, p.pos.2), m.pos) < 16.0)
+        {
+            let (dx, dz) = (m.pos.0 - p.pos.0, m.pos.2 - p.pos.2);
+            let len = (dx * dx + dz * dz).sqrt().max(0.01);
+            m.target = Some((m.pos.0 + dx / len * 6.0, m.pos.2 + dz / len * 6.0));
+            m.panic = 2 * TPS;
         }
         let near_target = m.target.is_some_and(|(tx, tz)| (tx - m.pos.0).powi(2) + (tz - m.pos.2).powi(2) < 1.0);
         if m.target.is_none() || near_target || self.rand().is_multiple_of(60) {
@@ -2321,6 +2323,13 @@ impl Mobs {
         m.brain.memory.on_grass = blocks::short(below) == "grass_block";
     }
 
+    /// A spot within 8 blocks with something overhead (shade by day, shelter at night).
+    fn find_cover(&self, w: &crate::world::World, feet: (i32, i32, i32)) -> Option<(i32, i32, i32)> {
+        (0..40)
+            .map(|_| (feet.0 + (self.rand() % 17) as i32 - 8, feet.1, feet.2 + (self.rand() % 17) as i32 - 8))
+            .find(|&q| standable(w, q) && !sky(w, q))
+    }
+
     /// Passive mob AI: sense, pick a behaviour (see `ai::Brain::decide`), act, steer.
     /// Returns a partner when two animals in love meet.
     fn think(&self, server: &Server, m: &mut Mob) -> Option<i64> {
@@ -2335,13 +2344,13 @@ impl Mobs {
             m.brain.sense_in -= 1;
         }
         let facts = Facts {
-            panicking: m.panic > 0,
+            panicking: m.panic > 0 || m.brain.memory.threat.is_some(),
             in_love: m.love > 0,
             baby: m.baby > 0,
             sheared: m.kind == Kind::Sheep && m.sheared,
             has_path: !m.path.is_empty(),
             roll: self.rand() % 1000,
-            sunburnt: false,
+            sunburnt: m.brain.memory.wants_cover,
         };
         if m.brain.decide(&facts).is_some() {
             m.path.clear(); // the old behaviour's walk is over
@@ -2350,9 +2359,30 @@ impl Mobs {
         let mem = m.brain.memory.clone();
         match m.brain.doing {
             B::Panic => {
-                if m.path.is_empty() {
+                if let Some(t) = mem.threat {
+                    // Run directly away from the threat.
+                    if m.path.is_empty() || self.rand().is_multiple_of(10) {
+                        let (dx, dz) = (m.pos.0 - t.0, m.pos.2 - t.2);
+                        let len = (dx * dx + dz * dz).sqrt().max(0.01);
+                        m.path = path(&server.world, feet, (feet.0 + (dx / len * 8.0) as i32, feet.1, feet.2 + (dz / len * 8.0) as i32), 120);
+                    }
+                } else if m.path.is_empty() {
                     let a = self.randf() * std::f32::consts::TAU;
                     m.path = path(&server.world, feet, (feet.0 + (a.cos() * 7.0) as i32, feet.1, feet.2 + (a.sin() * 7.0) as i32), 120);
+                }
+            }
+            B::SeekShade => {
+                if m.path.is_empty()
+                    && let Some(q) = self.find_cover(&server.world, feet)
+                {
+                    m.path = path(&server.world, feet, q, 160);
+                }
+            }
+            B::GoToWork => {
+                if let Some(site) = mem.work
+                    && (m.path.is_empty() || self.rand().is_multiple_of(20))
+                {
+                    m.path = path(&server.world, feet, site, 200);
                 }
             }
             B::Breed => {
@@ -2408,7 +2438,7 @@ impl Mobs {
                 }
             }
             // hostile behaviours; passive memory never has a target, villager or sunburn
-            B::Idle | B::Attack | B::HuntVillager | B::Search | B::SeekShade => {}
+            B::Idle | B::Attack | B::HuntVillager | B::Search => {}
         }
         // Core behaviour, alongside the rest: look at a nearby player when standing still,
         // glance around now and then, otherwise look where it's going.

@@ -22,8 +22,10 @@ pub enum Behavior {
     HuntVillager,
     /// A baby too far from its parent: walk back to it.
     FollowParent,
-    /// Burning in daylight (skeletons, strays): find a roof.
+    /// Burning in daylight (skeletons, strays), or a villager outside at night: find a roof.
     SeekShade,
+    /// Villagers by day: walk back to their job block.
+    GoToWork,
     /// A sheared sheep on grass: eat it and grow wool back.
     EatGrass,
     /// Walk somewhere random nearby.
@@ -43,6 +45,7 @@ impl Behavior {
             Behavior::HuntVillager => 6,
             Behavior::FollowParent => 5,
             Behavior::SeekShade => 4,
+            Behavior::GoToWork => 3,
             Behavior::EatGrass => 2,
             Behavior::Roam => 1,
             Behavior::Idle => 0,
@@ -77,6 +80,12 @@ pub struct Memory {
     pub last_seen: Option<((f32, f32, f32), u32)>,
     /// Zombies and illagers: a villager nearby.
     pub villager: Option<(i64, (f32, f32, f32))>,
+    /// Something to run from (villagers: a zombie).
+    pub threat: Option<(f32, f32, f32)>,
+    /// Villagers: their job block, while it's daytime and they're away from it.
+    pub work: Option<(i32, i32, i32)>,
+    /// Villagers: outside at night, wanting a roof.
+    pub wants_cover: bool,
 }
 
 /// A mob's AI state: its memory, what it's doing and since when.
@@ -121,6 +130,7 @@ impl Brain {
             Behavior::HuntVillager => m.villager.is_some(),
             Behavior::Search => m.last_seen.is_some_and(|(_, left)| left > 0),
             Behavior::SeekShade => f.sunburnt,
+            Behavior::GoToWork => m.work.is_some(),
             Behavior::Breed => f.in_love && m.mate.is_some(),
             Behavior::Tempt => !f.baby && m.feeder.is_some(),
             Behavior::FollowParent => f.baby && m.parent.is_some_and(|p| p.2 > PARENT_FAR),
@@ -135,7 +145,7 @@ impl Brain {
     /// Picks what to do this tick. Returns the new behaviour if it changed (the caller then
     /// drops the old one's path and starts the new one).
     pub fn decide(&mut self, f: &Facts) -> Option<Behavior> {
-        const ALL: [Behavior; 11] = [
+        const ALL: [Behavior; 12] = [
             Behavior::Panic,
             Behavior::Attack,
             Behavior::Breed,
@@ -144,6 +154,7 @@ impl Brain {
             Behavior::HuntVillager,
             Behavior::FollowParent,
             Behavior::SeekShade,
+            Behavior::GoToWork,
             Behavior::EatGrass,
             Behavior::Roam,
             Behavior::Idle,
@@ -238,5 +249,17 @@ mod tests {
         assert_eq!(s.decide(&Facts { sunburnt: true, ..calm }), Some(Behavior::SeekShade));
         s.memory.target = Some((1, (3.0, 0.0, 0.0), 9.0));
         assert_eq!(s.decide(&Facts { sunburnt: true, ..calm }), Some(Behavior::Attack), "a target beats hiding");
+    }
+
+    #[test]
+    fn villagers_work_by_day_and_hide_by_night() {
+        let mut v = brain();
+        let calm = Facts { roll: 999, ..Default::default() };
+        v.memory.work = Some((3, 64, 3));
+        assert_eq!(v.decide(&calm), Some(Behavior::GoToWork));
+        // Night outside: cover first.
+        assert_eq!(v.decide(&Facts { sunburnt: true, ..calm }), Some(Behavior::SeekShade));
+        // A zombie: run.
+        assert_eq!(v.decide(&Facts { panicking: true, ..calm }), Some(Behavior::Panic));
     }
 }
