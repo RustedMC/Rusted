@@ -90,6 +90,14 @@ fn read(id: i32) -> Option<(Kind, Level)> {
     None
 }
 
+/// Generated lava and water springs waiting for their first update.
+static SPRINGS: Mutex<Vec<(i32, i32, i32)>> = Mutex::new(Vec::new());
+
+/// The world generator placed a spring at `p`: it starts flowing on the next fluid tick.
+pub fn spring(p: (i32, i32, i32)) {
+    SPRINGS.lock().push(p);
+}
+
 /// Water or lava, flowing or still.
 pub fn is_fluid(id: i32) -> bool {
     read(id).is_some()
@@ -248,6 +256,9 @@ impl Fluids {
     /// One fluid step, lava only moves on `lava_turn`. The caller applies the changes,
     /// which queues the next step.
     pub fn tick(&self, world: &World, lava_turn: bool) -> Vec<((i32, i32, i32), i32)> {
+        for p in std::mem::take(&mut *SPRINGS.lock()) {
+            self.notify(p);
+        }
         let batch: Vec<_> = {
             let mut p = self.pending.lock();
             let take: Vec<_> = p.iter().take(PER_TICK).copied().collect();

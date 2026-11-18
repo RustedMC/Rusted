@@ -728,6 +728,7 @@ impl End {
         }
         for k in order {
             let b = map[&k];
+            crate::loot::generated((b.0, b.1 + crate::dims::base(crate::dims::END), b.2), b.3, "end_city");
             city.chunks.entry(chunk_hash(b.0 >> 4, b.2 >> 4)).or_default().push(b);
         }
         city

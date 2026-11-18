@@ -141,6 +141,16 @@ const NETHER_FORTRESS: &[Pool] = &[Pool { rolls: (2, 4), entries: &[
     ("golden_horse_armor", 8, 1, 1), ("iron_horse_armor", 5, 1, 1), ("diamond_horse_armor", 3, 1, 1), ("obsidian", 2, 2, 4),
 ] }];
 
+// Vanilla end_city_treasure (gear comes unenchanted, see the shortcut above).
+const END_CITY: &[Pool] = &[Pool { rolls: (2, 6), entries: &[
+    ("diamond", 5, 2, 7), ("iron_ingot", 10, 4, 8), ("gold_ingot", 15, 2, 7), ("emerald", 2, 2, 6),
+    ("beetroot_seeds", 5, 1, 10), ("saddle", 3, 1, 1), ("iron_horse_armor", 1, 1, 1), ("golden_horse_armor", 1, 1, 1),
+    ("diamond_horse_armor", 1, 1, 1), ("diamond_sword", 3, 1, 1), ("diamond_boots", 3, 1, 1), ("diamond_chestplate", 3, 1, 1),
+    ("diamond_leggings", 3, 1, 1), ("diamond_helmet", 3, 1, 1), ("diamond_pickaxe", 3, 1, 1), ("diamond_shovel", 3, 1, 1),
+    ("iron_sword", 3, 1, 1), ("iron_boots", 3, 1, 1), ("iron_chestplate", 3, 1, 1), ("iron_leggings", 3, 1, 1),
+    ("iron_helmet", 3, 1, 1), ("iron_pickaxe", 3, 1, 1), ("iron_shovel", 3, 1, 1),
+] }];
+
 const BASTION: &[Pool] = &[
     Pool { rolls: (1, 2), entries: &[
         ("diamond_pickaxe", 6, 1, 1), ("diamond_shovel", 6, 1, 1), ("crossbow", 6, 1, 1), ("ancient_debris", 12, 1, 1),
@@ -177,6 +187,7 @@ fn table(structure: &str) -> Option<&'static [Pool]> {
         "ruined_portal" => RUINED_PORTAL,
         "nether_fortress" => NETHER_FORTRESS,
         "bastion" => BASTION,
+        "end_city" => END_CITY,
         _ => return None,
     })
 }

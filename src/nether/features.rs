@@ -2,7 +2,7 @@
 // from PNX NetherPopulatorStage, OreGeneratorFeature, the nether *Populator classes and
 // LegacyNetherTree / LegacyCrimsonTree / LegacyWarpedTree.
 //! Nether populators. Each chunk is decorated inside a 3x3 region so neighbours can spill in.
-//! TODO: ruined portals and lava spring updates aren't ported yet.
+//! TODO: ruined portals aren't ported yet.
 
 use super::rng::NukkitRandom;
 use super::{ids, Nether, NetherChunk, BASALT_DELTAS, CRIMSON_FOREST, WARPED_FOREST};
@@ -413,6 +413,8 @@ fn lava(r: &mut Region, c: &mut Ctx) {
             continue;
         }
         r.set_now(x, y + 1, z, i.lava);
+        // Lava springs flow once the chunk is in the world (PNX schedules a block update).
+        crate::fluids::spring((x, y + 1 + crate::dims::base(crate::dims::NETHER), z));
     }
 }
 
