@@ -26,6 +26,13 @@ pub enum Priority {
     Monitor,
 }
 
+/// What a projectile hit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Target {
+    Mob(i64),
+    Player(i64),
+}
+
 /// Who gets a permission when nobody granted or denied it in `permissions.txt`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Access {
@@ -211,6 +218,33 @@ pub trait Plugin: Send + Sync {
 
     /// Player wrote a sign at `pos`. Edit the text, or return false to keep the old text.
     fn on_sign_change(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32), _front: &mut String, _back: &mut String) -> bool {
+        true
+    }
+
+    /// Player right-clicked a bed at `pos` (sets their spawn). Return false to stop it.
+    fn on_bed_enter(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32)) -> bool {
+        true
+    }
+
+    /// Player is crafting `count` of `item`. Return false to refuse the craft.
+    fn on_craft(&self, _server: &Server, _player: &PlayerInfo, _item: &str, _count: i32) -> bool {
+        true
+    }
+
+    /// An arrow or trident `shooter` fired hit a mob or player. Return false: no damage.
+    fn on_projectile_hit(&self, _server: &Server, _shooter: &PlayerInfo, _target: Target) -> bool {
+        true
+    }
+
+    /// A block changes on its own (crops and saplings growing, grass spreading, leaves
+    /// decaying, ice melting). Return false to keep it as it is.
+    fn on_block_grow(&self, _server: &Server, _pos: (i32, i32, i32), _from: &str, _to: &str) -> bool {
+        true
+    }
+
+    /// Mob `mob` (of `kind`, e.g. "minecraft:zombie") wants to go after `player`. Return
+    /// false and it leaves them alone (spawn protection, invisible staff, pets).
+    fn on_mob_target(&self, _server: &Server, _mob: i64, _kind: &str, _player: &PlayerInfo) -> bool {
         true
     }
 
@@ -415,6 +449,26 @@ impl Plugins {
 
     pub fn sign_change(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32), front: &mut String, back: &mut String) -> bool {
         self.cancellable(|pl| pl.on_sign_change(s, p, pos, front, back))
+    }
+
+    pub fn bed_enter(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32)) -> bool {
+        self.cancellable(|pl| pl.on_bed_enter(s, p, pos))
+    }
+
+    pub fn craft(&self, s: &Server, p: &PlayerInfo, item: &str, count: i32) -> bool {
+        self.cancellable(|pl| pl.on_craft(s, p, item, count))
+    }
+
+    pub fn projectile_hit(&self, s: &Server, shooter: &PlayerInfo, target: Target) -> bool {
+        self.cancellable(|pl| pl.on_projectile_hit(s, shooter, target))
+    }
+
+    pub fn block_grow(&self, s: &Server, pos: (i32, i32, i32), from: &str, to: &str) -> bool {
+        self.cancellable(|pl| pl.on_block_grow(s, pos, from, to))
+    }
+
+    pub fn mob_target(&self, s: &Server, mob: i64, kind: &str, player: &PlayerInfo) -> bool {
+        self.cancellable(|pl| pl.on_mob_target(s, mob, kind, player))
     }
 
     /// The first refusal message any plugin gives, if one does.

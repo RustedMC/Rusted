@@ -350,6 +350,11 @@ impl Session {
 
     async fn use_bed(&mut self, u: &ItemUse) {
         let p = &u.block_position;
+        if let Some(me) = self.server.get(self.id)
+            && !self.server.plugins.bed_enter(&self.server, &me, (p.x, p.y, p.z))
+        {
+            return;
+        }
         // Beds blow up outside the overworld (vanilla: power 5, sets fires).
         if dims::of(p.y) != dims::OVERWORLD {
             self.server.set_block(self.id, p.x, p.y, p.z, world::AIR);

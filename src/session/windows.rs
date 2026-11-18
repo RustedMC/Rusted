@@ -205,6 +205,19 @@ impl Session {
                 self.inv.levels = self.xp.level;
                 self.inv.creative = matches!(self.mode, GameType::Creative);
                 let before = self.inv.enchant_input().map(|s| (s.item.id, s.item.user_data_buffer.clone()));
+                // Plugins can refuse a crafting-table or inventory craft.
+                let crafting = req.actions.iter().find_map(|a| match a {
+                    bedrock::protocol::v2225::enums::ItemStackRequestActionType::CraftRecipe { recipe_network_id, number_of_requested_crafts }
+                    | bedrock::protocol::v2225::enums::ItemStackRequestActionType::CraftRecipeAuto { recipe_network_id, number_of_requested_crafts, .. } => {
+                        crate::recipes::get().crafted(*recipe_network_id).map(|(item, n)| (item, n as i32 * (*number_of_requested_crafts).max(1) as i32))
+                    }
+                    _ => None,
+                });
+                if let (Some((item, n)), Some(me)) = (crafting, self.server.get(self.id))
+                    && !self.server.plugins.craft(&self.server, &me, items::name_of(item.id).unwrap_or(""), n)
+                {
+                    return inventory::reject(req).0;
+                }
                 let r = self.inv.handle(req, items::creative_item);
                 thrown.append(&mut self.inv.dropped);
                 if let (Some((primary, secondary)), Some(pos)) = (self.inv.beacon.take(), self.open_container)

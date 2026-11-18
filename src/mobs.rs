@@ -1521,6 +1521,7 @@ impl Mobs {
                     .min_by(|a, b| a.1.total_cmp(&b.1))
                     .map(|(p, _)| p)
             })
+            .filter(|p| server.plugins.mob_target(server, m.id, m.kind.identifier(), p))
             .cloned();
         m.attack_cd = m.attack_cd.saturating_sub(1);
         if target.is_none() && matches!(m.kind, Kind::Zombie | Kind::Drowned | Kind::Husk | Kind::ZombieVillager | Kind::Pillager | Kind::Vindicator | Kind::Ravager | Kind::Evoker) {
@@ -2141,6 +2142,9 @@ impl Mobs {
                         let (fx, fy, fz) = (p.pos.0, p.pos.1 - 1.62, p.pos.2);
                         p.id != by.owner && (next.0 - fx).abs() < 0.45 && (next.2 - fz).abs() < 0.45 && next.1 > fy && next.1 < fy + 1.85
                     });
+                    let allowed = |target| server.get(by.owner).is_none_or(|shooter| server.plugins.projectile_hit(server, &shooter, target));
+                    let hit_mob = hit_mob.filter(|(mid, ..)| allowed(crate::plugin::Target::Mob(*mid)));
+                    let hit_player = hit_player.filter(|p| allowed(crate::plugin::Target::Player(p.id)));
                     if hit_mob.is_some() || hit_player.is_some() {
                         if let Some(&(mid, ..)) = hit_mob {
                             mob_hits.push((mid, dmg, a.pos, by.clone()));

@@ -52,6 +52,9 @@ Plugins with the same priority run in load order.
 | `on_dimension_change(server, player, to: u8)` | Went to another dimension: 0 overworld, 1 Nether, 2 End | |
 | `on_xp_change(server, player, points: &mut i32)` | Getting XP (negative takes it away) | Change `points`, 0 cancels |
 | `on_sign_change(server, player, pos, front: &mut String, back: &mut String) -> bool` | Wrote a sign | Edit the text, or `false` keeps the old text |
+| `on_bed_enter(server, player, pos) -> bool` | Right-clicked a bed (sets spawn) | `false` stops it |
+| `on_craft(server, player, item: &str, count: i32) -> bool` | Crafting something at a table or in the inventory | `false` refuses the craft |
+| `on_projectile_hit(server, shooter, target: Target) -> bool` | Their arrow or trident hit `Target::Mob(id)` or `Target::Player(id)` | `false`: no damage |
 
 ## Blocks
 
@@ -70,6 +73,8 @@ Plugins with the same priority run in load order.
 | `on_entity_death(server, kind, pos, killer: Option<i64>)` | Mob died. `killer` is the player id if a player did it | |
 | `on_entity_spawn(server, kind, pos) -> bool` | Mob about to spawn (natural, `/summon`, breeding) | `false` stops it |
 | `on_explosion(server, pos, power: f32) -> bool` | Creeper, TNT or respawn anchor about to explode | `false` stops it |
+| `on_mob_target(server, mob: i64, kind: &str, player) -> bool` | A hostile mob wants to go after a player | `false` leaves them alone |
+| `on_block_grow(server, pos, from: &str, to: &str) -> bool` | A block changes by itself: crops, saplings, grass spreading, leaves decaying, ice melting | `false` keeps it as it is |
 | `on_weather_change(server, weather: &str) -> bool` | Weather changing to `"clear"`, `"rain"` or `"thunder"` | `false` keeps it |
 
 Mob positions are `(f32, f32, f32)`.
