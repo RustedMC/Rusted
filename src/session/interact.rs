@@ -33,6 +33,31 @@ impl Session {
             self.drawing = Some(Instant::now());
             return;
         }
+        // Fishing rods cast, or reel in what's on the line.
+        if let InventoryTransactionData::ItemUse(u) = &t.data
+            && u.action_type == 1
+            && !matches!(self.mode, GameType::Spectator)
+            && let Some(rod) = self.inv.held(self.selected_slot as usize).filter(|s| items::name_of(s.item.id) == Some("minecraft:fishing_rod")).cloned()
+            && let Some(me) = self.server.get(self.id)
+        {
+            if !crate::fishing::has_hook(self.id) {
+                crate::fishing::cast(&self.server, self.id, me.pos, me.rot, &rod.item.user_data_buffer);
+                let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(play_sound("random.bow", me.pos)) });
+                return;
+            }
+            if let Some((item, count, xp)) = crate::fishing::reel(&self.server, self.id)
+                && let Some(it) = items::item_by_name(item)
+            {
+                let left = self.inv.add(it.clone(), count);
+                if left > 0 {
+                    self.server.entities.drop_item(&self.server, it, left, (me.pos.0, me.pos.1 - 1.0, me.pos.2));
+                }
+                let _ = self.server.events.send(Event::Xp { to: self.id, points: xp });
+                wear(&mut self.conn, &self.server, self.id, &mut self.inv, self.selected_slot as usize, 1, &self.mode).await;
+                let _ = self.conn.send(&[self.inv.content_packet()]).await;
+            }
+            return;
+        }
         // Splash and lingering potions are thrown.
         if let InventoryTransactionData::ItemUse(u) = &t.data
             && u.action_type == 1

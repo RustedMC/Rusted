@@ -3,7 +3,7 @@
 Rough order of what's next. See [PORTING.md](PORTING.md) for where each part stands today.
 
 ## Next up
-- Crossbows, fishing, fireworks and elytra, shields, totems
+- Crossbows, fireworks and elytra boosting (fishing, shields and totems are done)
 - Beacon, loom, cartography table, crafter, lectern
 
 ## After that

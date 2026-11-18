@@ -15,6 +15,7 @@ mod containers;
 mod drops;
 mod entities;
 mod hunger;
+mod fishing;
 mod loot;
 mod minecart;
 mod mobs;
@@ -315,6 +316,7 @@ async fn main() {
                 // Mob physics reads the world (may generate chunks): keep it off the async threads.
                 let _ = tokio::task::spawn_blocking(move || {
                     s.mobs.tick(&s);
+                    fishing::tick(&s);
                     s.entities.tick(&s);
                     if turn % 20 == 0 {
                         s.mobs.spawn_near_players(&s);

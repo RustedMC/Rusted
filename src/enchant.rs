@@ -17,6 +17,8 @@ pub const LOOTING: i16 = 14;
 pub const SILK_TOUCH: i16 = 16;
 pub const UNBREAKING: i16 = 17;
 pub const FORTUNE: i16 = 18;
+pub const LUCK_OF_THE_SEA: i16 = 23;
+pub const LURE: i16 = 24;
 
 /// (name, id, max level, applies to)
 const ALL: [(&str, i16, i16, Slot); 41] = [
