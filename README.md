@@ -1,35 +1,23 @@
 <p align="center">
-  <img src="assets/banner.png" alt="Rusted: Minecraft Bedrock server software written in Rust" width="100%">
+  <img src="assets/banner.png" alt="Rusted" width="100%">
 </p>
 
 <p align="center">
   <a href="https://github.com/RustedMC/Rusted/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/RustedMC/Rusted/build.yml?style=for-the-badge&label=build&color=b7410e" alt="build"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-LGPL--3.0-8b2e0c?style=for-the-badge" alt="license"></a>
   <img src="https://img.shields.io/badge/bedrock-1.26.60-de6e28?style=for-the-badge" alt="bedrock version">
-  <img src="https://img.shields.io/badge/made%20with-rust-a0340a?style=for-the-badge&logo=rust" alt="rust">
 </p>
 
-Rusted is a Minecraft: Bedrock Edition server you run as one small program. It's a Rust
-rewrite of [PowerNukkitX](https://github.com/PowerNukkitX/PowerNukkitX): same game rules, same
-world generation, no Java required.
+A Minecraft: Bedrock Edition server written in Rust, ported from
+[PowerNukkitX](https://github.com/PowerNukkitX/PowerNukkitX).
 
-It's early (alpha), but you can already join, build, fight the dragon and trade with
-villagers. Come help shape it!
+It's an alpha. You can join, survive, build redstone, go to the Nether and the End and trade
+with villagers, but plenty is still missing or simpler than in PNX. [PORTING.md](PORTING.md)
+has the honest breakdown, part by part.
 
-## Why you might like it
+## Running it
 
-**It's light.** No JVM to install or tune, no garbage-collector stutter. Download and run.
-
-**Worlds match PNX.** Same seed, same terrain, caves, villages and fortresses.
-
-**It uses your whole CPU.** Chunks generate in parallel, so exploring stays smooth.
-
-**Plugins are plain Rust.** Hook an event, return `false` to cancel it, done.
-
-## Getting started
-
-You'll need [Rust](https://rustup.rs). On Windows, also install the Visual Studio Build
-Tools with the C++ workload.
+You need [Rust](https://rustup.rs) (and the Visual Studio C++ build tools on Windows).
 
 ```bash
 git clone https://github.com/RustedMC/Rusted.git
@@ -37,42 +25,30 @@ cd Rusted
 cargo run --release
 ```
 
-Open Minecraft, add a server with your computer's address and port `19132`, and join.
+Then add a server in Minecraft with your machine's address, port `19132`.
 
-<details>
-<summary><b>Settings</b> (server.properties)</summary>
-
-The file is created on first launch. Restart after changing it.
-
-```properties
-server-port=19132        # RakNet (UDP) and NetherNet (TCP)
-motd=Rusted              # name in the server list
-max-players=35
-level-type=normal        # normal | flat | void | <plugin generator>
-level-seed=              # number or text, empty for random
-gamemode=survival
-difficulty=normal
-view-distance=16         # 2-96 chunks
-white-list=false
-```
-
-`identity.pem` is created next to it. Keep a backup and never share it, it's the server's
+The first run creates `server.properties` (port, MOTD, seed, game mode, difficulty,
+view distance, allowlist) and `identity.pem`. Don't share `identity.pem`, it's the server's
 private key.
-</details>
 
-## What's in so far
+Some generated structures (mansions, end cities, bastions, ...) need a structure template
+file, `data/structures.nbt`, which isn't in the repo yet because its license is unclear.
+Without it those structures are just skipped.
 
-| | |
-|---|---|
-| 🌍 **Worlds** | Overworld with every biome and structure, Nether with fortresses and bastions, End with cities and gateways, flat and void |
-| ⚒️ **Survival** | Hunger, XP, enchanting, brewing, anvils, smithing, trading, raids, the dragon fight |
-| 🔴 **Redstone** | Dust, repeaters, comparators, observers, pistons, dispensers, hoppers |
-| 🐺 **Mobs** | 70+ types, spawning by biome and dimension |
-| 🛡️ **Admin** | Vanilla commands with target selectors, scoreboards, ops, allowlist, bans |
+## What's in
 
-Full progress is in [PORTING.md](PORTING.md), plans are in [ROADMAP.md](ROADMAP.md).
+- **World**: PNX's overworld, Nether and End generators, seed-exact, with structures
+- **Survival**: hunger, XP, enchanting, brewing, anvils, smithing, effects, bows and tridents
+- **Redstone**: dust, repeaters, comparators, observers, pistons, hoppers, dispensers
+- **Mobs**: 71 types with biome spawning, villager trading, raids, the dragon fight
+- **Admin**: vanilla commands with target selectors, scoreboards, ops, allowlist, bans
 
-## Writing a plugin
+What's missing (riding, loot tables, crossbows, beacons, ...) is listed in
+[ROADMAP.md](ROADMAP.md).
+
+## Plugins
+
+Plugins are compiled in. Implement `Plugin` and override the events you want:
 
 ```rust
 pub struct SpawnGreeter;
@@ -86,19 +62,16 @@ impl Plugin for SpawnGreeter {
 }
 ```
 
-Register it in `plugin::all()` in [`src/plugin.rs`](src/plugin.rs). That file lists every
-event, plus the scheduler, config files, forms and scoreboards.
+Then add it to `plugin::all()` in [`src/plugin.rs`](src/plugin.rs), which lists the events.
 
-## Get involved
+## Contributing
 
-Found a bug or have an idea? [Open an issue](https://github.com/RustedMC/Rusted/issues/new/choose).
-Want to code? Read [CONTRIBUTING.md](CONTRIBUTING.md) and send a pull request. First-timers are
-welcome.
+Issues and pull requests are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Made by **Gardery**. Licensed under the [LGPL-3.0](LICENSE), like PowerNukkitX, which Rusted is
-ported from. Networking uses [bedrock-rs](https://github.com/bedrock-crustaceans/bedrock-rs).
-See [NOTICE.md](NOTICE.md) for all credits.
+By Gardery, under the [LGPL-3.0](LICENSE) like PowerNukkitX. Networking uses
+[bedrock-rs](https://github.com/bedrock-crustaceans/bedrock-rs). Credits in
+[NOTICE.md](NOTICE.md).
 
-<sub>Not affiliated with Mojang Studios or Microsoft.</sub>
+Not affiliated with Mojang or Microsoft.
