@@ -36,6 +36,28 @@ impl Session {
             }
             return;
         }
+        // A firework rocket mid-glide boosts you the way you're looking.
+        if let InventoryTransactionData::ItemUse(u) = &t.data
+            && u.action_type == 1
+            && self.gliding
+            && self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id)) == Some("minecraft:firework_rocket")
+            && let Some(me) = self.server.get(self.id)
+        {
+            let (pitch, yaw) = (me.rot.0.to_radians(), me.rot.1.to_radians());
+            let look = (-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos());
+            let boost = Protocol::SetActorMotionPacket(Box::new(bedrock::protocol::v662::packets::SetActorMotionPacket {
+                target_runtime_id: ActorRuntimeID(self.id as u64),
+                motion: (look.0 * 1.6, look.1 * 1.6, look.2 * 1.6),
+                server_tick: 0,
+            }));
+            let _ = self.conn.send(&[boost]).await;
+            let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(play_sound("firework.launch", me.pos)) });
+            if survival_like(&self.mode) {
+                self.inv.use_one(self.selected_slot as usize);
+                let _ = self.conn.send(&[self.inv.content_packet()]).await;
+            }
+            return;
+        }
         // Fishing rods cast, or reel in what's on the line.
         if let InventoryTransactionData::ItemUse(u) = &t.data
             && u.action_type == 1

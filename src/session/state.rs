@@ -57,6 +57,8 @@ pub(crate) struct Session {
     pub portal_done: Instant,
     /// Mob this player is riding.
     pub riding: Option<i64>,
+    /// Gliding with an elytra.
+    pub gliding: bool,
 }
 
 impl Session {
@@ -145,6 +147,7 @@ impl Session {
             portal_ticks: 0,
             portal_done: Instant::now(),
             riding: None,
+            gliding: false,
         })
     }
 

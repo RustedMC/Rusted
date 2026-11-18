@@ -27,6 +27,8 @@ impl Session {
         for flag in &input.input_data {
             match flag {
                 Input::StartFlying => self.flying = true,
+                Input::StartGliding => self.gliding = true,
+                Input::StopGliding => self.gliding = false,
                 Input::StopFlying => self.flying = false,
                 Input::StartSneaking => {
                     self.sneaking = true;
@@ -47,7 +49,8 @@ impl Session {
         }
         let pos = input.player_position;
         let feet = (pos.0.floor() as i32, (pos.1 - 1.62).floor() as i32, pos.2.floor() as i32);
-        let takes_damage = matches!(self.mode, GameType::Survival | GameType::Adventure) && !self.flying;
+        // Gliding resets the fall, so landing from a glide doesn't hurt.
+        let takes_damage = matches!(self.mode, GameType::Survival | GameType::Adventure) && !self.flying && !self.gliding;
         let in_water = self.server.world.get(feet.0, feet.1, feet.2) == terrain::ids().water;
         let head = self.server.world.get(pos.0.floor() as i32, pos.1.floor() as i32, pos.2.floor() as i32);
         self.head_in_water = blocks::entry(head).is_some_and(|e| e.name.ends_with("water"));

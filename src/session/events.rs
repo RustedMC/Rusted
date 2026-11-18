@@ -6,6 +6,10 @@ use players::Event;
 impl Session {
     pub async fn every_second(&mut self) {
         self.regen_ticks += 1;
+        // An elytra wears 1 durability per second of gliding (vanilla).
+        if self.gliding && survival_like(&self.mode) {
+            wear(&mut self.conn, &self.server, self.id, &mut self.inv, inventory::ARMOR + 1, 1, &self.mode).await;
+        }
         let rule_on = !self.server.game_rules.lock().iter().any(|r| {
             r.rule_name == "naturalRegeneration" && matches!(r.rule_type, bedrock::protocol::v844::types::Type::Bool(false))
         });
