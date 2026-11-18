@@ -3161,8 +3161,14 @@ mod tests {
         crate::loot::generated(spawner, server.world.get(spawner.0, spawner.1, spawner.2), "normal_mineshaft");
         server.moved(7, (200.5, -60.0 + 1.62, 205.5), (0.0, 0.0), 0.0);
         let spiders = || server.mobs.mobs.lock().values().filter(|m| m.kind == Kind::CaveSpider && m.dying == 0).count();
-        server.mobs.tick(&server);
-        assert!(spiders() > 0, "spawned on the first tick");
+        // Each try picks 4 random spots, so a try can come up empty; give it a few cycles.
+        for _ in 0..(3 * 40 * TPS) {
+            if spiders() > 0 {
+                break;
+            }
+            server.mobs.tick(&server);
+        }
+        assert!(spiders() > 0, "the spawner made cave spiders");
         for _ in 0..(60 * TPS) {
             server.mobs.tick(&server);
         }
