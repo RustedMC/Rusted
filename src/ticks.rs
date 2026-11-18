@@ -58,15 +58,38 @@ pub(crate) fn random_ticks(server: &players::Server, rng: &mut u64) {
 }
 
 pub(crate) fn redstone_tick(server: &players::Server, plates: &mut HashMap<(i32, i32, i32), Instant>) {
-    // Plates stay pressed while someone stands on them, then 1 s more (vanilla 20 ticks).
+    // Plates stay pressed while something is on them, then 1 s more (vanilla 20 ticks).
+    // Stone plates feel players and mobs; wooden ones also items; weighted ones count
+    // (gold: 1 a thing, iron: 1 per 10), as in PNX BlockPressurePlateBase.
+    let mut on: HashMap<(i32, i32, i32), (u32, u32)> = HashMap::new(); // (players + mobs, items)
+    let block_of = |x: f32, y: f32, z: f32| (x.floor() as i32, (y + 0.05).floor() as i32, z.floor() as i32);
     for p in server.all() {
-        let feet = (p.pos.0.floor() as i32, (p.pos.1 - 1.62 + 0.05).floor() as i32, p.pos.2.floor() as i32);
+        on.entry(block_of(p.pos.0, p.pos.1 - 1.62, p.pos.2)).or_default().0 += 1;
+    }
+    for m in server.mobs.feet() {
+        on.entry(block_of(m.0, m.1, m.2)).or_default().0 += 1;
+    }
+    for (pos, n) in server.entities.stacks() {
+        on.entry(block_of(pos.0, pos.1, pos.2)).or_default().1 += n.max(0) as u32;
+    }
+    for (feet, (beings, items)) in on {
         let b = server.world.get(feet.0, feet.1, feet.2);
-        if blocks::entry(b).is_some_and(|e| e.name.ends_with("pressure_plate"))
-            && (plates.insert(feet, Instant::now()).is_none() || !matches!(blocks::state(b, "redstone_signal"), Some(blocks::State::Int(15)))) {
-                server.set_block_quiet(0, feet.0, feet.1, feet.2, blocks::with(b, &[("redstone_signal", blocks::State::Int(15))]));
-                let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(play_sound("random.click", (feet.0 as f32 + 0.5, feet.1 as f32, feet.2 as f32 + 0.5))) });
-            }
+        let Some(name) = blocks::entry(b).map(|e| e.name.trim_start_matches("minecraft:")).filter(|n| n.ends_with("pressure_plate")) else { continue };
+        let signal = match name {
+            "light_weighted_pressure_plate" => (beings + items).min(15) as i32,
+            "heavy_weighted_pressure_plate" => (beings + items).div_ceil(10).min(15) as i32,
+            "stone_pressure_plate" | "polished_blackstone_pressure_plate" => if beings > 0 { 15 } else { 0 },
+            _ => if beings + items > 0 { 15 } else { 0 },
+        };
+        if signal == 0 {
+            continue;
+        }
+        let was = matches!(blocks::state(b, "redstone_signal"), Some(blocks::State::Int(s)) if *s == signal);
+        plates.insert(feet, Instant::now());
+        if !was {
+            server.set_block_quiet(0, feet.0, feet.1, feet.2, blocks::with(b, &[("redstone_signal", blocks::State::Int(signal))]));
+            let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(play_sound("random.click", (feet.0 as f32 + 0.5, feet.1 as f32, feet.2 as f32 + 0.5))) });
+        }
     }
     plates.retain(|&q, t| {
         if t.elapsed() < std::time::Duration::from_secs(1) {

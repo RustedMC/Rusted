@@ -997,6 +997,11 @@ impl Mobs {
         Use::Nothing
     }
 
+    /// Feet positions of living mobs (for pressure plates).
+    pub fn feet(&self) -> Vec<(f32, f32, f32)> {
+        self.mobs.lock().values().filter(|m| m.dying == 0 && !matches!(m.kind, Kind::Boat | Kind::Minecart)).map(|m| m.pos).collect()
+    }
+
     pub fn contains(&self, id: i64) -> bool {
         self.mobs.lock().contains_key(&id)
     }

@@ -101,6 +101,11 @@ fn broadcast(server: &Server, p: Protocol) {
 impl Entities {
     /// Items popping out of broken blocks, chests, mob loot. Motion from PNX Level.dropItem
     /// (random +-0.1 sideways, 0.2 up), pickup after 10 ticks.
+    /// Where each dropped item stack is and how many items it holds (for pressure plates).
+    pub fn stacks(&self) -> Vec<((f32, f32, f32), i8)> {
+        self.items.lock().values().map(|e| (e.pos, e.count)).collect()
+    }
+
     pub fn drop_item(&self, server: &Server, item: NetworkItemStackDescriptorV2, count: i8, pos: (f32, f32, f32)) {
         let h = (pos.0 * 73.1 + pos.1 * 19.7 + pos.2 * 37.3 + self.items.lock().len() as f32 * 11.0).sin() * 43_758.547;
         let (a, b) = (h.fract().abs(), (h * 1.618).fract().abs());
