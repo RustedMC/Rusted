@@ -4,7 +4,7 @@ Rough order of what's next. See [PORTING.md](PORTING.md) for where each part sta
 
 ## Next up
 - Firework rockets launched from the ground, with their explosion effects
-- Maps, then the cartography table (beacons, looms, lecterns and crafters are done)
+- Maps and the cartography table (waiting on a fix in bedrock-rs: its map picture packet is missing the type flags)
 
 ## After that
 - PNX's full mob AI (memory, sensors, behaviours) to replace the current simpler AI
