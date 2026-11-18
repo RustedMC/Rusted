@@ -494,7 +494,11 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
                 _ => return Some("§cUse /weather clear|rain|thunder".into()),
             };
             set_weather(server, new);
-            format!("Changing to {} weather", format!("{new:?}").to_lowercase())
+            match new {
+                Weather::Clear => "Changing to clear weather".to_string(),
+                Weather::Rain => "Changing to rainy weather".to_string(),
+                Weather::Thunder => "Changing to rain and thunder".to_string(),
+            }
         }
         ["difficulty"] => format!("Difficulty: {}", ["peaceful", "easy", "normal", "hard"][*DIFFICULTY.lock() as usize]),
         ["difficulty", d] => match difficulty_from(d) {
@@ -505,7 +509,7 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
             }
             None => "§cUse /difficulty peaceful|easy|normal|hard".into(),
         },
-        ["seed"] => format!("Seed: [{}]", server.world.seed() as i64),
+        ["seed"] => format!("Seed: {}", server.world.seed() as i64),
         ["plugins" | "pl"] => {
             let names = server.plugins.summaries();
             format!("Plugins ({}): {}", names.len(), names.iter().map(|n| format!("§a{n}§f")).collect::<Vec<_>>().join(", "))

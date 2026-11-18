@@ -90,7 +90,7 @@ impl Session {
                     }
                     Some(new) => {
                         set_game_mode(&mut self.conn, self.id, &new).await;
-                        let msg = format!("Game mode: {new:?}");
+                        let msg = format!("Set own game mode to {new:?}");
                         self.mode = new;
                         self.server.mobs.set_targetable(self.id, survival_like(&self.mode));
                         save_mode(&self.name, &self.mode);
@@ -134,7 +134,8 @@ impl Session {
                     (_, Some((_, max)), Some(l)) if l < 1 || l > max => format!("§cLevel {l} is not supported by that enchantment (max {max})"),
                     (Some(t), Some((e, _)), Some(l)) => {
                         enchant::QUEUE.lock().push((t, e, l));
-                        format!("Enchanting held item of {who}")
+                        let _ = &who;
+                        "Enchanting succeeded".to_string()
                     }
                 }
             }
@@ -439,12 +440,12 @@ impl Session {
             ["spawnpoint"] => {
                 let pos = self.server.get(self.id).map_or(self.server.world.spawn(), |p| p.pos);
                 commands::set_spawn(Some(&self.name), pos);
-                format!("Set spawn point to {:.0} {:.0} {:.0}", pos.0, pos.1 - 1.62, pos.2)
+                format!("Set {}'s spawn point to ({:.0}, {:.0}, {:.0})", self.name, pos.0, pos.1 - 1.62, pos.2)
             }
             ["setworldspawn"] => {
                 let pos = self.server.get(self.id).map_or(self.server.world.spawn(), |p| p.pos);
                 commands::set_spawn(None, pos);
-                format!("Set the world spawn point to {:.0} {:.0} {:.0}", pos.0, pos.1 - 1.62, pos.2)
+                format!("Set the world spawn point to ({:.0}, {:.0}, {:.0})", pos.0, pos.1 - 1.62, pos.2)
             }
             ["tp" | "teleport", who] => match self.server.find_by_name(who).and_then(|t| self.server.get(t)) {
                 Some(t) => {
@@ -471,7 +472,7 @@ impl Session {
                     }
                     let _ = self.conn.send(&[tp]).await;
                     self.server.moved(self.id, eye, rot, head);
-                    format!("Teleported to {x:.1} {y:.1} {z:.1}")
+                    format!("Teleported {} to {x:.2}, {y:.2}, {z:.2}", self.name)
                 }
                 None => "§cUse /tp <x> <y> <z>".into(),
             },
@@ -488,7 +489,7 @@ impl Session {
                         self.server.set_time(t);
                         let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(clock_packet(t)) });
                         let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(time_packet(t)) });
-                        format!("Time set to {t}")
+                        format!("Set the time to {t}")
                     }
                     None => "§cUse /time set day|noon|night|midnight|<ticks>".into(),
                 }
@@ -516,7 +517,7 @@ impl Session {
                                     rules.retain(|c| c.rule_name != r.rule_name);
                                     rules.push(r.clone());
                                 }
-                                let msg = format!("Game rule {} set to {value}", r.rule_name);
+                                let msg = format!("Game rule {} has been updated to {value}", r.rule_name);
                                 let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(game_rules_packet(vec![r])) });
                                 msg
                             }
@@ -534,7 +535,7 @@ impl Session {
                         let _ = self.conn.send(&[Protocol::InventorySlotPacket(Box::new(InventorySlotPacket {
                             container_id: 0, slot: slot as u32, container_name_data: None, storage_item: None, item: stack,
                         }))]).await;
-                        format!("Gave {count} {item}")
+                        format!("Gave {} * {count} to {}", display_name(item), self.name)
                     }
                     (None, _) => format!("§cUnknown item: {item}"),
                     (_, None) => "§cYour inventory is full".into(),
@@ -543,4 +544,12 @@ impl Session {
             _ => format!("§cUnknown command: {}. Please check that the command exists and that you have permission to use it.", args.first().unwrap_or(&"")),
         }
     }
+}
+
+/// "minecraft:oak_planks" -> "Oak Planks", the way vanilla names items in command replies.
+fn display_name(id: &str) -> String {
+    id.trim_start_matches("minecraft:").split('_').map(|w| {
+        let mut c = w.chars();
+        c.next().map_or(String::new(), |f| f.to_uppercase().chain(c).collect())
+    }).collect::<Vec<_>>().join(" ")
 }

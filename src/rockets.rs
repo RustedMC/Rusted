@@ -16,6 +16,8 @@ struct Rocket {
     vel: (f32, f32, f32),
     age: u32,
     lifetime: u32,
+    /// Shot from a crossbow: flies straight instead of climbing faster and faster.
+    shot: bool,
 }
 
 static ROCKETS: Mutex<Vec<Rocket>> = Mutex::new(Vec::new());
@@ -59,7 +61,15 @@ pub fn launch(server: &Server, at: (f32, f32, f32), item_data: &[u8]) {
     }));
     relay(server, add);
     relay(server, crate::packets::play_sound("firework.launch", at));
-    ROCKETS.lock().push(Rocket { id, pos: at, vel: (0.0, 0.05, 0.0), age: 0, lifetime });
+    ROCKETS.lock().push(Rocket { id, pos: at, vel: (0.0, 0.05, 0.0), age: 0, lifetime, shot: false });
+}
+
+/// A rocket fired from a crossbow at `vel` (blocks a game tick).
+pub fn shoot(server: &Server, from: (f32, f32, f32), vel: (f32, f32, f32)) {
+    launch(server, from, &[]);
+    if let Some(r) = ROCKETS.lock().last_mut() {
+        (r.vel, r.shot) = (vel, true);
+    }
 }
 
 /// Moves rockets and bursts the ones that are done. Run at 10 Hz.
@@ -67,7 +77,9 @@ pub fn tick(server: &Server) {
     let mut out = Vec::new();
     ROCKETS.lock().retain_mut(|r| {
         for _ in 0..2 {
-            r.vel = (r.vel.0 * 1.15, r.vel.1 + 0.04, r.vel.2 * 1.15);
+            if !r.shot {
+                r.vel = (r.vel.0 * 1.15, r.vel.1 + 0.04, r.vel.2 * 1.15);
+            }
             r.pos = (r.pos.0 + r.vel.0, r.pos.1 + r.vel.1, r.pos.2 + r.vel.2);
             r.age += 1;
         }
