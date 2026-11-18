@@ -388,6 +388,8 @@ pub struct Mob {
     buck: u32,
     /// Minecarts: the rider's yaw while they hold forward.
     push: Option<f32>,
+    /// Memory and current behaviour (passive mobs so far; see `ai`).
+    brain: crate::ai::Brain,
 }
 
 /// Weapon enchantment effects on a hit.
@@ -799,7 +801,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: kind.max_health(), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: if baby { GROW } else { 0 }, baby: if baby { GROW } else { 0 },
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, temper: 0, buck: 0, push: None,
+            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, temper: 0, buck: 0, push: None, brain: Default::default(),
         };
         let size = [1u8, 2, 4][(self.rand() % 3) as usize];
         if kind.spec().splits {
@@ -824,7 +826,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: (size as f32).powi(2), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: 0,
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, temper: 0, buck: 0, push: None,
+            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, temper: 0, buck: 0, push: None, brain: Default::default(),
         };
         broadcast(server, add_packet(&m));
         self.mobs.lock().insert(id, m);
@@ -2230,63 +2232,131 @@ impl Mobs {
 
     /// Animal AI: panic, follow food, find a partner, wander, look around. Returns a partner
     /// id when close enough to breed.
-    fn think(&self, server: &Server, m: &mut Mob) -> Option<i64> {
-        let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
-        let mut partner_ready = None;
-        // Nearest player, and whether they're holding this mob's food.
-        let players = server.all();
+    /// What a passive mob notices, every few ticks (PNX NearestPlayerSensor,
+    /// NearestFeedingPlayerSensor, the breeding and parent sensors).
+    fn sense(&self, server: &Server, m: &mut Mob) {
+        let feet_of = |p: &crate::players::PlayerInfo| (p.pos.0, p.pos.1 - 1.62, p.pos.2);
         let held = self.held.lock().clone();
-        let nearest = players
+        let mem = &mut m.brain.memory;
+        let players = server.all();
+        mem.nearest_player = players.iter().map(|p| (p.id, feet_of(p), dist2(feet_of(p), m.pos))).min_by(|a, b| a.2.total_cmp(&b.2));
+        mem.feeder = players
             .iter()
-            .map(|p| (p, (p.pos.0 - m.pos.0).powi(2) + (p.pos.1 - 1.62 - m.pos.1).powi(2) + (p.pos.2 - m.pos.2).powi(2)))
-            .min_by(|a, b| a.1.total_cmp(&b.1));
-        if m.panic > 0 {
-            m.panic -= 1;
-            if m.path.is_empty() {
-                let a = self.randf() * std::f32::consts::TAU;
-                let goal = (feet.0 + (a.cos() * 7.0) as i32, feet.1, feet.2 + (a.sin() * 7.0) as i32);
-                m.path = path(&server.world, feet, goal, 120);
-            }
-        } else if m.love > 0 {
-            // Head for another animal of the same kind that's also in love.
-            let mate = self
-                .mobs
-                .lock()
-                .values()
-                .filter(|o| o.id != m.id && o.kind == m.kind && o.love > 0 && o.dying == 0)
-                .map(|o| (o.id, o.pos, (o.pos.0 - m.pos.0).powi(2) + (o.pos.2 - m.pos.2).powi(2)))
-                .filter(|o| o.2 < 64.0)
-                .min_by(|a, b| a.2.total_cmp(&b.2));
-            if let Some((oid, opos, d)) = mate {
-                if d < 2.5 {
-                    partner_ready = Some(oid);
-                } else if m.path.is_empty() || self.rand().is_multiple_of(20) {
-                    m.path = path(&server.world, feet, (opos.0.floor() as i32, opos.1.floor() as i32, opos.2.floor() as i32), 160);
+            .filter(|p| held.get(&p.id).is_some_and(|i| m.kind.food(i)))
+            .map(|p| (p.id, feet_of(p), dist2(feet_of(p), m.pos)))
+            .filter(|p| p.2 < 64.0)
+            .min_by(|a, b| a.2.total_cmp(&b.2));
+        let mobs = self.mobs.lock();
+        mem.mate = (m.love > 0)
+            .then(|| {
+                mobs.values()
+                    .filter(|o| o.id != m.id && o.kind == m.kind && o.love > 0 && o.dying == 0)
+                    .map(|o| (o.id, o.pos, dist2(o.pos, m.pos)))
+                    .filter(|o| o.2 < 64.0)
+                    .min_by(|a, b| a.2.total_cmp(&b.2))
+            })
+            .flatten();
+        mem.parent = m.brain.parent_id.filter(|_| m.baby > 0).and_then(|p| mobs.get(&p)).filter(|p| p.dying == 0).map(|p| (p.id, p.pos, dist2(p.pos, m.pos)));
+        drop(mobs);
+        let below = server.world.get(m.pos.0.floor() as i32, m.pos.1.floor() as i32 - 1, m.pos.2.floor() as i32);
+        m.brain.memory.on_grass = blocks::short(below) == "grass_block";
+    }
+
+    /// Passive mob AI: sense, pick a behaviour (see `ai::Brain::decide`), act, steer.
+    /// Returns a partner when two animals in love meet.
+    fn think(&self, server: &Server, m: &mut Mob) -> Option<i64> {
+        use crate::ai::{Behavior as B, Facts};
+        let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+        let block = |p: (f32, f32, f32)| (p.0.floor() as i32, p.1.floor() as i32, p.2.floor() as i32);
+        m.panic = m.panic.saturating_sub(1);
+        if m.brain.sense_in == 0 {
+            m.brain.sense_in = 4; // twice a second
+            self.sense(server, m);
+        } else {
+            m.brain.sense_in -= 1;
+        }
+        let facts = Facts {
+            panicking: m.panic > 0,
+            in_love: m.love > 0,
+            baby: m.baby > 0,
+            sheared: m.kind == Kind::Sheep && m.sheared,
+            has_path: !m.path.is_empty(),
+            roll: self.rand() % 1000,
+        };
+        if m.brain.decide(&facts).is_some() {
+            m.path.clear(); // the old behaviour's walk is over
+        }
+        let mut partner = None;
+        let mem = m.brain.memory.clone();
+        match m.brain.doing {
+            B::Panic => {
+                if m.path.is_empty() {
+                    let a = self.randf() * std::f32::consts::TAU;
+                    m.path = path(&server.world, feet, (feet.0 + (a.cos() * 7.0) as i32, feet.1, feet.2 + (a.sin() * 7.0) as i32), 120);
                 }
             }
-        } else if let Some((p, d2)) = nearest
-            && d2 < 64.0
-            && m.baby == 0
-            && held.get(&p.id).is_some_and(|i| m.kind.food(i))
-        {
-            // Tempted: follow the player, stopping a couple of blocks away.
-            if d2 < 6.0 {
-                m.path.clear();
-            } else if m.path.is_empty() || self.rand().is_multiple_of(10) {
-                m.path = path(&server.world, feet, (p.pos.0.floor() as i32, (p.pos.1 - 1.62).floor() as i32, p.pos.2.floor() as i32), 160);
+            B::Breed => {
+                if let Some((mate, at, d2)) = mem.mate {
+                    if d2 < 2.5 {
+                        partner = Some(mate);
+                    } else if m.path.is_empty() || self.rand().is_multiple_of(20) {
+                        m.path = path(&server.world, feet, block(at), 160);
+                    }
+                }
             }
-        } else if m.path.is_empty() && self.rand().is_multiple_of(80) {
-            let a = self.randf() * std::f32::consts::TAU;
-            let r = 3.0 + self.randf() * 7.0;
-            let goal = (feet.0 + (a.cos() * r) as i32, feet.1, feet.2 + (a.sin() * r) as i32);
-            m.path = path(&server.world, feet, goal, 120);
+            B::Tempt => {
+                // Follow the player, stopping a couple of blocks away.
+                if let Some((_, at, d2)) = mem.feeder {
+                    if d2 < 6.0 {
+                        m.path.clear();
+                    } else if m.path.is_empty() || self.rand().is_multiple_of(10) {
+                        m.path = path(&server.world, feet, block(at), 160);
+                    }
+                }
+            }
+            B::FollowParent => {
+                if let Some((_, at, _)) = mem.parent
+                    && (m.path.is_empty() || self.rand().is_multiple_of(20))
+                {
+                    m.path = path(&server.world, feet, block(at), 160);
+                }
+            }
+            B::EatGrass => {
+                // Head down for 2 s, then the grass becomes dirt and the wool grows back (vanilla EatBlockGoal).
+                m.path.clear();
+                use bedrock::protocol::v975::enums::ActorEvent;
+                if m.brain.ticks == 0 {
+                    broadcast(server, event(m.id, ActorEvent::EatGrass));
+                } else if m.brain.ticks >= 2 * TPS {
+                    let g = (feet.0, feet.1 - 1, feet.2);
+                    if blocks::short(server.world.get(g.0, g.1, g.2)) == "grass_block"
+                        && let Some(dirt) = crate::blocks::any_state("minecraft:dirt")
+                    {
+                        server.set_block(0, g.0, g.1, g.2, dirt);
+                    }
+                    m.sheared = false;
+                    m.regrow = 0;
+                    m.brain.memory.on_grass = false;
+                    broadcast(server, data_packet(m));
+                }
+            }
+            B::Roam => {
+                if m.path.is_empty() && m.brain.ticks == 0 {
+                    let a = self.randf() * std::f32::consts::TAU;
+                    let r = 3.0 + self.randf() * 7.0;
+                    m.path = path(&server.world, feet, (feet.0 + (a.cos() * r) as i32, feet.1, feet.2 + (a.sin() * r) as i32), 120);
+                }
+            }
+            B::Idle => {}
         }
-        // Look at a nearby player when idle, otherwise where it's going.
-        if let Some((p, d2)) = nearest
-            && d2 < 36.0
-            && m.path.is_empty()
-        {
-            m.head_yaw = (-(p.pos.0 - m.pos.0)).atan2(p.pos.2 - m.pos.2).to_degrees();
+        // Core behaviour, alongside the rest: look at a nearby player when standing still,
+        // glance around now and then, otherwise look where it's going.
+        if m.path.is_empty() {
+            match mem.nearest_player {
+                Some((_, at, d2)) if d2 < 36.0 => m.head_yaw = (-(at.0 - m.pos.0)).atan2(at.2 - m.pos.2).to_degrees(),
+                _ if self.rand().is_multiple_of(40) => m.head_yaw = m.yaw + self.randf() * 120.0 - 60.0,
+                _ => {}
+            }
         } else {
             m.head_yaw = m.yaw;
         }
@@ -2303,14 +2373,14 @@ impl Mobs {
         if let Some((tx, tz)) = m.target {
             let (dx, dz) = (tx - m.pos.0, tz - m.pos.2);
             let d = (dx * dx + dz * dz).sqrt().max(0.001);
-            let speed = m.kind.speed() * if m.panic > 0 { 2.0 } else if m.love > 0 { 1.2 } else { 1.0 };
+            let speed = m.kind.speed() * m.brain.doing.speed();
             if m.on_ground {
                 m.vel.0 = m.vel.0 * 0.5 + dx / d * speed * 0.5;
                 m.vel.2 = m.vel.2 * 0.5 + dz / d * speed * 0.5;
             }
             m.yaw = (-dx).atan2(dz).to_degrees();
         }
-        partner_ready
+        partner
     }
 
     /// Two animals in love met: both cool down and a baby appears between them.
@@ -2326,6 +2396,9 @@ impl Mobs {
         m.cooldown = BREED_COOLDOWN;
         let at = ((m.pos.0 + p.0) / 2.0, m.pos.1.max(p.1), (m.pos.2 + p.2) / 2.0);
         let id = self.spawn_with(server, m.kind, at, true);
+        if let Some(baby) = self.mobs.lock().get_mut(&id) {
+            baby.brain.parent_id = Some(m.id);
+        }
         use bedrock::protocol::v975::enums::ActorEvent;
         out.push(event(id, ActorEvent::LoveHearts));
     }
@@ -2841,7 +2914,7 @@ impl Mobs {
                         id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health, on_ground: false, target: None, panic: 0, dying: 0,
                         sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: baby.parse().unwrap_or(0),
                         aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner, sitting: *sitting == "1",
-                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false, rider: None, saddled, temper, buck: 0, push: None,
+                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false, rider: None, saddled, temper, buck: 0, push: None, brain: Default::default(),
                     });
                     if let Some(site) = job.and_then(|j| j.site) {
                         crate::villagers::claim(site, id);
@@ -3100,6 +3173,42 @@ mod tests {
         assert!(n > 0 && !saved.iter().any(|k| k.hostile()), "{saved:?}");
         assert!(again.mobs.lock().values().any(|m| m.kind == Kind::Wolf && m.owner == Some(owner_key("Steve"))));
         assert_eq!(attack_damage(Some("minecraft:diamond_sword")), 8.0);
+    }
+
+    #[test]
+    fn sheep_eat_grass_and_babies_follow_parents() {
+        let server = Server::new();
+        // A sheared sheep on grass eats it within a minute, long before the 3-minute timer.
+        let sheep = server.mobs.spawn(&server, Kind::Sheep, (500.5, -60.0, 0.5));
+        if let Some(s) = server.mobs.mobs.lock().get_mut(&sheep) {
+            (s.sheared, s.regrow, s.baby) = (true, 10_000, 0);
+        }
+        for _ in 0..(60 * TPS) {
+            server.mobs.tick(&server);
+            if !server.mobs.mobs.lock()[&sheep].sheared {
+                break;
+            }
+        }
+        assert!(!server.mobs.mobs.lock()[&sheep].sheared, "ate grass and grew wool back");
+
+        // A baby walks back toward its parent.
+        let cow = server.mobs.spawn(&server, Kind::Cow, (600.5, -60.0, 0.5));
+        let calf = server.mobs.spawn(&server, Kind::Cow, (612.5, -60.0, 0.5));
+        if let Some(c) = server.mobs.mobs.lock().get_mut(&calf) {
+            (c.baby, c.brain.parent_id) = (GROW, Some(cow));
+        }
+        if let Some(c) = server.mobs.mobs.lock().get_mut(&cow) {
+            c.baby = 0;
+        }
+        let gap = |s: &Mobs| {
+            let m = s.mobs.lock();
+            (m[&calf].pos.0 - m[&cow].pos.0).abs()
+        };
+        let before = gap(&server.mobs);
+        for _ in 0..(20 * TPS) {
+            server.mobs.tick(&server);
+        }
+        assert!(gap(&server.mobs) < before - 3.0, "calf came back: {before} -> {}", gap(&server.mobs));
     }
 
     #[test]

@@ -7,7 +7,7 @@ Rough order of what's next. See [PORTING.md](PORTING.md) for where each part sta
 - Maps and the cartography table (waiting on a fix in bedrock-rs: its map picture packet is missing the type flags)
 
 ## After that
-- PNX's full mob AI (memory, sensors, behaviours) to replace the current simpler AI
+- PNX's mob AI for the rest of the mobs: hostiles, neutrals, villagers, fish and flyers (passive animals are on the new brain in `src/ai.rs`)
 - Sculk sensors and shriekers (repeater locking, detector rails and lectern signals are done; quasi-connectivity is Java-only)
 - `/execute` and the remaining vanilla commands
 - More plugin events, plugins loaded at runtime

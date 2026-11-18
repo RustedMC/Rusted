@@ -6,6 +6,7 @@ mod chunks;
 mod ticks;
 mod packets;
 mod saves;
+mod ai;
 mod beacon;
 mod blockops;
 mod session;
