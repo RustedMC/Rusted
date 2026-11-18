@@ -19,6 +19,8 @@ pub const UNBREAKING: i16 = 17;
 pub const FORTUNE: i16 = 18;
 pub const LUCK_OF_THE_SEA: i16 = 23;
 pub const LURE: i16 = 24;
+pub const MULTISHOT: i16 = 33;
+pub const QUICK_CHARGE: i16 = 35;
 
 /// (name, id, max level, applies to)
 const ALL: [(&str, i16, i16, Slot); 41] = [

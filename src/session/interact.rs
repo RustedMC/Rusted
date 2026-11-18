@@ -28,9 +28,12 @@ impl Session {
         // Use in the air (action 1) with a bow or trident: start drawing it.
         if let InventoryTransactionData::ItemUse(u) = &t.data
             && u.action_type == 1
-            && self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id)).is_some_and(|n| matches!(n, "minecraft:bow" | "minecraft:trident"))
+            && self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id)).is_some_and(|n| matches!(n, "minecraft:bow" | "minecraft:trident" | "minecraft:crossbow"))
         {
-            self.drawing = Some(Instant::now());
+            // A loaded crossbow fires; anything else starts drawing.
+            if !self.fire_crossbow().await {
+                self.drawing = Some(Instant::now());
+            }
             return;
         }
         // Fishing rods cast, or reel in what's on the line.

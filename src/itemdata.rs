@@ -207,6 +207,10 @@ impl ItemData {
         self.nbt.iter().find(|(key, _)| key == k).map(|(_, v)| v)
     }
 
+    pub fn remove(&mut self, k: &str) {
+        self.nbt.retain(|(key, _)| key != k);
+    }
+
     pub fn set(&mut self, k: &str, v: Tag) {
         match self.nbt.iter_mut().find(|(key, _)| key == k) {
             Some(slot) => slot.1 = v,

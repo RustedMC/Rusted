@@ -23,6 +23,22 @@ impl Session {
                 self.inv.use_one(slot);
                 let _ = self.conn.send(&[self.inv.content_packet()]).await;
             }
+        } else if held == "minecraft:crossbow" {
+            // Charged long enough: load an arrow into it (1.25 s, 0.25 s less per Quick Charge).
+            let needed = 25.0 - 5.0 * enchant::level(&data, enchant::QUICK_CHARGE) as f32;
+            if ticks < needed || crate::itemdata::ItemData::read(&data).get("chargedItem").is_some() {
+                return;
+            }
+            let arrow_slot = (0..36).find(|&i| self.inv.held(i).and_then(|s| items::name_of(s.item.id)) == Some("minecraft:arrow"));
+            if survival_like(&self.mode) {
+                let Some(a) = arrow_slot else { return };
+                self.inv.use_one(a);
+            }
+            let mut item = st.item.clone();
+            item.user_data_buffer = crossbow_loaded(&data, true);
+            self.inv.set_slot(slot, item, st.count);
+            let _ = self.server.events.send(players::Event::Relay { from: 0, packet: Box::new(play_sound("crossbow.loading.end", me.pos)) });
+            let _ = self.conn.send(&[self.inv.content_packet()]).await;
         } else if held == "minecraft:bow" {
             let f = ticks / 20.0;
             let force = ((f * f + f * 2.0) / 3.0).min(1.0);
@@ -43,6 +59,31 @@ impl Session {
             wear(&mut self.conn, &self.server, self.id, &mut self.inv, slot, 1, &self.mode).await;
             let _ = self.conn.send(&[self.inv.content_packet()]).await;
         }
+    }
+
+    /// Fires a loaded crossbow. True if it was loaded (Multishot fires three, 10 degrees apart).
+    pub(super) async fn fire_crossbow(&mut self) -> bool {
+        let slot = self.selected_slot as usize;
+        let Some(st) = self.inv.held(slot).cloned() else { return false };
+        let data = st.item.user_data_buffer.clone();
+        if items::name_of(st.item.id) != Some("minecraft:crossbow") || crate::itemdata::ItemData::read(&data).get("chargedItem").is_none() {
+            return false;
+        }
+        let Some(me) = self.server.get(self.id) else { return false };
+        let spread: &[f32] = if enchant::level(&data, enchant::MULTISHOT) > 0 { &[0.0, -10.0, 10.0] } else { &[0.0] };
+        for (i, d) in spread.iter().enumerate() {
+            // Only the middle arrow can be picked back up, like vanilla.
+            let drop = (i == 0 && survival_like(&self.mode)).then(|| items::item_by_name("minecraft:arrow")).flatten();
+            self.server.mobs.player_shoot(&self.server, self.id, me.pos, (me.rot.0, me.rot.1 + d), 1.0, false, 0, 0, false, drop);
+        }
+        let mut item = st.item.clone();
+        item.user_data_buffer = crossbow_loaded(&data, false);
+        self.inv.set_slot(slot, item, st.count);
+        let _ = self.server.events.send(players::Event::Relay { from: 0, packet: Box::new(play_sound("crossbow.shoot", me.pos)) });
+        let uses = if spread.len() > 1 { 3 } else { 1 };
+        wear(&mut self.conn, &self.server, self.id, &mut self.inv, slot, uses, &self.mode).await;
+        let _ = self.conn.send(&[self.inv.content_packet()]).await;
+        true
     }
 
     pub(super) async fn on_consume(&mut self) {
@@ -137,5 +178,32 @@ impl Session {
                 item,
             }))]).await;
         }
+    }
+}
+
+/// The crossbow's item data with an arrow loaded (`chargedItem`, which Bedrock shows) or not.
+fn crossbow_loaded(data: &[u8], loaded: bool) -> Vec<u8> {
+    use crate::itemdata::{ItemData, Tag};
+    let mut d = ItemData::read(data);
+    if loaded {
+        d.set("chargedItem", Tag::Compound(vec![
+            ("Name".into(), Tag::String("minecraft:arrow".into())),
+            ("Count".into(), Tag::Byte(1)),
+            ("Damage".into(), Tag::Short(0)),
+        ]));
+    } else {
+        d.remove("chargedItem");
+    }
+    d.write()
+}
+
+#[cfg(test)]
+mod crossbow_tests {
+    #[test]
+    fn loading_sets_and_clears_the_charged_arrow() {
+        let loaded = super::crossbow_loaded(&[], true);
+        assert!(crate::itemdata::ItemData::read(&loaded).get("chargedItem").is_some());
+        let empty = super::crossbow_loaded(&loaded, false);
+        assert!(crate::itemdata::ItemData::read(&empty).get("chargedItem").is_none());
     }
 }
