@@ -1,0 +1,36 @@
+name: Bug report
+description: Something doesn't work like it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we reproduce it?
+      placeholder: |
+        1. Place a ...
+        2. Right-click ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Minecraft version
+      placeholder: 1.26.60
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Windows 11 / Ubuntu 24.04 / ...
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server log
+      description: Paste anything relevant from the console.
+      render: text

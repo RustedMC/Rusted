@@ -1,0 +1,18 @@
+[package]
+name = "rusted"
+version = "0.1.0"
+edition = "2024"
+license = "LGPL-3.0-only"
+authors = ["Gardery"]
+description = "A fast Minecraft: Bedrock Edition server written in Rust"
+
+[dependencies]
+# Pinned so a library update can't break the build; bump rev when a new Bedrock version ships.
+bedrock = { git = "https://github.com/bedrock-crustaceans/bedrock-rs.git", rev = "a730b6bbf28c80dee37ff82d2275f1db9078c03e", features = ["network-tokio", "network-nethernet-tokio", "protocol-v2225", "protocol-unknown"] }
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "time", "signal"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+uuid = "1.11.0"
+nbtx = { git = "https://github.com/bedrock-crustaceans/nbtx" }
+flate2 = "1.0"
+base64 = "0.22"
+serde_json = "1"

@@ -1,0 +1,29 @@
+# Build output
+/target
+
+# Secrets: the server's NetherNet identity key. Never publish these.
+*.pem
+
+# Local server state
+/world.dat
+/world.tmp
+/players/
+
+# Dev/test material (PNX jar + Java runtime, recordings of other servers)
+/pnx-test/
+/recordings/
+/containers.dat
+/containers.tmp
+
+# Server data created at runtime
+/worlds/
+/server.properties
+/ops.txt
+/whitelist.txt
+/banned-players.txt
+
+# Vanilla structure templates (from PNX's jar, origin/licence unclear): local only
+/data/structures.nbt
+
+# Server logs
+*.log

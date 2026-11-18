@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest something Rusted should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is it useful?
+  - type: checkboxes
+    id: vanilla
+    attributes:
+      label: Is it in vanilla Bedrock or PowerNukkitX?
+      options:
+        - label: Yes, it works there and is missing here

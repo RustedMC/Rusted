@@ -1,0 +1,2738 @@
+//! Mobs: animals, hostiles, villagers, pets. A* pathing, breeding, drops.
+//! 10 ticks a second, and every player sees every mob (fine at a few hundred).
+
+use std::collections::{HashMap, HashSet};
+use std::sync::Mutex;
+
+use bedrock::protocol::v662::packets::RemoveActorPacket;
+use bedrock::protocol::v662::types::{ActorRuntimeID, ActorUniqueID, DataItem, PropertySyncData};
+use bedrock::protocol::v924::enums::ActorDataIDs;
+use bedrock::protocol::v2168::enums::DataItemType;
+
+use crate::Protocol;
+use crate::overworld::feature::blocks;
+use crate::players::{Event, Server};
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum Kind {
+    Cow,
+    Pig,
+    Sheep,
+    Chicken,
+    Zombie,
+    Skeleton,
+    Creeper,
+    Spider,
+    Enderman,
+    Villager,
+    IronGolem,
+    Wolf,
+    Cat,
+    Squid,
+    Cod,
+    Salmon,
+    Drowned,
+    Rabbit,
+    Horse,
+    Donkey,
+    Mule,
+    Llama,
+    Goat,
+    Fox,
+    Panda,
+    PolarBear,
+    Mooshroom,
+    Ocelot,
+    Turtle,
+    Armadillo,
+    Camel,
+    Sniffer,
+    Frog,
+    Axolotl,
+    GlowSquid,
+    TropicalFish,
+    Pufferfish,
+    Dolphin,
+    Bat,
+    Parrot,
+    Bee,
+    Allay,
+    Husk,
+    Stray,
+    Bogged,
+    ZombieVillager,
+    CaveSpider,
+    Silverfish,
+    Witch,
+    Slime,
+    Phantom,
+    Pillager,
+    Vindicator,
+    Evoker,
+    Ravager,
+    Vex,
+    Guardian,
+    ElderGuardian,
+    Breeze,
+    Warden,
+    WitherSkeleton,
+    Blaze,
+    Ghast,
+    MagmaCube,
+    Piglin,
+    ZombiePigman,
+    Hoglin,
+    Strider,
+    EnderDragon,
+    EndCrystal,
+    Shulker,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Class {
+    Passive,
+    Hostile,
+    /// Peaceful until hit, then fights back (llamas, goats, bears, pandas, piglins).
+    Neutral,
+    Aquatic,
+    AquaticHostile,
+    Companion,
+    Villager,
+    Flying,
+    FlyingHostile,
+}
+
+/// Per-kind stats (health, size, speed, damage, foods, drops, traits).
+pub struct Spec {
+    pub id: &'static str,
+    pub display: &'static str,
+    pub health: f32,
+    pub size: (f32, f32),
+    /// Blocks per 10 Hz tick.
+    pub speed: f32,
+    pub melee: f32,
+    pub class: Class,
+    pub food: &'static [&'static str],
+    pub drops: &'static [(&'static str, i8, i8)],
+    pub undead: bool,
+    pub arthropod: bool,
+    /// Catches fire in sunlight.
+    pub burns: bool,
+    /// Slimes and magma cubes split when they die.
+    pub splits: bool,
+    /// Ranged attack: the projectile it fires.
+    pub ranged: Option<&'static str>,
+    /// Effect its hits give: (effect id, seconds).
+    pub hit_effect: Option<(i32, i32)>,
+}
+
+impl Kind {
+    pub const PASSIVE: [Kind; 4] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken];
+    pub const ALL: [Kind; 71] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken, Kind::Zombie, Kind::Skeleton, Kind::Creeper, Kind::Spider, Kind::Enderman, Kind::Villager, Kind::IronGolem, Kind::Wolf, Kind::Cat, Kind::Squid, Kind::Cod, Kind::Salmon, Kind::Drowned, Kind::Rabbit, Kind::Horse, Kind::Donkey, Kind::Mule, Kind::Llama, Kind::Goat, Kind::Fox, Kind::Panda, Kind::PolarBear, Kind::Mooshroom, Kind::Ocelot, Kind::Turtle, Kind::Armadillo, Kind::Camel, Kind::Sniffer, Kind::Frog, Kind::Axolotl, Kind::GlowSquid, Kind::TropicalFish, Kind::Pufferfish, Kind::Dolphin, Kind::Bat, Kind::Parrot, Kind::Bee, Kind::Allay, Kind::Husk, Kind::Stray, Kind::Bogged, Kind::ZombieVillager, Kind::CaveSpider, Kind::Silverfish, Kind::Witch, Kind::Slime, Kind::Phantom, Kind::Pillager, Kind::Vindicator, Kind::Evoker, Kind::Ravager, Kind::Vex, Kind::Guardian, Kind::ElderGuardian, Kind::Breeze, Kind::Warden, Kind::WitherSkeleton, Kind::Blaze, Kind::Ghast, Kind::MagmaCube, Kind::Piglin, Kind::ZombiePigman, Kind::Hoglin, Kind::Strider, Kind::EnderDragon, Kind::EndCrystal, Kind::Shulker];
+
+    pub fn spec(self) -> &'static Spec {
+        match self {
+            Kind::Cow => &Spec { id: "minecraft:cow", display: "Cow", health: 10.0, size: (0.9, 1.4), speed: 0.1, melee: 0.0, class: Class::Passive, food: &["minecraft:wheat"], drops: &[("minecraft:beef", 1, 3), ("minecraft:leather", 0, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Pig => &Spec { id: "minecraft:pig", display: "Pig", health: 10.0, size: (0.9, 0.9), speed: 0.1, melee: 0.0, class: Class::Passive, food: &["minecraft:carrot", "minecraft:potato", "minecraft:beetroot"], drops: &[("minecraft:porkchop", 1, 3)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Sheep => &Spec { id: "minecraft:sheep", display: "Sheep", health: 8.0, size: (0.9, 1.3), speed: 0.1, melee: 0.0, class: Class::Passive, food: &["minecraft:wheat"], drops: &[("minecraft:mutton", 1, 2), ("minecraft:white_wool", 1, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Chicken => &Spec { id: "minecraft:chicken", display: "Chicken", health: 4.0, size: (0.4, 0.7), speed: 0.12, melee: 0.0, class: Class::Passive, food: &["minecraft:wheat_seeds", "minecraft:pumpkin_seeds", "minecraft:melon_seeds", "minecraft:beetroot_seeds", "minecraft:torchflower_seeds", "minecraft:pitcher_pod"], drops: &[("minecraft:chicken", 1, 1), ("minecraft:feather", 0, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Zombie => &Spec { id: "minecraft:zombie", display: "Zombie", health: 20.0, size: (0.6, 1.9), speed: 0.23, melee: 3.0, class: Class::Hostile, food: &[], drops: &[("minecraft:rotten_flesh", 0, 2)], undead: true, arthropod: false, burns: true, splits: false, ranged: None, hit_effect: None },
+            Kind::Skeleton => &Spec { id: "minecraft:skeleton", display: "Skeleton", health: 20.0, size: (0.6, 1.99), speed: 0.25, melee: 0.0, class: Class::Hostile, food: &[], drops: &[("minecraft:bone", 0, 2), ("minecraft:arrow", 0, 2)], undead: true, arthropod: false, burns: true, splits: false, ranged: Some("minecraft:arrow"), hit_effect: None },
+            Kind::Creeper => &Spec { id: "minecraft:creeper", display: "Creeper", health: 20.0, size: (0.6, 1.7), speed: 0.25, melee: 0.0, class: Class::Hostile, food: &[], drops: &[("minecraft:gunpowder", 0, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Spider => &Spec { id: "minecraft:spider", display: "Spider", health: 16.0, size: (1.4, 0.9), speed: 0.3, melee: 2.0, class: Class::Hostile, food: &[], drops: &[("minecraft:string", 0, 2), ("minecraft:spider_eye", 0, 1)], undead: false, arthropod: true, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Enderman => &Spec { id: "minecraft:enderman", display: "Enderman", health: 40.0, size: (0.6, 2.9), speed: 0.3, melee: 7.0, class: Class::Hostile, food: &[], drops: &[("minecraft:ender_pearl", 0, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Villager => &Spec { id: "minecraft:villager_v2", display: "Villager", health: 20.0, size: (0.6, 1.9), speed: 0.15, melee: 0.0, class: Class::Villager, food: &[], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::IronGolem => &Spec { id: "minecraft:iron_golem", display: "Iron Golem", health: 100.0, size: (1.4, 2.9), speed: 0.2, melee: 10.0, class: Class::Companion, food: &[], drops: &[("minecraft:iron_ingot", 3, 5), ("minecraft:poppy", 0, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Wolf => &Spec { id: "minecraft:wolf", display: "Wolf", health: 10.0, size: (0.6, 0.85), speed: 0.3, melee: 4.0, class: Class::Companion, food: &[], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Cat => &Spec { id: "minecraft:cat", display: "Cat", health: 10.0, size: (0.6, 0.7), speed: 0.3, melee: 3.0, class: Class::Companion, food: &[], drops: &[("minecraft:string", 0, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Squid => &Spec { id: "minecraft:squid", display: "Squid", health: 10.0, size: (0.95, 0.95), speed: 0.15, melee: 0.0, class: Class::Aquatic, food: &[], drops: &[("minecraft:ink_sac", 1, 3)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Cod => &Spec { id: "minecraft:cod", display: "Cod", health: 3.0, size: (0.5, 0.3), speed: 0.15, melee: 0.0, class: Class::Aquatic, food: &[], drops: &[("minecraft:cod", 1, 1), ("minecraft:bone_meal", 0, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Salmon => &Spec { id: "minecraft:salmon", display: "Salmon", health: 3.0, size: (0.5, 0.3), speed: 0.15, melee: 0.0, class: Class::Aquatic, food: &[], drops: &[("minecraft:salmon", 1, 1), ("minecraft:bone_meal", 0, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Drowned => &Spec { id: "minecraft:drowned", display: "Drowned", health: 20.0, size: (0.6, 1.9), speed: 0.2, melee: 3.0, class: Class::Hostile, food: &[], drops: &[("minecraft:rotten_flesh", 0, 2), ("minecraft:copper_ingot", 0, 1)], undead: true, arthropod: false, burns: true, splits: false, ranged: None, hit_effect: None },
+            Kind::Rabbit => &Spec { id: "minecraft:rabbit", display: "Rabbit", health: 3.0, size: (0.4, 0.5), speed: 0.15, melee: 0.0, class: Class::Passive, food: &["minecraft:carrot", "minecraft:golden_carrot", "minecraft:dandelion"], drops: &[("minecraft:rabbit", 0, 1), ("minecraft:rabbit_hide", 0, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Horse => &Spec { id: "minecraft:horse", display: "Horse", health: 22.0, size: (1.4, 1.6), speed: 0.22, melee: 0.0, class: Class::Passive, food: &["minecraft:golden_apple", "minecraft:golden_carrot"], drops: &[("minecraft:leather", 0, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Donkey => &Spec { id: "minecraft:donkey", display: "Donkey", health: 22.0, size: (1.4, 1.5), speed: 0.17, melee: 0.0, class: Class::Passive, food: &["minecraft:golden_apple", "minecraft:golden_carrot"], drops: &[("minecraft:leather", 0, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Mule => &Spec { id: "minecraft:mule", display: "Mule", health: 22.0, size: (1.4, 1.6), speed: 0.17, melee: 0.0, class: Class::Passive, food: &[], drops: &[("minecraft:leather", 0, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Llama => &Spec { id: "minecraft:llama", display: "Llama", health: 22.0, size: (0.9, 1.87), speed: 0.17, melee: 1.0, class: Class::Neutral, food: &["minecraft:hay_block"], drops: &[("minecraft:leather", 0, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Goat => &Spec { id: "minecraft:goat", display: "Goat", health: 10.0, size: (0.9, 1.3), speed: 0.15, melee: 2.0, class: Class::Neutral, food: &["minecraft:wheat"], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Fox => &Spec { id: "minecraft:fox", display: "Fox", health: 10.0, size: (0.6, 0.7), speed: 0.3, melee: 2.0, class: Class::Passive, food: &["minecraft:sweet_berries", "minecraft:glow_berries"], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Panda => &Spec { id: "minecraft:panda", display: "Panda", health: 20.0, size: (1.3, 1.25), speed: 0.1, melee: 6.0, class: Class::Neutral, food: &["minecraft:bamboo"], drops: &[("minecraft:bamboo", 0, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::PolarBear => &Spec { id: "minecraft:polar_bear", display: "Polar Bear", health: 30.0, size: (1.3, 1.4), speed: 0.25, melee: 6.0, class: Class::Neutral, food: &[], drops: &[("minecraft:cod", 0, 2), ("minecraft:salmon", 0, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Mooshroom => &Spec { id: "minecraft:mooshroom", display: "Mooshroom", health: 10.0, size: (0.9, 1.4), speed: 0.1, melee: 0.0, class: Class::Passive, food: &["minecraft:wheat"], drops: &[("minecraft:beef", 1, 3), ("minecraft:leather", 0, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Ocelot => &Spec { id: "minecraft:ocelot", display: "Ocelot", health: 10.0, size: (0.6, 0.7), speed: 0.3, melee: 0.0, class: Class::Passive, food: &["minecraft:cod", "minecraft:salmon"], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Turtle => &Spec { id: "minecraft:turtle", display: "Turtle", health: 30.0, size: (1.2, 0.4), speed: 0.05, melee: 0.0, class: Class::Passive, food: &["minecraft:seagrass"], drops: &[("minecraft:seagrass", 0, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Armadillo => &Spec { id: "minecraft:armadillo", display: "Armadillo", health: 12.0, size: (0.7, 0.65), speed: 0.14, melee: 0.0, class: Class::Passive, food: &["minecraft:spider_eye"], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Camel => &Spec { id: "minecraft:camel", display: "Camel", health: 32.0, size: (1.7, 2.375), speed: 0.09, melee: 0.0, class: Class::Passive, food: &["minecraft:cactus"], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Sniffer => &Spec { id: "minecraft:sniffer", display: "Sniffer", health: 14.0, size: (1.9, 1.75), speed: 0.09, melee: 0.0, class: Class::Passive, food: &["minecraft:torchflower_seeds"], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Frog => &Spec { id: "minecraft:frog", display: "Frog", health: 10.0, size: (0.5, 0.55), speed: 0.1, melee: 0.0, class: Class::Passive, food: &["minecraft:slime_ball"], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Axolotl => &Spec { id: "minecraft:axolotl", display: "Axolotl", health: 14.0, size: (0.75, 0.42), speed: 0.15, melee: 2.0, class: Class::Aquatic, food: &["minecraft:tropical_fish_bucket"], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::GlowSquid => &Spec { id: "minecraft:glow_squid", display: "Glow Squid", health: 10.0, size: (0.95, 0.95), speed: 0.15, melee: 0.0, class: Class::Aquatic, food: &[], drops: &[("minecraft:glow_ink_sac", 1, 3)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::TropicalFish => &Spec { id: "minecraft:tropicalfish", display: "Tropical Fish", health: 3.0, size: (0.4, 0.4), speed: 0.15, melee: 0.0, class: Class::Aquatic, food: &[], drops: &[("minecraft:tropical_fish", 1, 1), ("minecraft:bone_meal", 0, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Pufferfish => &Spec { id: "minecraft:pufferfish", display: "Pufferfish", health: 3.0, size: (0.7, 0.7), speed: 0.1, melee: 0.0, class: Class::Aquatic, food: &[], drops: &[("minecraft:pufferfish", 1, 1), ("minecraft:bone_meal", 0, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: Some((19, 7)) },
+            Kind::Dolphin => &Spec { id: "minecraft:dolphin", display: "Dolphin", health: 10.0, size: (0.9, 0.6), speed: 0.3, melee: 3.0, class: Class::Aquatic, food: &["minecraft:cod", "minecraft:salmon"], drops: &[("minecraft:cod", 0, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Bat => &Spec { id: "minecraft:bat", display: "Bat", health: 6.0, size: (0.5, 0.9), speed: 0.15, melee: 0.0, class: Class::Flying, food: &[], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Parrot => &Spec { id: "minecraft:parrot", display: "Parrot", health: 6.0, size: (0.5, 0.9), speed: 0.15, melee: 0.0, class: Class::Flying, food: &["minecraft:wheat_seeds", "minecraft:melon_seeds", "minecraft:pumpkin_seeds", "minecraft:beetroot_seeds"], drops: &[("minecraft:feather", 1, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Bee => &Spec { id: "minecraft:bee", display: "Bee", health: 10.0, size: (0.55, 0.5), speed: 0.15, melee: 2.0, class: Class::Flying, food: &["minecraft:dandelion", "minecraft:poppy", "minecraft:cornflower", "minecraft:allium", "minecraft:oxeye_daisy", "minecraft:azure_bluet"], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: Some((19, 10)) },
+            Kind::Allay => &Spec { id: "minecraft:allay", display: "Allay", health: 20.0, size: (0.35, 0.6), speed: 0.15, melee: 0.0, class: Class::Flying, food: &[], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Husk => &Spec { id: "minecraft:husk", display: "Husk", health: 20.0, size: (0.6, 1.9), speed: 0.23, melee: 3.0, class: Class::Hostile, food: &[], drops: &[("minecraft:rotten_flesh", 0, 2)], undead: true, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: Some((17, 7)) },
+            Kind::Stray => &Spec { id: "minecraft:stray", display: "Stray", health: 20.0, size: (0.6, 1.99), speed: 0.25, melee: 0.0, class: Class::Hostile, food: &[], drops: &[("minecraft:bone", 0, 2), ("minecraft:arrow", 0, 2)], undead: true, arthropod: false, burns: true, splits: false, ranged: Some("minecraft:arrow"), hit_effect: None },
+            Kind::Bogged => &Spec { id: "minecraft:bogged", display: "Bogged", health: 16.0, size: (0.6, 1.99), speed: 0.25, melee: 0.0, class: Class::Hostile, food: &[], drops: &[("minecraft:bone", 0, 2), ("minecraft:arrow", 0, 2)], undead: true, arthropod: false, burns: true, splits: false, ranged: Some("minecraft:arrow"), hit_effect: None },
+            Kind::ZombieVillager => &Spec { id: "minecraft:zombie_villager_v2", display: "Zombie Villager", health: 20.0, size: (0.6, 1.9), speed: 0.23, melee: 3.0, class: Class::Hostile, food: &[], drops: &[("minecraft:rotten_flesh", 0, 2)], undead: true, arthropod: false, burns: true, splits: false, ranged: None, hit_effect: None },
+            Kind::CaveSpider => &Spec { id: "minecraft:cave_spider", display: "Cave Spider", health: 12.0, size: (0.7, 0.5), speed: 0.3, melee: 2.0, class: Class::Hostile, food: &[], drops: &[("minecraft:string", 0, 2), ("minecraft:spider_eye", 0, 1)], undead: false, arthropod: true, burns: false, splits: false, ranged: None, hit_effect: Some((19, 7)) },
+            Kind::Silverfish => &Spec { id: "minecraft:silverfish", display: "Silverfish", health: 8.0, size: (0.4, 0.3), speed: 0.25, melee: 1.0, class: Class::Hostile, food: &[], drops: &[], undead: false, arthropod: true, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Witch => &Spec { id: "minecraft:witch", display: "Witch", health: 26.0, size: (0.6, 1.95), speed: 0.25, melee: 0.0, class: Class::Hostile, food: &[], drops: &[("minecraft:glass_bottle", 0, 6), ("minecraft:redstone", 0, 6), ("minecraft:glowstone_dust", 0, 6), ("minecraft:sugar", 0, 6), ("minecraft:stick", 0, 6)], undead: false, arthropod: false, burns: false, splits: false, ranged: Some("minecraft:splash_potion"), hit_effect: None },
+            Kind::Slime => &Spec { id: "minecraft:slime", display: "Slime", health: 1.0, size: (1.04, 1.04), speed: 0.15, melee: 1.0, class: Class::Hostile, food: &[], drops: &[("minecraft:slime_ball", 0, 2)], undead: false, arthropod: false, burns: false, splits: true, ranged: None, hit_effect: None },
+            Kind::Phantom => &Spec { id: "minecraft:phantom", display: "Phantom", health: 20.0, size: (0.9, 0.5), speed: 0.35, melee: 2.0, class: Class::FlyingHostile, food: &[], drops: &[("minecraft:phantom_membrane", 0, 1)], undead: true, arthropod: false, burns: true, splits: false, ranged: None, hit_effect: None },
+            Kind::Pillager => &Spec { id: "minecraft:pillager", display: "Pillager", health: 24.0, size: (0.6, 1.9), speed: 0.25, melee: 0.0, class: Class::Hostile, food: &[], drops: &[("minecraft:arrow", 0, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: Some("minecraft:arrow"), hit_effect: None },
+            Kind::Vindicator => &Spec { id: "minecraft:vindicator", display: "Vindicator", health: 24.0, size: (0.6, 1.9), speed: 0.25, melee: 13.0, class: Class::Hostile, food: &[], drops: &[("minecraft:emerald", 0, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Evoker => &Spec { id: "minecraft:evocation_illager", display: "Evoker", health: 24.0, size: (0.6, 1.9), speed: 0.25, melee: 6.0, class: Class::Hostile, food: &[], drops: &[("minecraft:totem_of_undying", 1, 1), ("minecraft:emerald", 0, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Ravager => &Spec { id: "minecraft:ravager", display: "Ravager", health: 100.0, size: (1.95, 2.2), speed: 0.2, melee: 12.0, class: Class::Hostile, food: &[], drops: &[("minecraft:saddle", 1, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Vex => &Spec { id: "minecraft:vex", display: "Vex", health: 14.0, size: (0.4, 0.8), speed: 0.35, melee: 9.0, class: Class::FlyingHostile, food: &[], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Guardian => &Spec { id: "minecraft:guardian", display: "Guardian", health: 30.0, size: (0.85, 0.85), speed: 0.15, melee: 6.0, class: Class::AquaticHostile, food: &[], drops: &[("minecraft:prismarine_shard", 0, 2), ("minecraft:cod", 0, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::ElderGuardian => &Spec { id: "minecraft:elder_guardian", display: "Elder Guardian", health: 80.0, size: (2.0, 2.0), speed: 0.1, melee: 8.0, class: Class::AquaticHostile, food: &[], drops: &[("minecraft:prismarine_shard", 0, 2), ("minecraft:wet_sponge", 1, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: Some((4, 300)) },
+            Kind::Breeze => &Spec { id: "minecraft:breeze", display: "Breeze", health: 30.0, size: (0.6, 1.77), speed: 0.25, melee: 0.0, class: Class::Hostile, food: &[], drops: &[("minecraft:breeze_rod", 1, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: Some("minecraft:wind_charge_projectile"), hit_effect: None },
+            Kind::Warden => &Spec { id: "minecraft:warden", display: "Warden", health: 500.0, size: (0.9, 2.9), speed: 0.3, melee: 30.0, class: Class::Hostile, food: &[], drops: &[("minecraft:sculk_catalyst", 1, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: Some((33, 12)) },
+            Kind::WitherSkeleton => &Spec { id: "minecraft:wither_skeleton", display: "Wither Skeleton", health: 20.0, size: (0.7, 2.4), speed: 0.25, melee: 8.0, class: Class::Hostile, food: &[], drops: &[("minecraft:coal", 0, 1), ("minecraft:bone", 0, 2)], undead: true, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: Some((20, 10)) },
+            Kind::Blaze => &Spec { id: "minecraft:blaze", display: "Blaze", health: 20.0, size: (0.6, 1.8), speed: 0.2, melee: 6.0, class: Class::FlyingHostile, food: &[], drops: &[("minecraft:blaze_rod", 0, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: Some("minecraft:small_fireball"), hit_effect: None },
+            Kind::Ghast => &Spec { id: "minecraft:ghast", display: "Ghast", health: 10.0, size: (4.0, 4.0), speed: 0.1, melee: 0.0, class: Class::FlyingHostile, food: &[], drops: &[("minecraft:ghast_tear", 0, 1), ("minecraft:gunpowder", 0, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: Some("minecraft:fireball"), hit_effect: None },
+            Kind::MagmaCube => &Spec { id: "minecraft:magma_cube", display: "Magma Cube", health: 1.0, size: (1.04, 1.04), speed: 0.15, melee: 3.0, class: Class::Hostile, food: &[], drops: &[("minecraft:magma_cream", 0, 1)], undead: false, arthropod: false, burns: false, splits: true, ranged: None, hit_effect: None },
+            Kind::Piglin => &Spec { id: "minecraft:piglin", display: "Piglin", health: 16.0, size: (0.6, 1.9), speed: 0.25, melee: 5.0, class: Class::Neutral, food: &["minecraft:gold_ingot"], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::ZombiePigman => &Spec { id: "minecraft:zombie_pigman", display: "Zombified Piglin", health: 20.0, size: (0.6, 1.9), speed: 0.23, melee: 5.0, class: Class::Neutral, food: &[], drops: &[("minecraft:rotten_flesh", 0, 1), ("minecraft:gold_nugget", 0, 1)], undead: true, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Hoglin => &Spec { id: "minecraft:hoglin", display: "Hoglin", health: 40.0, size: (1.4, 1.4), speed: 0.2, melee: 6.0, class: Class::Hostile, food: &["minecraft:crimson_fungus"], drops: &[("minecraft:porkchop", 2, 4), ("minecraft:leather", 0, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::EnderDragon => &Spec { id: "minecraft:ender_dragon", display: "Ender Dragon", health: 200.0, size: (13.0, 4.0), speed: 0.6, melee: 10.0, class: Class::FlyingHostile, food: &[], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::EndCrystal => &Spec { id: "minecraft:ender_crystal", display: "End Crystal", health: 1.0, size: (2.0, 2.0), speed: 0.0, melee: 0.0, class: Class::Passive, food: &[], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Shulker => &Spec { id: "minecraft:shulker", display: "Shulker", health: 30.0, size: (1.0, 1.0), speed: 0.0, melee: 0.0, class: Class::Hostile, food: &[], drops: &[("minecraft:shulker_shell", 0, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: Some("minecraft:shulker_bullet"), hit_effect: None },
+            Kind::Strider => &Spec { id: "minecraft:strider", display: "Strider", health: 20.0, size: (0.9, 1.7), speed: 0.1, melee: 0.0, class: Class::Passive, food: &["minecraft:warped_fungus"], drops: &[("minecraft:string", 0, 5)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+        }
+    }
+
+    /// Lives in water: swims, suffocates on land.
+    pub fn aquatic(self) -> bool {
+        matches!(self.spec().class, Class::Aquatic | Class::AquaticHostile)
+    }
+
+    /// Fights for players or its owner (golems, wolves, cats).
+    fn companion(self) -> bool {
+        self.spec().class == Class::Companion
+    }
+
+    pub fn flies(self) -> bool {
+        matches!(self.spec().class, Class::Flying | Class::FlyingHostile)
+    }
+
+    pub fn neutral(self) -> bool {
+        self.spec().class == Class::Neutral
+    }
+
+    pub fn identifier(self) -> &'static str {
+        self.spec().id
+    }
+
+    pub fn hostile(self) -> bool {
+        matches!(self.spec().class, Class::Hostile | Class::AquaticHostile | Class::FlyingHostile)
+    }
+
+    /// Name in death messages.
+    fn display(self) -> &'static str {
+        if matches!(self.spec().class, Class::Passive | Class::Aquatic | Class::Flying) { "an animal" } else { self.spec().display }
+    }
+
+    pub fn arthropod(self) -> bool {
+        self.spec().arthropod
+    }
+
+    pub fn undead(self) -> bool {
+        self.spec().undead
+    }
+
+    /// Melee damage on normal difficulty.
+    fn melee(self) -> f32 {
+        self.spec().melee
+    }
+
+    pub fn from_name(n: &str) -> Option<Kind> {
+        let n = n.trim_start_matches("minecraft:");
+        let n = match n {
+            "villager" => "villager_v2",
+            "zombie_villager" => "zombie_villager_v2",
+            "evoker" => "evocation_illager",
+            "zombified_piglin" => "zombie_pigman",
+            "tropical_fish" => "tropicalfish",
+            n => n,
+        };
+        Kind::ALL.into_iter().find(|k| k.identifier().trim_start_matches("minecraft:") == n)
+    }
+
+    fn max_health(self) -> f32 {
+        self.spec().health
+    }
+
+    /// (width, height) of the collision box.
+    fn size(self) -> (f32, f32) {
+        self.spec().size
+    }
+
+    /// Walking speed in blocks per tick (10 ticks/s).
+    fn speed(self) -> f32 {
+        self.spec().speed
+    }
+
+    /// Food that tempts and breeds it.
+    fn food(self, item: &str) -> bool {
+        self.spec().food.contains(&item)
+    }
+
+    /// (item, min, max) dropped on death.
+    fn drops(self) -> &'static [(&'static str, i8, i8)] {
+        self.spec().drops
+    }
+}
+
+#[derive(Clone)]
+pub struct Mob {
+    pub id: i64,
+    pub kind: Kind,
+    pub pos: (f32, f32, f32),
+    vel: (f32, f32, f32),
+    yaw: f32,
+    pub health: f32,
+    on_ground: bool,
+    target: Option<(f32, f32)>,
+    /// Ticks left running away after being hit.
+    panic: u32,
+    /// Ticks until removal after dying (0 = alive).
+    dying: u32,
+    sent: ((f32, f32, f32), f32, f32),
+    head_yaw: f32,
+    /// Waypoints (block positions to stand on) toward the current goal.
+    path: Vec<(i32, i32, i32)>,
+    /// Ticks left in love mode (after being fed).
+    love: u32,
+    /// Ticks until it may breed again.
+    cooldown: u32,
+    /// Ticks until a baby grows up (0 = adult).
+    baby: u32,
+    /// Player it's after (hostiles; neutral ones only once provoked).
+    aggro: Option<i64>,
+    attack_cd: u32,
+    /// Creeper fuse ticks (0 = not lit).
+    fuse: u32,
+    burning: bool,
+    /// Mob it's attacking (golems, wolves, zombies after villagers).
+    prey: Option<i64>,
+    /// Tamed by this player (wolves, cats).
+    owner: Option<i64>,
+    sitting: bool,
+    /// Sheep wool colour (0 white ... 15 black, Bedrock colour index).
+    color: u8,
+    sheared: bool,
+    /// Ticks until a sheared sheep's wool grows back.
+    regrow: u32,
+    /// When it was last hurt (invulnerability window).
+    hurt_at: Option<std::time::Instant>,
+    /// Ticks left on fire (fire aspect).
+    fire: u32,
+    /// A villager's job and trades.
+    pub job: Option<Box<crate::villagers::Job>>,
+    /// Zombie villagers: ticks of weakness left, and ticks until cured (0 = not curing).
+    weak: u32,
+    curing: u32,
+    /// Leads a pillager patrol (killing it gives Bad Omen).
+    pub captain: bool,
+}
+
+/// Weapon enchantment effects on a hit.
+#[derive(Clone, Copy, Default)]
+pub struct Hit {
+    pub knockback: i16,
+    /// 10 Hz ticks on fire.
+    pub fire: u32,
+    pub looting: i16,
+}
+
+/// What a player threw.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Throw {
+    Snowball,
+    Egg,
+    Pearl,
+    /// Splash or lingering potion with this potion id.
+    Potion(u32),
+}
+
+impl Throw {
+    pub fn from_item(name: &str) -> Option<Throw> {
+        match name {
+            "minecraft:snowball" => Some(Throw::Snowball),
+            "minecraft:egg" | "minecraft:blue_egg" | "minecraft:brown_egg" => Some(Throw::Egg),
+            "minecraft:ender_pearl" => Some(Throw::Pearl),
+            _ => None,
+        }
+    }
+    fn identifier(self) -> &'static str {
+        match self {
+            Throw::Snowball => "minecraft:snowball",
+            Throw::Egg => "minecraft:egg",
+            Throw::Pearl => "minecraft:ender_pearl",
+            Throw::Potion(_) => "minecraft:splash_potion",
+        }
+    }
+}
+
+/// Thrown snowball/egg/pearl (PNX EntityProjectile: gravity 0.03, drag 0.01 per game tick).
+struct Thrown {
+    id: i64,
+    pos: (f32, f32, f32),
+    /// Blocks per game tick.
+    vel: (f32, f32, f32),
+    kind: Throw,
+    owner: i64,
+    life: u32,
+}
+
+static THROWN: Mutex<Vec<Thrown>> = Mutex::new(Vec::new());
+
+/// Throws `kind` from a player's eyes along their look (PNX: speed 1.5 per game tick).
+pub fn throw(server: &Server, kind: Throw, owner: i64, eye: (f32, f32, f32), rot: (f32, f32)) {
+    let (pitch, yaw) = (rot.0.to_radians(), rot.1.to_radians());
+    let dir = (-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos());
+    let vel = (dir.0 * 1.5, dir.1 * 1.5, dir.2 * 1.5);
+    let pos = (eye.0, eye.1 - 0.1, eye.2);
+    let id = crate::players::next_id();
+    let add = Protocol::AddActorPacket(Box::new(bedrock::protocol::v2225::packets::AddActorPacket {
+        target_actor_id: ActorUniqueID(id),
+        target_runtime_id: ActorRuntimeID(id as u64),
+        actor_type: kind.identifier().into(),
+        position: pos,
+        velocity: vel,
+        rotation: (0.0, 0.0),
+        y_head_rotation: 0.0,
+        y_body_rotation: 0.0,
+        attributes: vec![],
+        actor_data: vec![],
+        synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
+        actor_links: vec![],
+        passenger_of_block_data: None,
+    }));
+    let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(add) });
+    let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(sound("throw", pos)) });
+    THROWN.lock().unwrap().push(Thrown { id, pos, vel, kind, owner, life: 30 * TPS });
+}
+
+struct Arrow {
+    id: i64,
+    pos: (f32, f32, f32),
+    vel: (f32, f32, f32),
+    shooter: Kind,
+    life: u32,
+    stuck: bool,
+    /// A player's shot: who, and the bow/trident numbers.
+    by: Option<PlayerShot>,
+}
+
+#[derive(Clone)]
+struct PlayerShot {
+    owner: i64,
+    /// Damage on hit (fixed for tridents; arrows scale with speed).
+    damage: Option<f32>,
+    power: i16,
+    punch: i16,
+    flame: bool,
+    /// Item it turns back into where it lands (arrow, the trident itself).
+    drop: Option<bedrock::protocol::v2168::types::NetworkItemStackDescriptorV2>,
+}
+
+/// Mob AI ticks per second.
+const TPS: u32 = 10;
+/// Babies grow up in 20 minutes; parents can breed again after 5.
+const GROW: u32 = 20 * 60 * TPS;
+const BREED_COOLDOWN: u32 = 5 * 60 * TPS;
+const LOVE: u32 = 30 * TPS;
+
+#[derive(Default)]
+pub struct Mobs {
+    mobs: Mutex<HashMap<i64, Mob>>,
+    /// What each online player holds (for tempting), by entity id.
+    held: Mutex<HashMap<i64, String>>,
+    /// Online players hostiles may target (survival/adventure).
+    targetable: Mutex<HashSet<i64>>,
+    arrows: Mutex<Vec<Arrow>>,
+    /// Chunks that already had their chance of animals.
+    rolled: Mutex<HashSet<(i32, i32)>>,
+    rng: Mutex<u64>,
+}
+
+/// Which animal herd a chunk gets, by biome (vanilla spawn lists, trimmed to the main ones).
+fn animal_for(biome: Option<u16>, ground: i32, roll: u32) -> Option<Kind> {
+    use crate::overworld::biome::id as b;
+    let g = blocks::short(ground);
+    let pick = |list: &[Kind]| Some(list[(roll % list.len() as u32) as usize]);
+    match biome? {
+        b::MUSHROOM_ISLAND if g == "mycelium" => pick(&[Kind::Mooshroom]),
+        b::DESERT if g == "sand" => pick(&[Kind::Rabbit, Kind::Camel]),
+        b::BEACH if g == "sand" => pick(&[Kind::Turtle]),
+        _ if g != "grass_block" && g != "snow" && g != "snow_layer" && g != "podzol" => None,
+        b::PLAINS | b::SUNFLOWER_PLAINS => pick(&[Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken, Kind::Horse, Kind::Donkey]),
+        b::SAVANNA | b::SAVANNA_PLATEAU | b::SAVANNA_MUTATED => pick(&[Kind::Cow, Kind::Sheep, Kind::Horse, Kind::Llama, Kind::Armadillo]),
+        b::FOREST | b::BIRCH_FOREST | b::BIRCH_FOREST_MUTATED | b::FLOWER_FOREST | b::ROOFED_FOREST => pick(&[Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken, Kind::Wolf, Kind::Rabbit]),
+        b::TAIGA | b::MEGA_TAIGA | b::REDWOOD_TAIGA_MUTATED => pick(&[Kind::Wolf, Kind::Fox, Kind::Rabbit, Kind::Sheep, Kind::Pig]),
+        b::COLD_TAIGA | b::ICE_PLAINS | b::ICE_PLAINS_SPIKES | b::GROVE | b::SNOWY_SLOPES => pick(&[Kind::Rabbit, Kind::Fox, Kind::PolarBear, Kind::Goat, Kind::Wolf]),
+        b::JUNGLE | b::JUNGLE_EDGE | b::BAMBOO_JUNGLE => pick(&[Kind::Parrot, Kind::Ocelot, Kind::Panda, Kind::Chicken, Kind::Pig]),
+        b::EXTREME_HILLS | b::EXTREME_HILLS_MUTATED | b::EXTREME_HILLS_PLUS_TREES | b::JAGGED_PEAKS | b::FROZEN_PEAKS | b::STONY_PEAKS => pick(&[Kind::Goat, Kind::Llama, Kind::Sheep]),
+        b::MEADOW | b::CHERRY_GROVE => pick(&[Kind::Donkey, Kind::Rabbit, Kind::Sheep, Kind::Bee]),
+        b::SWAMPLAND | b::MANGROVE_SWAMP => pick(&[Kind::Frog, Kind::Cow, Kind::Pig, Kind::Chicken]),
+        _ => pick(&Kind::PASSIVE),
+    }
+}
+
+/// Most mobs alive at once (passive cap; vanilla's is per player area).
+const CAP: usize = 300;
+/// Mob gravity per 10 Hz tick (vanilla 0.08 per 20 Hz tick, twice).
+const GRAVITY: f32 = 0.16;
+
+fn broadcast(server: &Server, p: Protocol) {
+    let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(p) });
+}
+
+fn angle(deg: f32) -> i8 {
+    (deg.rem_euclid(360.0) / 360.0 * 256.0) as i32 as u8 as i8
+}
+
+/// Entity data for a mob in its current state.
+fn data_of(m: &Mob) -> Vec<DataItem<Protocol>> {
+    use ActorDataIDs::*;
+    use DataItemType as T;
+    let mut d = data_with(m.kind, m.baby > 0, m.burning, m.fuse > 0);
+    let bits = (m.sitting as i64) << 24 | (m.owner.is_some() as i64) << 28 | (m.sheared as i64) << 31;
+    if let Some(DataItem { data_item_type: T::Int64(f), .. }) = d.first_mut() {
+        *f |= bits;
+    }
+    if m.kind == Kind::Sheep {
+        d.push(DataItem { data_item_id: ColorIndex, data_item_type: T::Byte(m.color as i8) });
+    }
+    if m.kind.spec().splits {
+        // Slime size shows as scale; its box grows with it.
+        let s = m.color.max(1) as f32;
+        for it in d.iter_mut() {
+            match it.data_item_id {
+                Reserved038 => it.data_item_type = T::Float(s),
+                Reserved053 | Reserved054 => it.data_item_type = T::Float(0.52 * s),
+                _ => {}
+            }
+        }
+    }
+    if let Some(o) = m.owner {
+        d.push(DataItem { data_item_id: Owner, data_item_type: T::Int64(o) });
+    }
+    if let Some(j) = &m.job {
+        d.push(DataItem { data_item_id: Variant, data_item_type: T::Int(j.profession) });
+        d.push(DataItem { data_item_id: MarkVariant, data_item_type: T::Int(j.clothing as i32) });
+        d.push(DataItem { data_item_id: TradeTier, data_item_type: T::Int(j.tier as i32 - 1) });
+        d.push(DataItem { data_item_id: MaxTradeTier, data_item_type: T::Int(4) });
+        d.push(DataItem { data_item_id: TradeExperience, data_item_type: T::Int(j.exp) });
+    }
+    d
+}
+
+/// Natural sheep colours (vanilla odds): mostly white, some greys, black, brown, rare pink.
+fn sheep_color(r: u32) -> u8 {
+    match r % 10_000 {
+        0..8_184 => 0,
+        8_184..8_684 => 8,
+        8_684..9_184 => 7,
+        9_184..9_684 => 15,
+        9_684..9_984 => 12,
+        _ => 6,
+    }
+}
+
+const WOOL: [&str; 16] = [
+    "white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray", "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black",
+];
+
+fn data_with(kind: Kind, baby: bool, burning: bool, ignited: bool) -> Vec<DataItem<Protocol>> {
+    use ActorDataIDs::*;
+    use DataItemType as T;
+    let (w, h) = kind.size();
+    let s = if baby { 0.5 } else { 1.0 };
+    let item = |id, v| DataItem { data_item_id: id, data_item_type: v };
+    vec![
+        // Same flag words as players (gravity, collision, breathing), plus BABY (bit 11).
+        item(Reserved0, T::Int64(crate::spawn::FLAGS | if baby { 1 << 11 } else { 0 } | burning as i64 | (ignited as i64) << 10)),
+        item(Reserved092, T::Int64(0)),
+        item(Reserved054, T::Float(h * s)),
+        item(Reserved053, T::Float(w * s)),
+        item(Reserved038, T::Float(s)),
+        item(AirSupply, T::Short(300)),
+        item(AirSupplyMax, T::Short(300)),
+        item(LeashHolder, T::Int64(-1)),
+    ]
+}
+
+fn add_packet(m: &Mob) -> Protocol {
+    use bedrock::protocol::v662::packets::AttributeEntry;
+    Protocol::AddActorPacket(Box::new(bedrock::protocol::v2225::packets::AddActorPacket {
+        target_actor_id: ActorUniqueID(m.id),
+        target_runtime_id: ActorRuntimeID(m.id as u64),
+        actor_type: m.kind.identifier().into(),
+        position: m.pos,
+        velocity: (0.0, 0.0, 0.0),
+        rotation: (0.0, m.yaw),
+        y_head_rotation: m.yaw,
+        y_body_rotation: m.yaw,
+        attributes: vec![AttributeEntry { attribute_name: "minecraft:health".into(), min_value: 0.0, current_value: m.health, max_value: m.kind.max_health() }],
+        actor_data: data_of(m),
+        synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
+        actor_links: vec![],
+        passenger_of_block_data: None,
+    }))
+}
+
+fn move_packet(m: &Mob) -> Protocol {
+    use bedrock::protocol::v662::packets::MoveActorAbsolutePacket;
+    use bedrock::protocol::v662::types::MoveActorAbsoluteData;
+    let (a, head) = (angle(m.yaw), angle(m.head_yaw));
+    Protocol::MoveActorAbsolutePacket(Box::new(MoveActorAbsolutePacket {
+        move_data: MoveActorAbsoluteData {
+            actor_runtime_id: ActorRuntimeID(m.id as u64),
+            header: m.on_ground as i8,
+            position: m.pos,
+            rotation_x: 0,
+            rotation_y: a,
+            rotation_y_head: head,
+        },
+    }))
+}
+
+fn data_packet(m: &Mob) -> Protocol {
+    Protocol::SetActorDataPacket(Box::new(bedrock::protocol::v662::packets::SetActorDataPacket {
+        target_runtime_id: ActorRuntimeID(m.id as u64),
+        actor_data: data_of(m),
+        synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
+        tick: 0,
+    }))
+}
+
+fn event(id: i64, e: bedrock::protocol::v975::enums::ActorEvent) -> Protocol {
+    Protocol::ActorEventPacket(Box::new(bedrock::protocol::v975::packets::ActorEventPacket {
+        target_runtime_id: ActorRuntimeID(id as u64),
+        event_id: e,
+        data: 0,
+        fire_at_position: None,
+    }))
+}
+
+/// Blocks mobs collide with.
+fn solid(b: i32) -> bool {
+    blocks::is_solid(b) || blocks::is_leaves(b)
+}
+
+fn walkable(b: i32) -> bool {
+    !solid(b) && !blocks::is_lava(b)
+}
+
+impl Mobs {
+    fn rand(&self) -> u32 {
+        let mut s = self.rng.lock().unwrap();
+        if *s == 0 {
+            *s = 0x2545_F491_4F6C_DD1D ^ std::process::id() as u64;
+        }
+        *s ^= *s << 13;
+        *s ^= *s >> 7;
+        *s ^= *s << 17;
+        (*s >> 16) as u32
+    }
+
+    fn randf(&self) -> f32 {
+        (self.rand() % 10_000) as f32 / 10_000.0
+    }
+
+    pub fn count(&self) -> usize {
+        self.mobs.lock().unwrap().len()
+    }
+
+    pub fn spawn(&self, server: &Server, kind: Kind, pos: (f32, f32, f32)) -> i64 {
+        self.spawn_with(server, kind, pos, false)
+    }
+
+    fn spawn_with(&self, server: &Server, kind: Kind, pos: (f32, f32, f32), baby: bool) -> i64 {
+        if !server.plugins.entity_spawn(server, kind.identifier(), pos) {
+            return 0;
+        }
+        let id = crate::players::next_id();
+        let yaw = self.randf() * 360.0;
+        let m = Mob {
+            id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: kind.max_health(), on_ground: false, target: None, panic: 0, dying: 0,
+            sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: if baby { GROW } else { 0 }, baby: if baby { GROW } else { 0 },
+            aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
+            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false,
+        };
+        let size = [1u8, 2, 4][(self.rand() % 3) as usize];
+        if kind.spec().splits {
+            return self.spawn_slime(server, kind, pos, size);
+        }
+        // 5% of zombies are babies (faster, don't burn).
+        let m = if matches!(kind, Kind::Zombie | Kind::Husk | Kind::ZombieVillager | Kind::Drowned) && !baby && self.rand().is_multiple_of(20) {
+            Mob { baby: u32::MAX / 2, ..m }
+        } else {
+            m
+        };
+        broadcast(server, add_packet(&m));
+        self.mobs.lock().unwrap().insert(id, m);
+        id
+    }
+
+    /// A slime or magma cube of `size` (1, 2 or 4): health size², kept in `color`.
+    fn spawn_slime(&self, server: &Server, kind: Kind, pos: (f32, f32, f32), size: u8) -> i64 {
+        let id = crate::players::next_id();
+        let yaw = self.randf() * 360.0;
+        let m = Mob {
+            id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: (size as f32).powi(2), on_ground: false, target: None, panic: 0, dying: 0,
+            sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: 0,
+            aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
+            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false,
+        };
+        broadcast(server, add_packet(&m));
+        self.mobs.lock().unwrap().insert(id, m);
+        id
+    }
+
+    pub fn spawn_packets(&self) -> Vec<Protocol> {
+        self.mobs.lock().unwrap().values().filter(|m| m.dying == 0).map(add_packet).collect()
+    }
+
+    /// A player's held item changed (tempting).
+    pub fn set_held(&self, player: i64, item: Option<&str>) {
+        let mut h = self.held.lock().unwrap();
+        match item {
+            Some(i) => {
+                h.insert(player, i.to_string());
+            }
+            None => {
+                h.remove(&player);
+            }
+        }
+    }
+
+    /// A player right-clicked mob `id` holding `held`. Returns what to do with the held item.
+    pub fn interact(&self, server: &Server, id: i64, held: Option<&str>, player: i64) -> Use {
+        let mut mobs = self.mobs.lock().unwrap();
+        let Some(m) = mobs.get_mut(&id) else { return Use::Nothing };
+        let held = held.unwrap_or("");
+        if m.dying > 0 {
+            return Use::Nothing;
+        }
+        use bedrock::protocol::v975::enums::ActorEvent;
+        if m.kind == Kind::Villager && m.baby == 0 && m.job.as_ref().is_some_and(|j| j.profession != 0) {
+            return Use::Trade;
+        }
+        // A golden apple on a weakened zombie villager starts curing it (3-5 minutes).
+        if m.kind == Kind::ZombieVillager && held == "minecraft:golden_apple" && m.weak > 0 && m.curing == 0 {
+            m.curing = (180 + self.rand() % 120) * TPS;
+            broadcast(server, sound("mob.zombie.remedy", m.pos));
+            return Use::Consume;
+        }
+        // Shearing.
+        if m.kind == Kind::Sheep && held.ends_with(":shears") && !m.sheared && m.baby == 0 {
+            m.sheared = true;
+            m.regrow = 3 * 60 * TPS;
+            let (pos, color) = (m.pos, m.color);
+            let p = data_packet(m);
+            drop(mobs);
+            broadcast(server, p);
+            if let Some(w) = crate::items::item_by_name(&format!("minecraft:{}_wool", WOOL[color as usize])) {
+                server.entities.drop_item(server, w, 1 + (self.rand() % 3) as i8, (pos.0, pos.1 + 1.0, pos.2));
+            }
+            return Use::Nothing;
+        }
+        // Taming: bones for wolves, raw fish for cats (1 in 3 tries).
+        let tame_food = match m.kind {
+            Kind::Wolf => held.ends_with(":bone"),
+            Kind::Cat => held.ends_with(":cod") || held.ends_with(":salmon"),
+            _ => false,
+        };
+        if tame_food && m.owner.is_none() {
+            if self.rand().is_multiple_of(3) {
+                m.owner = Some(player);
+                m.aggro = None;
+                m.sitting = true;
+                broadcast(server, event(id, ActorEvent::TamingSucceeded));
+                broadcast(server, data_packet(m));
+            } else {
+                broadcast(server, event(id, ActorEvent::TamingFailed));
+            }
+            return Use::Consume;
+        }
+        // The owner toggles sitting.
+        if m.owner == Some(player) {
+            m.sitting = !m.sitting;
+            m.path.clear();
+            broadcast(server, data_packet(m));
+            return Use::Nothing;
+        }
+        if m.kind == Kind::Cow && held.ends_with(":bucket") && m.baby == 0 {
+            return Use::Milk;
+        }
+        if m.kind.food(held) {
+            use bedrock::protocol::v975::enums::ActorEvent;
+            if m.baby > 0 {
+                m.baby = m.baby.saturating_sub(m.baby / 10); // feeding babies speeds growth 10%
+                broadcast(server, event(id, ActorEvent::Feed));
+                return Use::Consume;
+            }
+            if m.love == 0 && m.cooldown == 0 {
+                m.love = LOVE;
+                broadcast(server, event(id, ActorEvent::InLoveHearts));
+                return Use::Consume;
+            }
+        }
+        Use::Nothing
+    }
+
+    pub fn contains(&self, id: i64) -> bool {
+        self.mobs.lock().unwrap().contains_key(&id)
+    }
+
+    /// Whether hostiles may target this player (call on join and game mode changes).
+    pub fn set_targetable(&self, player: i64, yes: bool) {
+        let mut t = self.targetable.lock().unwrap();
+        if yes {
+            t.insert(player);
+        } else {
+            t.remove(&player);
+        }
+    }
+
+    pub fn hurt(&self, server: &Server, id: i64, damage: f32, from: (f32, f32, f32), attacker: Option<i64>) {
+        self.hurt_with(server, id, damage, from, attacker, Hit::default());
+    }
+
+    /// Kills every mob (of one type if given), for /kill @e. Returns how many.
+    pub fn kill_all(&self, server: &Server, kind: Option<&str>) -> usize {
+        let ids: Vec<i64> = self.mobs.lock().unwrap().values()
+            .filter(|m| m.dying == 0 && kind.is_none_or(|k| m.kind.identifier().trim_start_matches("minecraft:") == k || Kind::from_name(k) == Some(m.kind)))
+            .map(|m| m.id)
+            .collect();
+        for &id in &ids {
+            if let Some(m) = self.mobs.lock().unwrap().get_mut(&id) {
+                m.hurt_at = None;
+                m.health = 0.0;
+            }
+            self.hurt(server, id, 1.0, (0.0, 0.0, 0.0), None);
+        }
+        ids.len()
+    }
+
+    /// Living mobs of one kind: (id, position, health).
+    pub fn of_kind(&self, kind: Kind) -> Vec<(i64, (f32, f32, f32), f32)> {
+        self.mobs.lock().unwrap().values().filter(|m| m.kind == kind && m.dying == 0).map(|m| (m.id, m.pos, m.health)).collect()
+    }
+
+    /// Heals mob `id` by `n` (up to its max).
+    pub fn heal(&self, id: i64, n: f32) {
+        if let Some(m) = self.mobs.lock().unwrap().get_mut(&id) {
+            m.health = (m.health + n).min(m.kind.max_health());
+        }
+    }
+
+    /// Makes mob `id` a patrol captain.
+    pub fn set_captain(&self, id: i64) {
+        if let Some(m) = self.mobs.lock().unwrap().get_mut(&id) {
+            m.captain = true;
+        }
+    }
+
+    /// A villager's job (for the trade screen).
+    pub fn job_of(&self, id: i64) -> Option<crate::villagers::Job> {
+        self.mobs.lock().unwrap().get(&id).and_then(|m| m.job.as_deref().cloned())
+    }
+
+    /// A trade happened: offer `index` used `n` times; the villager gains XP and may level up.
+    /// Returns the updated job.
+    pub fn traded(&self, server: &Server, id: i64, index: usize, n: i32, trader_exp: i32) -> Option<crate::villagers::Job> {
+        let mut mobs = self.mobs.lock().unwrap();
+        let m = mobs.get_mut(&id)?;
+        let j = m.job.as_mut()?;
+        if j.uses.len() <= index {
+            j.uses.resize(index + 1, 0);
+        }
+        j.uses[index] += n;
+        let up = j.add_exp(trader_exp * n);
+        let job = (**j).clone();
+        let pos = m.pos;
+        let packet = data_packet(m);
+        drop(mobs);
+        broadcast(server, packet);
+        if up {
+            broadcast(server, sound("random.levelup", pos));
+            broadcast(server, event(id, bedrock::protocol::v975::enums::ActorEvent::VillagerHappy));
+        }
+        Some(job)
+    }
+
+    /// The kind of mob `id`, if it exists.
+    pub fn kind_of(&self, id: i64) -> Option<Kind> {
+        self.mobs.lock().unwrap().get(&id).map(|m| m.kind)
+    }
+
+    /// A hit with weapon enchantments: knockback, fire aspect (ticks on fire), looting.
+    pub fn hurt_with(&self, server: &Server, id: i64, damage: f32, from: (f32, f32, f32), attacker: Option<i64>, hit: Hit) {
+        let mut mobs = self.mobs.lock().unwrap();
+        let Some(m) = mobs.get_mut(&id) else { return };
+        if m.kind == Kind::EndCrystal {
+            let at = m.pos;
+            mobs.remove(&id);
+            drop(mobs);
+            broadcast(server, Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
+            explode(server, at, 6.0, "End Crystal");
+            return;
+        }
+        if m.dying > 0 {
+            return;
+        }
+        // Half a second of invulnerability after each hit (vanilla 10 ticks), so spam-clicking
+        // doesn't stack damage.
+        if m.hurt_at.is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(500)) {
+            return;
+        }
+        if m.kind.hostile() || m.kind.neutral() || matches!(m.kind, Kind::IronGolem) || m.kind == Kind::Wolf && m.owner.is_none() {
+            m.aggro = attacker.or(m.aggro);
+        }
+        let (victim_kind, victim_owner) = (m.kind, m.owner);
+        // Tamed wolves join in on whatever their owner hits; golems defend villagers.
+        if let Some(p) = attacker {
+            for o in mobs.values_mut() {
+                if o.kind == Kind::Wolf && o.owner == Some(p) && o.owner != victim_owner && o.id != id {
+                    o.prey = Some(id);
+                    o.sitting = false;
+                }
+                if o.kind == Kind::IronGolem && victim_kind == Kind::Villager {
+                    o.aggro = Some(p);
+                }
+            }
+        }
+        let Some(m) = mobs.get_mut(&id) else { return };
+        if m.kind == Kind::Enderman {
+            // Teleports away when hit, then comes back for you.
+            let a = self.randf() * std::f32::consts::TAU;
+            m.pos = (m.pos.0 + a.cos() * 8.0, m.pos.1 + 2.0, m.pos.2 + a.sin() * 8.0);
+            m.path.clear();
+        }
+        m.health -= damage;
+        let (dx, dz) = (m.pos.0 - from.0, m.pos.2 - from.2);
+        let len = (dx * dx + dz * dz).sqrt().max(0.01);
+        let k = 0.6 + 0.5 * hit.knockback as f32;
+        m.vel = (dx / len * k, 0.5 + 0.1 * hit.knockback as f32, dz / len * k);
+        m.hurt_at = Some(std::time::Instant::now());
+        m.fire = m.fire.max(hit.fire);
+        if !m.kind.hostile() {
+            m.panic = 50;
+        }
+        m.target = None;
+        use bedrock::protocol::v975::enums::ActorEvent;
+        broadcast(server, event(id, ActorEvent::Hurt));
+        if m.health <= 0.0 {
+            m.dying = 10;
+            broadcast(server, event(id, ActorEvent::Death));
+            let (kind, pos, baby, slime, captain) = (m.kind, m.pos, m.baby > 0, m.color, m.captain);
+            drop(mobs);
+            // Slimes and magma cubes split into 2-4 smaller ones (PNX `EntitySlime.close`).
+            if kind.spec().splits && slime > 1 {
+                for i in 0..2 + self.rand() % 3 {
+                    let a = i as f32 * 1.7;
+                    self.spawn_slime(server, kind, (pos.0 + a.cos() * 0.4, pos.1 + 0.3, pos.2 + a.sin() * 0.4), slime / 2);
+                }
+            }
+            server.plugins.entity_death(server, kind.identifier(), pos, attacker);
+            if kind == Kind::Villager {
+                crate::villagers::release(id);
+            }
+            if captain && let Some(p) = attacker {
+                // Killing a patrol captain gives Bad Omen for 100 minutes (vanilla).
+                let _ = server.events.send(Event::Effect { to: p, effect: crate::effects::BAD_OMEN, amplifier: 0, ticks: 120_000 });
+            }
+            if kind == Kind::EnderDragon {
+                crate::endfight::dragon_died(server, attacker);
+            }
+            if let Some(p) = attacker && !baby {
+                let points = match kind {
+                    Kind::IronGolem | Kind::Villager => 0,
+                    k if k.hostile() => 5,
+                    _ => 1 + (self.rand() % 3) as i32,
+                };
+                if points > 0 {
+                    let _ = server.events.send(Event::Xp { to: p, points });
+                }
+            }
+            for &(item, lo, hi) in kind.drops() {
+                // Looting raises the most of each drop by its level (PNX `EntityLiving.getDrops`).
+                let hi = hi + hit.looting as i8;
+                let n = lo + (self.rand() % (hi - lo + 1) as u32) as i8;
+                if n > 0
+                    && let Some(it) = crate::items::item_by_name(item)
+                {
+                    server.entities.drop_item(server, it, n, (pos.0, pos.1 + 0.5, pos.2));
+                }
+            }
+        }
+    }
+
+    pub fn tick(&self, server: &Server) {
+        tick_tnt(server);
+        let mut out = Vec::new();
+        let ids: Vec<i64> = self.mobs.lock().unwrap().keys().copied().collect();
+        for id in ids {
+            let Some(mut m) = self.mobs.lock().unwrap().get(&id).cloned() else { continue };
+            if m.dying > 0 {
+                m.dying -= 1;
+                if m.dying == 0 {
+                    self.mobs.lock().unwrap().remove(&id);
+                    out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
+                } else {
+                    self.mobs.lock().unwrap().insert(id, m);
+                }
+                continue;
+            }
+            if m.baby > 0 {
+                m.baby -= 1;
+                if m.baby == 0 {
+                    out.push(data_packet(&m)); // grew up
+                }
+            }
+            m.cooldown = m.cooldown.saturating_sub(1);
+            if m.love > 0 {
+                m.love -= 1;
+                if m.love % 20 == 0 {
+                    use bedrock::protocol::v975::enums::ActorEvent;
+                    out.push(event(id, ActorEvent::InLoveHearts));
+                }
+            }
+            if m.kind == Kind::EndCrystal {
+                continue; // sits on its pillar
+            }
+            m.weak = m.weak.saturating_sub(1);
+            if m.curing > 0 {
+                m.curing -= 1;
+                if m.curing == 0 {
+                    // Cured: the zombie villager becomes a villager (PNX EntityZombieVillager).
+                    self.mobs.lock().unwrap().remove(&id);
+                    out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
+                    let pos = m.pos;
+                    out.push(sound("mob.zombie.unfect", pos));
+                    let nid = self.spawn(server, Kind::Villager, pos);
+                    let _ = nid;
+                    continue;
+                }
+            }
+            if m.kind.flies() {
+                self.fly(server, &mut m, &mut out);
+                if (m.kind.hostile() || m.kind == Kind::Bat) && self.despawn(server, &m) {
+                    self.mobs.lock().unwrap().remove(&id);
+                    out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
+                    continue;
+                }
+            } else if (m.kind.hostile() && !m.kind.aquatic()) || (m.kind.neutral() && m.aggro.is_some()) {
+                if self.hostile(server, &mut m, &mut out) {
+                    // Exploded: gone without the death animation.
+                    self.mobs.lock().unwrap().remove(&id);
+                    out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
+                    continue;
+                }
+                if m.health <= 0.0 && m.dying == 0 {
+                    use bedrock::protocol::v975::enums::ActorEvent;
+                    m.dying = 10;
+                    out.push(event(id, ActorEvent::Death));
+                    self.mobs.lock().unwrap().insert(id, m);
+                    continue;
+                }
+                if m.kind.hostile() && self.despawn(server, &m) {
+                    self.mobs.lock().unwrap().remove(&id);
+                    out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
+                    continue;
+                }
+            } else if m.kind.aquatic() {
+                if self.despawn(server, &m) {
+                    self.mobs.lock().unwrap().remove(&id);
+                    out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
+                    continue;
+                }
+                self.swim(server, &mut m, &mut out);
+                if m.kind.hostile() {
+                    self.laser(server, &mut m);
+                }
+            } else if m.kind.companion() {
+                self.defend(server, &mut m);
+            } else if m.kind == Kind::Villager {
+                self.villager(server, &mut m, &mut out);
+            } else if let Some(partner) = self.think(server, &mut m) {
+                self.breed(server, &mut m, partner, &mut out);
+            }
+            if m.sheared {
+                m.regrow = m.regrow.saturating_sub(1);
+                if m.regrow == 0 {
+                    m.sheared = false; // grazed and grew its wool back
+                    out.push(data_packet(&m));
+                }
+            }
+            if m.health <= 0.0 && m.dying == 0 {
+                use bedrock::protocol::v975::enums::ActorEvent;
+                m.dying = 10;
+                out.push(event(id, ActorEvent::Death));
+                self.mobs.lock().unwrap().insert(id, m);
+                continue;
+            }
+            if m.kind.flies() {
+                self.fly_physics(server, &mut m);
+            } else if m.kind.aquatic() {
+                self.swim_physics(server, &mut m);
+            } else {
+                self.physics(server, &mut m);
+            }
+            let ((sp, sy, sh), p) = (m.sent, m.pos);
+            if (sp.0 - p.0).abs() + (sp.1 - p.1).abs() + (sp.2 - p.2).abs() > 0.02 || (sy - m.yaw).abs() > 2.0 || (sh - m.head_yaw).abs() > 4.0 {
+                m.sent = (p, m.yaw, m.head_yaw);
+                out.push(move_packet(&m));
+            }
+            if m.pos.1 < -100.0 {
+                self.mobs.lock().unwrap().remove(&id);
+                out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
+                continue;
+            }
+            if let Some(slot) = self.mobs.lock().unwrap().get_mut(&id) {
+                *slot = m;
+            }
+        }
+        self.tick_arrows(server, &mut out);
+        self.tick_thrown(server, &mut out);
+        for p in out {
+            broadcast(server, p);
+        }
+    }
+
+    /// Hostile AI: burn in sun, pick a target, chase, melee/shoot/fuse. True if it blew up.
+    fn hostile(&self, server: &Server, m: &mut Mob, out: &mut Vec<Protocol>) -> bool {
+        let w = &server.world;
+        let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+        let t = server.time().rem_euclid(24_000);
+        let day = !(12_500..23_500).contains(&t);
+        let open_sky = sky(w, feet);
+        // Sunlight sets zombies and skeletons on fire (1 damage a second).
+        let in_water = blocks::is_water(w.get(feet.0, feet.1, feet.2));
+        if in_water {
+            m.fire = 0;
+        }
+        m.fire = m.fire.saturating_sub(1);
+        let burning = (m.kind.spec().burns && day && open_sky && !in_water && m.baby == 0) || m.fire > 0;
+        if burning != m.burning {
+            m.burning = burning;
+            out.push(data_packet(m));
+        }
+        if burning && self.rand().is_multiple_of(TPS) {
+            m.health -= 1.0;
+            use bedrock::protocol::v975::enums::ActorEvent;
+            out.push(event(m.id, ActorEvent::Hurt));
+        }
+        // Target: nearest targetable player in range. Spiders are peaceful in daylight and
+        // endermen until provoked (provoking sets `aggro` in `hurt`).
+        let targets = self.targetable.lock().unwrap().clone();
+        let aggressive = match m.kind {
+            Kind::Spider => !day || !open_sky,
+            Kind::Enderman => false,
+            k => !k.neutral(),
+        };
+        let players = server.all();
+        let target = m
+            .aggro
+            .and_then(|a| players.iter().find(|p| p.id == a && targets.contains(&a)))
+            .or_else(|| {
+                if !aggressive {
+                    return None;
+                }
+                players
+                    .iter()
+                    .filter(|p| targets.contains(&p.id))
+                    .map(|p| (p, dist2(p.pos, m.pos)))
+                    .filter(|(_, d)| *d < 16.0 * 16.0)
+                    .min_by(|a, b| a.1.total_cmp(&b.1))
+                    .map(|(p, _)| p)
+            })
+            .cloned();
+        m.attack_cd = m.attack_cd.saturating_sub(1);
+        if target.is_none() && matches!(m.kind, Kind::Zombie | Kind::Drowned | Kind::Husk | Kind::ZombieVillager | Kind::Pillager | Kind::Vindicator | Kind::Ravager | Kind::Evoker) {
+            // No player around: zombies go for villagers.
+            let v = self.nearest(m, 16.0, |o| o.kind == Kind::Villager);
+            if let Some((vid, vpos)) = v {
+                self.chase_and_hit(server, m, vid, vpos);
+                return false;
+            }
+        }
+        let Some(p) = target else {
+            m.aggro = None;
+            if m.fuse > 0 {
+                m.fuse = 0;
+                out.push(data_packet(m));
+            }
+            self.wander(server, m);
+            return false;
+        };
+        let feet_p = (p.pos.0, p.pos.1 - 1.62, p.pos.2);
+        let d2 = dist2(feet_p, m.pos);
+        m.head_yaw = (-(p.pos.0 - m.pos.0)).atan2(p.pos.2 - m.pos.2).to_degrees();
+        let goal = (feet_p.0.floor() as i32, feet_p.1.floor() as i32, feet_p.2.floor() as i32);
+        match m.kind {
+            k if k.spec().ranged.is_some() => {
+                // Keep about 8 blocks away and shoot.
+                if d2 > 100.0 && (m.path.is_empty() || self.rand().is_multiple_of(10)) {
+                    m.path = path(w, feet, goal, 120);
+                } else if d2 < 36.0 {
+                    m.path.clear();
+                }
+                if d2 < 15.0 * 15.0 && m.attack_cd == 0 {
+                    m.attack_cd = 2 * TPS;
+                    self.shoot(server, m, (p.pos.0, p.pos.1 - 0.4, p.pos.2), out);
+                }
+            }
+            Kind::Creeper => {
+                if d2 < 9.0 {
+                    m.path.clear();
+                    if m.fuse == 0 {
+                        out.push(data_packet(&Mob { fuse: 1, ..m.clone() }));
+                        out.push(sound("fuse", m.pos));
+                    }
+                    m.fuse += 1;
+                    if m.fuse >= 15 {
+                        explode(server, m.pos, 3.0, Kind::Creeper.display());
+                        return true;
+                    }
+                } else {
+                    if m.fuse > 0 && d2 > 49.0 {
+                        m.fuse = 0;
+                        out.push(data_packet(m));
+                    }
+                    if m.path.is_empty() || self.rand().is_multiple_of(10) {
+                        m.path = path(w, feet, goal, 160);
+                    }
+                }
+            }
+            _ => {
+                if d2 < 1.6 * 1.6 + (m.kind.size().0 / 2.0).powi(2) && (feet_p.1 - m.pos.1).abs() < 2.0 {
+                    m.path.clear();
+                    if m.attack_cd == 0 {
+                        m.attack_cd = TPS;
+                        let dmg = m.kind.melee() * difficulty_scale();
+                        let (dx, dz) = (feet_p.0 - m.pos.0, feet_p.2 - m.pos.2);
+                        let len = (dx * dx + dz * dz).sqrt().max(0.01);
+                        let _ = server.events.send(Event::Damage {
+                            to: p.id,
+                            damage: crate::health::Damage::Mob(dmg, m.kind.display()),
+                            knock: (dx / len * 0.4, 0.3, dz / len * 0.4),
+                        });
+                        if let Some((effect, secs)) = m.kind.spec().hit_effect {
+                            let _ = server.events.send(Event::Effect { to: p.id, effect, amplifier: 0, ticks: secs * 20 });
+                        }
+                    }
+                } else if m.path.is_empty() || self.rand().is_multiple_of(8) {
+                    m.path = path(w, feet, goal, 160);
+                }
+            }
+        }
+        self.steer(m);
+        false
+    }
+
+    /// Flyers drift between random points; hostile ones dive or shoot at the nearest player.
+    fn fly(&self, server: &Server, m: &mut Mob, out: &mut Vec<Protocol>) {
+        m.attack_cd = m.attack_cd.saturating_sub(1);
+        let t = server.time().rem_euclid(24_000);
+        let day = !(12_500..23_500).contains(&t);
+        let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+        let burning = m.kind.spec().burns && day && sky(&server.world, feet);
+        if burning != m.burning {
+            m.burning = burning;
+            out.push(data_packet(m));
+        }
+        if burning && self.rand().is_multiple_of(TPS) {
+            m.health -= 1.0;
+        }
+        let targets = self.targetable.lock().unwrap().clone();
+        let reach = if m.kind == Kind::EnderDragon { 150.0 } else { 24.0 };
+        let mut target = m.kind.hostile().then(|| {
+            server.all().into_iter().filter(|p| targets.contains(&p.id)).map(|p| (dist2(p.pos, m.pos), p)).filter(|(d, _)| *d < reach * reach).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, p)| p)
+        }).flatten();
+        if m.kind == Kind::EnderDragon && m.attack_cd > 0 {
+            // Circles the main island between dives. TODO: perch on the portal (PNX phase manager)
+            target = None;
+            let base = crate::dims::base(crate::dims::END) as f32;
+            let a = (m.attack_cd as f32 * 0.03) + m.id as f32;
+            m.path = vec![((a.cos() * 50.0) as i32, (base + 80.0) as i32, (a.sin() * 50.0) as i32)];
+        }
+        let goal = if let Some(p) = &target {
+            let aim = (p.pos.0, p.pos.1 - 0.6, p.pos.2);
+            let d2 = dist2(aim, m.pos);
+            m.head_yaw = (-(p.pos.0 - m.pos.0)).atan2(p.pos.2 - m.pos.2).to_degrees();
+            if m.kind.spec().ranged.is_some() {
+                if d2 < 20.0 * 20.0 && m.attack_cd == 0 {
+                    m.attack_cd = 3 * TPS;
+                    self.shoot(server, m, aim, out);
+                }
+                // Hover about 8 blocks off, a little above.
+                let back = ((m.pos.0 - aim.0), (m.pos.2 - aim.2));
+                let len = (back.0 * back.0 + back.1 * back.1).sqrt().max(0.01);
+                (aim.0 + back.0 / len * 8.0, aim.1 + 4.0, aim.2 + back.1 / len * 8.0)
+            } else {
+                let hit_reach = if m.kind == Kind::EnderDragon { 6.0 } else { 1.8 };
+                if d2 < hit_reach * hit_reach && m.attack_cd == 0 {
+                    m.attack_cd = if m.kind == Kind::EnderDragon { 12 * TPS } else { TPS };
+                    let _ = server.events.send(Event::Damage {
+                        to: p.id,
+                        damage: crate::health::Damage::Mob(m.kind.melee() * difficulty_scale(), m.kind.display()),
+                        knock: ((aim.0 - m.pos.0) * 0.3, 0.2, (aim.2 - m.pos.2) * 0.3),
+                    });
+                }
+                aim
+            }
+        } else {
+            match m.path.first() {
+                Some(&(x, y, z)) if dist2((x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5), m.pos) > 1.0 && !self.rand().is_multiple_of(60) => (x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5),
+                _ => {
+                    let g = (feet.0 + (self.rand() % 15) as i32 - 7, feet.1 + (self.rand() % 7) as i32 - 3, feet.2 + (self.rand() % 15) as i32 - 7);
+                    m.path = vec![g];
+                    (g.0 as f32 + 0.5, g.1 as f32 + 0.5, g.2 as f32 + 0.5)
+                }
+            }
+        };
+        let (dx, dy, dz) = (goal.0 - m.pos.0, goal.1 - m.pos.1, goal.2 - m.pos.2);
+        let len = (dx * dx + dy * dy + dz * dz).sqrt().max(0.01);
+        let sp = m.kind.speed();
+        m.vel = (m.vel.0 * 0.7 + dx / len * sp * 0.3, m.vel.1 * 0.7 + dy / len * sp * 0.3, m.vel.2 * 0.7 + dz / len * sp * 0.3);
+        m.yaw = (-m.vel.0).atan2(m.vel.2).to_degrees();
+        if target.is_none() {
+            m.head_yaw = m.yaw;
+        }
+    }
+
+    /// Flying movement: no gravity; bump off blocks.
+    fn fly_physics(&self, server: &Server, m: &mut Mob) {
+        let next = (m.pos.0 + m.vel.0, m.pos.1 + m.vel.1, m.pos.2 + m.vel.2);
+        let h = m.kind.size().1;
+        let blocked = [0.0, h * 0.9].iter().any(|dy| solid(server.world.get(next.0.floor() as i32, (next.1 + dy).floor() as i32, next.2.floor() as i32)));
+        let (lo, hi) = crate::dims::range(crate::dims::of_f(m.pos.1));
+        if blocked || !((lo + 1) as f32..(hi - 1) as f32).contains(&next.1) {
+            m.vel = (-m.vel.0 * 0.5, 0.05, -m.vel.2 * 0.5);
+            m.path.clear();
+        } else {
+            m.pos = next;
+        }
+        m.on_ground = false;
+    }
+
+    /// Guardians zap players in reach every 3 s (their laser, without the charge-up beam).
+    fn laser(&self, server: &Server, m: &mut Mob) {
+        m.attack_cd = m.attack_cd.saturating_sub(1);
+        if m.attack_cd > 0 {
+            return;
+        }
+        let targets = self.targetable.lock().unwrap().clone();
+        if let Some(p) = server.all().into_iter().find(|p| targets.contains(&p.id) && dist2(p.pos, m.pos) < 14.0 * 14.0) {
+            m.attack_cd = 3 * TPS;
+            let _ = server.events.send(Event::Damage { to: p.id, damage: crate::health::Damage::Mob(m.kind.melee() * difficulty_scale(), m.kind.display()), knock: (0.0, 0.0, 0.0) });
+            if let Some((effect, secs)) = m.kind.spec().hit_effect {
+                let _ = server.events.send(Event::Effect { to: p.id, effect, amplifier: 2, ticks: secs * 20 });
+            }
+        }
+    }
+
+    /// Nearest other living mob within `range` matching `f`: (id, position).
+    fn nearest(&self, m: &Mob, range: f32, f: impl Fn(&Mob) -> bool) -> Option<(i64, (f32, f32, f32))> {
+        self.mobs
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|o| o.id != m.id && o.dying == 0 && f(o))
+            .map(|o| (o.id, o.pos, dist2(o.pos, m.pos)))
+            .filter(|o| o.2 < range * range)
+            .min_by(|a, b| a.2.total_cmp(&b.2))
+            .map(|(id, p, _)| (id, p))
+    }
+
+    /// Walks to mob `prey` and hits it when in reach.
+    fn chase_and_hit(&self, server: &Server, m: &mut Mob, prey: i64, at: (f32, f32, f32)) {
+        let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+        let reach = 1.6 + m.kind.size().0 / 2.0;
+        if dist2(at, m.pos) < reach * reach {
+            m.path.clear();
+            m.yaw = (-(at.0 - m.pos.0)).atan2(at.2 - m.pos.2).to_degrees();
+            if m.attack_cd == 0 {
+                m.attack_cd = TPS;
+                self.hurt(server, prey, m.kind.melee(), m.pos, None);
+            }
+        } else if m.path.is_empty() || self.rand().is_multiple_of(8) {
+            m.path = path(&server.world, feet, (at.0.floor() as i32, at.1.floor() as i32, at.2.floor() as i32), 160);
+        }
+        self.steer(m);
+    }
+
+    /// Golems guard (hostile mobs nearby, or a player who attacked a villager), wolves and
+    /// cats follow and defend their owner. Untamed wolves bite back when hit.
+    fn defend(&self, server: &Server, m: &mut Mob) {
+        m.attack_cd = m.attack_cd.saturating_sub(1);
+        if m.sitting {
+            m.path.clear();
+            m.vel.0 = 0.0;
+            m.vel.2 = 0.0;
+            return;
+        }
+        // Current prey still alive?
+        if let Some(prey) = m.prey {
+            let at = self.mobs.lock().unwrap().get(&prey).filter(|o| o.dying == 0).map(|o| o.pos);
+            match at {
+                Some(at) if dist2(at, m.pos) < 24.0 * 24.0 => return self.chase_and_hit(server, m, prey, at),
+                _ => m.prey = None,
+            }
+        }
+        if m.kind == Kind::IronGolem && self.rand().is_multiple_of(10) {
+            m.prey = self.nearest(m, 16.0, |o| o.kind.hostile() && o.kind != Kind::Creeper).map(|(id, _)| id);
+        }
+        // Angry at a player (hit a golem/untamed wolf, or a villager near a golem).
+        if let Some(pid) = m.aggro
+            && let Some(p) = server.get(pid)
+            && self.targetable.lock().unwrap().contains(&pid)
+        {
+            let feet_p = (p.pos.0, p.pos.1 - 1.62, p.pos.2);
+            let reach = 1.6 + m.kind.size().0 / 2.0;
+            if dist2(feet_p, m.pos) < reach * reach {
+                m.path.clear();
+                if m.attack_cd == 0 {
+                    m.attack_cd = TPS;
+                    let (dx, dz) = (feet_p.0 - m.pos.0, feet_p.2 - m.pos.2);
+                    let len = (dx * dx + dz * dz).sqrt().max(0.01);
+                    let fling = if m.kind == Kind::IronGolem { 0.6 } else { 0.3 };
+                    let _ = server.events.send(Event::Damage {
+                        to: pid,
+                        damage: crate::health::Damage::Mob(m.kind.melee() * difficulty_scale().max(0.5), m.kind.display()),
+                        knock: (dx / len * 0.4, fling, dz / len * 0.4),
+                    });
+                }
+            } else if m.path.is_empty() || self.rand().is_multiple_of(8) {
+                let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+                m.path = path(&server.world, feet, (feet_p.0.floor() as i32, feet_p.1.floor() as i32, feet_p.2.floor() as i32), 160);
+            }
+            self.steer(m);
+            return;
+        }
+        m.aggro = None;
+        // Tamed: stay near the owner (teleport if left far behind).
+        if let Some(o) = m.owner.and_then(|o| server.get(o)) {
+            let feet_o = (o.pos.0, o.pos.1 - 1.62, o.pos.2);
+            let d2 = dist2(feet_o, m.pos);
+            if d2 > 20.0 * 20.0 {
+                m.pos = (feet_o.0 + 1.0, feet_o.1, feet_o.2 + 1.0);
+                m.path.clear();
+            } else if d2 > 6.0 * 6.0 {
+                if m.path.is_empty() || self.rand().is_multiple_of(10) {
+                    let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+                    m.path = path(&server.world, feet, (feet_o.0.floor() as i32, feet_o.1.floor() as i32, feet_o.2.floor() as i32), 160);
+                }
+                self.steer(m);
+            } else {
+                m.path.clear();
+                m.head_yaw = (-(o.pos.0 - m.pos.0)).atan2(o.pos.2 - m.pos.2).to_degrees();
+            }
+            return;
+        }
+        self.wander(server, m);
+    }
+
+    /// Villagers wander and run from zombies.
+    // TODO: schedules
+    fn villager(&self, server: &Server, m: &mut Mob, out: &mut Vec<Protocol>) {
+        // Every few seconds an adult without a job looks for a job block (PNX WorkExecutor).
+        if m.baby == 0 && self.rand().is_multiple_of(50) {
+            let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+            let lost = m.job.as_ref().and_then(|j| j.site).is_some_and(|s| crate::villagers::find_job(&server.world, m.id, s).is_none_or(|(p, _)| p != s));
+            if lost && m.job.as_ref().is_some_and(|j| j.exp == 0) {
+                // Its job block is gone and it never traded: back to unemployed.
+                m.job = None;
+                crate::villagers::release(m.id);
+                out.push(data_packet(m));
+            }
+            if m.job.is_none()
+                && let Some((site, profession)) = crate::villagers::find_job(&server.world, m.id, feet)
+            {
+                let biome = server.world.biome_at(feet.0, feet.1, feet.2).unwrap_or(1);
+                m.job = Some(Box::new(crate::villagers::Job {
+                    profession,
+                    tier: 1,
+                    exp: 0,
+                    seed: self.rand() as i32,
+                    clothing: crate::trades::Clothing::from_biome(biome),
+                    uses: vec![],
+                    site: Some(site),
+                }));
+                out.push(data_packet(m));
+                out.push(event(m.id, bedrock::protocol::v975::enums::ActorEvent::VillagerHappy));
+            }
+        }
+        // Restocks a couple of times a day (vanilla: twice per day at its job site).
+        if let Some(j) = m.job.as_mut()
+            && !j.uses.is_empty()
+            && self.rand().is_multiple_of(6000)
+        {
+            j.uses.clear();
+        }
+        if let Some((_, zp)) = self.nearest(m, 8.0, |o| matches!(o.kind, Kind::Zombie | Kind::Drowned)) {
+            if m.path.is_empty() || self.rand().is_multiple_of(10) {
+                let (dx, dz) = (m.pos.0 - zp.0, m.pos.2 - zp.2);
+                let len = (dx * dx + dz * dz).sqrt().max(0.01);
+                let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+                let goal = (feet.0 + (dx / len * 8.0) as i32, feet.1, feet.2 + (dz / len * 8.0) as i32);
+                m.path = path(&server.world, feet, goal, 120);
+            }
+            self.steer(m);
+            return;
+        }
+        let _ = self.think(server, m);
+    }
+
+    /// Fish and squid: drift to random spots in the water; flop and suffocate on land.
+    fn swim(&self, server: &Server, m: &mut Mob, out: &mut Vec<Protocol>) {
+        let w = &server.world;
+        let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+        if !blocks::is_water(w.get(feet.0, feet.1, feet.2)) {
+            if self.rand().is_multiple_of(TPS) {
+                m.health -= 1.0;
+                use bedrock::protocol::v975::enums::ActorEvent;
+                out.push(event(m.id, ActorEvent::Hurt));
+            }
+            return;
+        }
+        let near_target = m.target.is_some_and(|(tx, tz)| (tx - m.pos.0).powi(2) + (tz - m.pos.2).powi(2) < 1.0);
+        if m.target.is_none() || near_target || self.rand().is_multiple_of(60) {
+            // A water block within a few blocks.
+            for _ in 0..6 {
+                let (dx, dy, dz) = ((self.rand() % 9) as i32 - 4, (self.rand() % 5) as i32 - 2, (self.rand() % 9) as i32 - 4);
+                if blocks::is_water(w.get(feet.0 + dx, feet.1 + dy, feet.2 + dz)) {
+                    m.target = Some(((feet.0 + dx) as f32 + 0.5, (feet.2 + dz) as f32 + 0.5));
+                    m.vel.1 = dy as f32 * 0.03;
+                    break;
+                }
+            }
+        }
+        if let Some((tx, tz)) = m.target {
+            let (dx, dz) = (tx - m.pos.0, tz - m.pos.2);
+            let d = (dx * dx + dz * dz).sqrt().max(0.001);
+            let s = m.kind.speed() * if m.panic > 0 { 2.0 } else { 1.0 };
+            m.vel.0 = m.vel.0 * 0.7 + dx / d * s * 0.3;
+            m.vel.2 = m.vel.2 * 0.7 + dz / d * s * 0.3;
+            m.yaw = (-dx).atan2(dz).to_degrees();
+            m.head_yaw = m.yaw;
+        }
+        m.panic = m.panic.saturating_sub(1);
+    }
+
+    /// Water movement: no gravity in water, stays inside water blocks; falls on land.
+    fn swim_physics(&self, server: &Server, m: &mut Mob) {
+        let w = &server.world;
+        let next = (m.pos.0 + m.vel.0, m.pos.1 + m.vel.1, m.pos.2 + m.vel.2);
+        let here = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+        if blocks::is_water(w.get(here.0, here.1, here.2)) {
+            if blocks::is_water(w.get(next.0.floor() as i32, next.1.floor() as i32, next.2.floor() as i32)) {
+                m.pos = next;
+            } else {
+                m.vel = (-m.vel.0 * 0.5, 0.0, -m.vel.2 * 0.5);
+                m.target = None;
+            }
+            m.vel.1 *= 0.9;
+        } else {
+            self.physics(server, m);
+        }
+    }
+
+    /// Idle hostiles drift about.
+    fn wander(&self, server: &Server, m: &mut Mob) {
+        let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+        if m.path.is_empty() && self.rand().is_multiple_of(100) {
+            let a = self.randf() * std::f32::consts::TAU;
+            let r = 3.0 + self.randf() * 7.0;
+            m.path = path(&server.world, feet, (feet.0 + (a.cos() * r) as i32, feet.1, feet.2 + (a.sin() * r) as i32), 120);
+        }
+        self.steer(m);
+    }
+
+    /// Walks along the current path.
+    fn steer(&self, m: &mut Mob) {
+        while let Some(&(wx, _, wz)) = m.path.first() {
+            let (dx, dz) = (wx as f32 + 0.5 - m.pos.0, wz as f32 + 0.5 - m.pos.2);
+            if dx * dx + dz * dz < 0.15 {
+                m.path.remove(0);
+            } else {
+                break;
+            }
+        }
+        m.target = m.path.first().map(|&(x, _, z)| (x as f32 + 0.5, z as f32 + 0.5));
+        if let Some((tx, tz)) = m.target {
+            let (dx, dz) = (tx - m.pos.0, tz - m.pos.2);
+            let d = (dx * dx + dz * dz).sqrt().max(0.001);
+            if m.on_ground {
+                let speed = m.kind.speed();
+                m.vel.0 = m.vel.0 * 0.5 + dx / d * speed * 0.5;
+                m.vel.2 = m.vel.2 * 0.5 + dz / d * speed * 0.5;
+            }
+            m.yaw = (-dx).atan2(dz).to_degrees();
+        }
+    }
+
+    /// Hostiles vanish far from players (instantly past 128 blocks, now and then past 32).
+    fn despawn(&self, server: &Server, m: &Mob) -> bool {
+        if m.owner.is_some() || matches!(m.kind, Kind::Villager | Kind::IronGolem | Kind::EnderDragon | Kind::EndCrystal | Kind::Shulker) {
+            return false;
+        }
+        let players = server.all();
+        if players.is_empty() {
+            return *crate::commands::DIFFICULTY.lock().unwrap() == 0; // nobody online: keep them
+        }
+        let nearest = players.iter().map(|p| dist2(p.pos, m.pos)).fold(f32::MAX, f32::min);
+        nearest > 128.0 * 128.0 || (nearest > 32.0 * 32.0 && self.rand().is_multiple_of(800)) || *crate::commands::DIFFICULTY.lock().unwrap() == 0
+    }
+
+    fn shoot(&self, server: &Server, m: &Mob, at: (f32, f32, f32), out: &mut Vec<Protocol>) {
+        let from = (m.pos.0, m.pos.1 + 1.5, m.pos.2);
+        let (dx, dy, dz) = (at.0 - from.0, at.1 - from.1, at.2 - from.2);
+        let horiz = (dx * dx + dz * dz).sqrt().max(0.01);
+        // ~1.6 blocks/tick, aimed a little high for the drop; a bit of spread.
+        let speed = 1.6;
+        let flight = horiz / speed;
+        let lift = 0.5 * ARROW_GRAVITY * flight * flight;
+        let len = (dx * dx + (dy + lift).powi(2) + dz * dz).sqrt().max(0.01);
+        let spread = || (self.randf() - 0.5) * 0.06;
+        let vel = (dx / len * speed + spread(), (dy + lift) / len * speed + spread(), dz / len * speed + spread());
+        let id = crate::players::next_id();
+        out.push(Protocol::AddActorPacket(Box::new(bedrock::protocol::v2225::packets::AddActorPacket {
+            target_actor_id: ActorUniqueID(id),
+            target_runtime_id: ActorRuntimeID(id as u64),
+            actor_type: m.kind.spec().ranged.unwrap_or("minecraft:arrow").into(),
+            position: from,
+            velocity: vel,
+            rotation: (0.0, 0.0),
+            y_head_rotation: 0.0,
+            y_body_rotation: 0.0,
+            attributes: vec![],
+            actor_data: vec![],
+            synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
+            actor_links: vec![],
+            passenger_of_block_data: None,
+        })));
+        out.push(sound("bow", from));
+        let _ = server;
+        self.arrows.lock().unwrap().push(Arrow { id, pos: from, vel, shooter: m.kind, life: 60 * TPS, stuck: false, by: None });
+    }
+
+    /// Thrown items: snowballs knock back, eggs hatch a chick 1 in 8 (PNX EntityEgg),
+    /// pearls teleport the thrower and hurt them 5.
+    fn tick_thrown(&self, server: &Server, out: &mut Vec<Protocol>) {
+        let players = server.all();
+        let mut hits = Vec::new();
+        THROWN.lock().unwrap().retain_mut(|t| {
+            t.life = t.life.saturating_sub(1);
+            if t.life == 0 {
+                out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(t.id) })));
+                return false;
+            }
+            // Two game ticks per 10 Hz tick, each in 4 small steps.
+            for _ in 0..8 {
+                let next = (t.pos.0 + t.vel.0 / 4.0, t.pos.1 + t.vel.1 / 4.0, t.pos.2 + t.vel.2 / 4.0);
+                let player = players.iter().find(|p| {
+                    let (fx, fy, fz) = (p.pos.0, p.pos.1 - 1.62, p.pos.2);
+                    p.id != t.owner && (next.0 - fx).abs() < 0.45 && (next.2 - fz).abs() < 0.45 && next.1 > fy && next.1 < fy + 1.85
+                });
+                let mob = self.mobs.lock().unwrap().values().find(|m| {
+                    let (w, h) = m.kind.size();
+                    (next.0 - m.pos.0).abs() < w / 2.0 + 0.15 && (next.2 - m.pos.2).abs() < w / 2.0 + 0.15 && next.1 > m.pos.1 && next.1 < m.pos.1 + h
+                }).map(|m| m.id);
+                let block = !blocks::is_air(server.world.get(next.0.floor() as i32, next.1.floor() as i32, next.2.floor() as i32))
+                    && !blocks::is_liquid(server.world.get(next.0.floor() as i32, next.1.floor() as i32, next.2.floor() as i32));
+                if player.is_some() || mob.is_some() || block {
+                    hits.push((t.kind, t.owner, t.pos, t.vel, player.map(|p| p.id), mob));
+                    out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(t.id) })));
+                    return false;
+                }
+                t.pos = next;
+            }
+            for _ in 0..2 {
+                t.vel.1 -= 0.03;
+                t.vel = (t.vel.0 * 0.99, t.vel.1 * 0.99, t.vel.2 * 0.99);
+            }
+            out.push(Protocol::MoveActorAbsolutePacket(Box::new(bedrock::protocol::v662::packets::MoveActorAbsolutePacket {
+                move_data: bedrock::protocol::v662::types::MoveActorAbsoluteData {
+                    actor_runtime_id: ActorRuntimeID(t.id as u64),
+                    header: 0,
+                    position: t.pos,
+                    rotation_x: 0,
+                    rotation_y: 0,
+                    rotation_y_head: 0,
+                },
+            })));
+            true
+        });
+        for (kind, owner, pos, vel, player, mob) in hits {
+            let knock = (vel.0 * 0.2, 0.2, vel.2 * 0.2);
+            if let Some(p) = player {
+                let _ = server.events.send(Event::Damage { to: p, damage: crate::health::Damage::Shot(0.0, "Snowball"), knock });
+            }
+            if let Some(m) = mob {
+                self.hurt(server, m, 0.0, pos, Some(owner));
+            }
+            match kind {
+                Throw::Snowball => {}
+                Throw::Potion(aux) => {
+                    if crate::effects::potion(aux).iter().any(|e| e.0 == crate::effects::WEAKNESS) {
+                        for m in self.mobs.lock().unwrap().values_mut() {
+                            if m.kind == Kind::ZombieVillager && dist2(m.pos, pos) < 16.0 {
+                                m.weak = 90 * TPS;
+                            }
+                        }
+                    }
+                    // PNX EntityPotion: everyone within 4 blocks gets the effects, weaker farther out.
+                    let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(sound("glass", pos)) });
+                    for pl in server.all() {
+                        let d = dist2((pl.pos.0, pl.pos.1 - 1.0, pl.pos.2), pos).sqrt();
+                        if d > 4.0 {
+                            continue;
+                        }
+                        let scale = 1.0 - d / 4.0;
+                        for (effect, amplifier, ticks) in crate::effects::potion(aux) {
+                            let ticks = if ticks <= 1 { 1 } else { ((ticks as f32) * 0.75 * scale) as i32 };
+                            let _ = server.events.send(Event::Effect { to: pl.id, effect, amplifier, ticks: ticks.max(1) });
+                        }
+                    }
+                }
+                Throw::Egg => {
+                    if self.rand().is_multiple_of(8) {
+                        self.spawn_with(server, Kind::Chicken, (pos.0, pos.1.floor(), pos.2), true);
+                    }
+                }
+                Throw::Pearl => {
+                    let _ = server.events.send(Event::Teleport { id: owner, feet: (pos.0, pos.1.floor(), pos.2) }); // last open block before the hit
+                    let _ = server.events.send(Event::Damage { to: owner, damage: crate::health::Damage::Fall(5.0), knock: (0.0, 0.0, 0.0) });
+                    let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(sound("mob.endermen.portal", pos)) });
+                }
+            }
+        }
+    }
+
+    /// Bow/trident release (PNX ItemBow/ItemTrident). Arrows do 3 blocks a game tick at full draw.
+    #[allow(clippy::too_many_arguments)]
+    pub fn player_shoot(&self, server: &Server, owner: i64, eye: (f32, f32, f32), rot: (f32, f32), force: f32, trident: bool, power: i16, punch: i16, flame: bool, drop: Option<bedrock::protocol::v2168::types::NetworkItemStackDescriptorV2>) {
+        let (pitch, yaw) = (rot.0.to_radians(), rot.1.to_radians());
+        let dir = (-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos());
+        let speed = if trident { 5.0 } else { 6.0 * force }; // per 10 Hz tick
+        let vel = (dir.0 * speed, dir.1 * speed, dir.2 * speed);
+        let from = (eye.0 + dir.0 * 0.5, eye.1 - 0.1, eye.2 + dir.2 * 0.5);
+        let id = crate::players::next_id();
+        broadcast(server, Protocol::AddActorPacket(Box::new(bedrock::protocol::v2225::packets::AddActorPacket {
+            target_actor_id: ActorUniqueID(id),
+            target_runtime_id: ActorRuntimeID(id as u64),
+            actor_type: if trident { "minecraft:thrown_trident" } else { "minecraft:arrow" }.into(),
+            position: from,
+            velocity: (vel.0 / 2.0, vel.1 / 2.0, vel.2 / 2.0),
+            rotation: (0.0, 0.0),
+            y_head_rotation: 0.0,
+            y_body_rotation: 0.0,
+            attributes: vec![],
+            actor_data: vec![],
+            synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
+            actor_links: vec![],
+            passenger_of_block_data: None,
+        })));
+        broadcast(server, sound(if trident { "item.trident.throw" } else { "bow" }, from));
+        let by = PlayerShot { owner, damage: trident.then_some(8.0), power, punch, flame, drop };
+        self.arrows.lock().unwrap().push(Arrow { id, pos: from, vel, shooter: Kind::Skeleton, life: 60 * TPS, stuck: false, by: Some(by) });
+    }
+
+    fn tick_arrows(&self, server: &Server, out: &mut Vec<Protocol>) {
+        let players = server.all();
+        let targets = self.targetable.lock().unwrap().clone();
+        let mut mob_hits: Vec<(i64, f32, (f32, f32, f32), PlayerShot)> = Vec::new();
+        let mut drops = Vec::new();
+        let boxes: Vec<(i64, (f32, f32, f32), (f32, f32))> = self.mobs.lock().unwrap().values().filter(|m| m.dying == 0).map(|m| (m.id, m.pos, m.kind.size())).collect();
+        let mut arrows = self.arrows.lock().unwrap();
+        arrows.retain_mut(|a| {
+            a.life = a.life.saturating_sub(1);
+            if a.life == 0 {
+                out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(a.id) })));
+                return false;
+            }
+            if a.stuck {
+                return true;
+            }
+            // Move in small steps so fast arrows don't skip through blocks or players.
+            for _ in 0..4 {
+                let next = (a.pos.0 + a.vel.0 / 4.0, a.pos.1 + a.vel.1 / 4.0, a.pos.2 + a.vel.2 / 4.0);
+                if let Some(by) = a.by.clone() {
+                    let speed = (a.vel.0.powi(2) + a.vel.1.powi(2) + a.vel.2.powi(2)).sqrt() / 2.0; // per game tick
+                    // PNX EntityArrow: damage = speed * 2 (rounded up), +25% per Power level.
+                    let dmg = by.damage.unwrap_or_else(|| (speed * 2.0).ceil() * if by.power > 0 { 1.0 + 0.25 * (by.power + 1) as f32 } else { 1.0 });
+                    let hit_mob = boxes.iter().find(|(_, mp, (w, h))| (next.0 - mp.0).abs() < w / 2.0 + 0.1 && (next.2 - mp.2).abs() < w / 2.0 + 0.1 && next.1 > mp.1 && next.1 < mp.1 + h);
+                    let hit_player = players.iter().find(|p| {
+                        let (fx, fy, fz) = (p.pos.0, p.pos.1 - 1.62, p.pos.2);
+                        p.id != by.owner && (next.0 - fx).abs() < 0.45 && (next.2 - fz).abs() < 0.45 && next.1 > fy && next.1 < fy + 1.85
+                    });
+                    if hit_mob.is_some() || hit_player.is_some() {
+                        if let Some(&(mid, ..)) = hit_mob {
+                            mob_hits.push((mid, dmg, a.pos, by.clone()));
+                        } else if let Some(p) = hit_player && targets.contains(&p.id) {
+                            let _ = server.events.send(Event::Damage { to: p.id, damage: crate::health::Damage::Shot(dmg, "a player"), knock: (a.vel.0 * 0.1, 0.2, a.vel.2 * 0.1) });
+                        }
+                        // Tridents drop where they hit; arrows that hit something are gone.
+                        if by.damage.is_some() && let Some(d) = by.drop.clone() {
+                            drops.push((d, next));
+                        }
+                        out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(a.id) })));
+                        return false;
+                    }
+                    if solid(server.world.get(next.0.floor() as i32, next.1.floor() as i32, next.2.floor() as i32)) {
+                        // TODO: arrows land as items right away, should stick and get picked up by touch
+                        if let Some(d) = by.drop.clone() {
+                            drops.push((d, a.pos));
+                        }
+                        out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(a.id) })));
+                        return false;
+                    }
+                    a.pos = next;
+                    continue;
+                }
+                if let Some(p) = players.iter().find(|p| {
+                    let (fx, fy, fz) = (p.pos.0, p.pos.1 - 1.62, p.pos.2);
+                    (next.0 - fx).abs() < 0.45 && (next.2 - fz).abs() < 0.45 && next.1 > fy && next.1 < fy + 1.85
+                }) {
+                    if targets.contains(&p.id) {
+                        let speed = (a.vel.0.powi(2) + a.vel.1.powi(2) + a.vel.2.powi(2)).sqrt();
+                        let dmg = (speed * 2.0).ceil().clamp(2.0, 5.0) * difficulty_scale();
+                        // Fireballs and potions hit harder or poison (PNX projectile classes).
+                        let dmg = match a.shooter {
+                            Kind::Ghast => 6.0 * difficulty_scale(),
+                            Kind::Blaze => 5.0 * difficulty_scale(),
+                            Kind::Witch => 0.0,
+                            _ => dmg,
+                        };
+                        let _ = server.events.send(Event::Damage {
+                            to: p.id,
+                            damage: crate::health::Damage::Shot(dmg, a.shooter.display()),
+                            knock: (a.vel.0 * 0.2, 0.2, a.vel.2 * 0.2),
+                        });
+                        let effect = match a.shooter {
+                            Kind::Stray => Some((2, 0, 600)),  // slowness 30 s
+                            Kind::Bogged => Some((19, 0, 80)), // poison 4 s
+                            Kind::Shulker => Some((24, 0, 200)), // levitation 10 s
+                            Kind::Witch => Some([(7, 0, 1), (19, 0, 900), (2, 0, 1800), (18, 0, 1800)][(self.rand() % 4) as usize]),
+                            _ => None,
+                        };
+                        if let Some((effect, amplifier, ticks)) = effect {
+                            let _ = server.events.send(Event::Effect { to: p.id, effect, amplifier, ticks });
+                        }
+                    }
+                    out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(a.id) })));
+                    return false;
+                }
+                if solid(server.world.get(next.0.floor() as i32, next.1.floor() as i32, next.2.floor() as i32)) {
+                    a.stuck = true;
+                    a.life = a.life.min(5 * TPS); // stays stuck a few seconds
+                    a.vel = (0.0, 0.0, 0.0);
+                    break;
+                }
+                a.pos = next;
+            }
+            a.vel.1 -= ARROW_GRAVITY;
+            a.vel = (a.vel.0 * 0.99, a.vel.1 * 0.99, a.vel.2 * 0.99);
+            out.push(Protocol::MoveActorAbsolutePacket(Box::new(bedrock::protocol::v662::packets::MoveActorAbsolutePacket {
+                move_data: bedrock::protocol::v662::types::MoveActorAbsoluteData {
+                    actor_runtime_id: ActorRuntimeID(a.id as u64),
+                    header: 0,
+                    position: a.pos,
+                    rotation_x: angle((-a.vel.1).atan2((a.vel.0.powi(2) + a.vel.2.powi(2)).sqrt()).to_degrees()),
+                    rotation_y: angle((-a.vel.0).atan2(a.vel.2).to_degrees()),
+                    rotation_y_head: 0,
+                },
+            })));
+            true
+        });
+        drop(arrows);
+        for (mid, dmg, from, by) in mob_hits {
+            let hit = Hit { knockback: by.punch, fire: if by.flame { 50 } else { 0 }, looting: 0 };
+            self.hurt_with(server, mid, dmg, from, Some(by.owner), hit);
+        }
+        for (item, at) in drops {
+            server.entities.drop_item(server, item, 1, at);
+        }
+    }
+
+    /// Animal AI: panic, follow food, find a partner, wander, look around. Returns a partner
+    /// id when close enough to breed.
+    fn think(&self, server: &Server, m: &mut Mob) -> Option<i64> {
+        let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+        let mut partner_ready = None;
+        // Nearest player, and whether they're holding this mob's food.
+        let players = server.all();
+        let held = self.held.lock().unwrap().clone();
+        let nearest = players
+            .iter()
+            .map(|p| (p, (p.pos.0 - m.pos.0).powi(2) + (p.pos.1 - 1.62 - m.pos.1).powi(2) + (p.pos.2 - m.pos.2).powi(2)))
+            .min_by(|a, b| a.1.total_cmp(&b.1));
+        if m.panic > 0 {
+            m.panic -= 1;
+            if m.path.is_empty() {
+                let a = self.randf() * std::f32::consts::TAU;
+                let goal = (feet.0 + (a.cos() * 7.0) as i32, feet.1, feet.2 + (a.sin() * 7.0) as i32);
+                m.path = path(&server.world, feet, goal, 120);
+            }
+        } else if m.love > 0 {
+            // Head for another animal of the same kind that's also in love.
+            let mate = self
+                .mobs
+                .lock()
+                .unwrap()
+                .values()
+                .filter(|o| o.id != m.id && o.kind == m.kind && o.love > 0 && o.dying == 0)
+                .map(|o| (o.id, o.pos, (o.pos.0 - m.pos.0).powi(2) + (o.pos.2 - m.pos.2).powi(2)))
+                .filter(|o| o.2 < 64.0)
+                .min_by(|a, b| a.2.total_cmp(&b.2));
+            if let Some((oid, opos, d)) = mate {
+                if d < 2.5 {
+                    partner_ready = Some(oid);
+                } else if m.path.is_empty() || self.rand().is_multiple_of(20) {
+                    m.path = path(&server.world, feet, (opos.0.floor() as i32, opos.1.floor() as i32, opos.2.floor() as i32), 160);
+                }
+            }
+        } else if let Some((p, d2)) = nearest
+            && d2 < 64.0
+            && m.baby == 0
+            && held.get(&p.id).is_some_and(|i| m.kind.food(i))
+        {
+            // Tempted: follow the player, stopping a couple of blocks away.
+            if d2 < 6.0 {
+                m.path.clear();
+            } else if m.path.is_empty() || self.rand().is_multiple_of(10) {
+                m.path = path(&server.world, feet, (p.pos.0.floor() as i32, (p.pos.1 - 1.62).floor() as i32, p.pos.2.floor() as i32), 160);
+            }
+        } else if m.path.is_empty() && self.rand().is_multiple_of(80) {
+            let a = self.randf() * std::f32::consts::TAU;
+            let r = 3.0 + self.randf() * 7.0;
+            let goal = (feet.0 + (a.cos() * r) as i32, feet.1, feet.2 + (a.sin() * r) as i32);
+            m.path = path(&server.world, feet, goal, 120);
+        }
+        // Look at a nearby player when idle, otherwise where it's going.
+        if let Some((p, d2)) = nearest
+            && d2 < 36.0
+            && m.path.is_empty()
+        {
+            m.head_yaw = (-(p.pos.0 - m.pos.0)).atan2(p.pos.2 - m.pos.2).to_degrees();
+        } else {
+            m.head_yaw = m.yaw;
+        }
+        // Follow the path: drop reached waypoints, steer toward the next.
+        while let Some(&(wx, _, wz)) = m.path.first() {
+            let (dx, dz) = (wx as f32 + 0.5 - m.pos.0, wz as f32 + 0.5 - m.pos.2);
+            if dx * dx + dz * dz < 0.15 {
+                m.path.remove(0);
+            } else {
+                break;
+            }
+        }
+        m.target = m.path.first().map(|&(x, _, z)| (x as f32 + 0.5, z as f32 + 0.5));
+        if let Some((tx, tz)) = m.target {
+            let (dx, dz) = (tx - m.pos.0, tz - m.pos.2);
+            let d = (dx * dx + dz * dz).sqrt().max(0.001);
+            let speed = m.kind.speed() * if m.panic > 0 { 2.0 } else if m.love > 0 { 1.2 } else { 1.0 };
+            if m.on_ground {
+                m.vel.0 = m.vel.0 * 0.5 + dx / d * speed * 0.5;
+                m.vel.2 = m.vel.2 * 0.5 + dz / d * speed * 0.5;
+            }
+            m.yaw = (-dx).atan2(dz).to_degrees();
+        }
+        partner_ready
+    }
+
+    /// Two animals in love met: both cool down and a baby appears between them.
+    fn breed(&self, server: &Server, m: &mut Mob, partner: i64, out: &mut Vec<Protocol>) {
+        let Some(p) = self.mobs.lock().unwrap().get_mut(&partner).map(|p| {
+            p.love = 0;
+            p.cooldown = BREED_COOLDOWN;
+            p.pos
+        }) else {
+            return;
+        };
+        m.love = 0;
+        m.cooldown = BREED_COOLDOWN;
+        let at = ((m.pos.0 + p.0) / 2.0, m.pos.1.max(p.1), (m.pos.2 + p.2) / 2.0);
+        let id = self.spawn_with(server, m.kind, at, true);
+        use bedrock::protocol::v975::enums::ActorEvent;
+        out.push(event(id, ActorEvent::LoveHearts));
+    }
+
+    fn physics(&self, server: &Server, m: &mut Mob) {
+        let w = &server.world;
+        let (x, y, z) = m.pos;
+        let feet = (x.floor() as i32, y.floor() as i32, z.floor() as i32);
+        let in_water = blocks::is_water(w.get(feet.0, feet.1, feet.2));
+        if in_water && m.kind == Kind::Drowned {
+            m.vel.1 = (m.vel.1 - 0.02).max(-0.1); // sinks and walks the sea floor
+            if m.target.is_some() && !m.on_ground {
+                m.vel.1 += 0.03;
+            }
+        } else if in_water {
+            m.vel.1 = (m.vel.1 + 0.04).min(0.12); // float
+        } else {
+            m.vel.1 -= GRAVITY;
+        }
+        // Spiders climb walls they walk into.
+        if m.kind == Kind::Spider && m.target.is_some() {
+            let ahead = (x + m.vel.0.signum() * 0.8, z + m.vel.2.signum() * 0.8);
+            if solid(w.get(ahead.0.floor() as i32, feet.1, ahead.1.floor() as i32)) {
+                m.vel.1 = 0.2;
+            }
+        }
+        // Horizontal: blocked by solid blocks at feet/head; step up one block if clear above.
+        let (nx, nz) = (x + m.vel.0, z + m.vel.2);
+        let (bx, bz) = (nx.floor() as i32, nz.floor() as i32);
+        let fy = y.floor() as i32;
+        let h = m.kind.size().1.ceil() as i32;
+        let clear = |yy: i32| (0..h.max(1)).all(|dy| walkable(w.get(bx, yy + dy, bz)));
+        let (mut px, mut py, mut pz) = (x, y, z);
+        if clear(fy) {
+            px = nx;
+            pz = nz;
+        } else if m.on_ground && clear(fy + 1) && walkable(w.get(feet.0, fy + h + 1, feet.2)) {
+            px = nx;
+            pz = nz;
+            py = (fy + 1) as f32;
+        } else {
+            m.vel.0 = 0.0;
+            m.vel.2 = 0.0;
+            m.target = None;
+        }
+        // Vertical.
+        let ny = py + m.vel.1;
+        let (cx, cz) = (px.floor() as i32, pz.floor() as i32);
+        if m.vel.1 <= 0.0 && solid(w.get(cx, ny.floor() as i32, cz)) {
+            py = ny.floor() + 1.0;
+            m.vel.1 = 0.0;
+            m.on_ground = true;
+        } else if m.vel.1 > 0.0 && solid(w.get(cx, (ny + m.kind.size().1).floor() as i32, cz)) {
+            m.vel.1 = 0.0;
+            m.on_ground = false;
+        } else {
+            py = ny;
+            m.on_ground = false;
+        }
+        if m.on_ground {
+            m.vel.0 *= 0.6;
+            m.vel.2 *= 0.6;
+        }
+        m.pos = (px, py, pz);
+    }
+
+    /// Hostile spawns 24-48 blocks around each player: at night on the surface, anytime in caves.
+    // TODO: real light levels. "Dark" is just no sky above for now, so torches do nothing.
+    fn spawn_hostiles(&self, server: &Server) {
+        if *crate::commands::DIFFICULTY.lock().unwrap() == 0 {
+            return;
+        }
+        let hostiles = self.mobs.lock().unwrap().values().filter(|m| m.kind.hostile()).count();
+        if hostiles >= HOSTILE_CAP {
+            return;
+        }
+        let w = &server.world;
+        let t = server.time().rem_euclid(24_000);
+        let night = (13_000..23_000).contains(&t);
+        for p in server.all() {
+            let dim = crate::dims::of_f(p.pos.1);
+            if dim != crate::dims::OVERWORLD {
+                self.spawn_other_dim(server, &p, dim);
+                continue;
+            }
+            for _ in 0..2 {
+                let a = self.randf() * std::f32::consts::TAU;
+                let r = 24.0 + self.randf() * 24.0;
+                let (x, z) = ((p.pos.0 + a.cos() * r).floor() as i32, (p.pos.2 + a.sin() * r).floor() as i32);
+                let mut top = (p.pos.1 as i32 + 40).min(318);
+                while top > -60 && !solid(w.get(x, top, z)) {
+                    top -= 1;
+                }
+                // Surface at night, or a random cave spot below it.
+                let y = if night && self.rand().is_multiple_of(2) {
+                    top + 1
+                } else {
+                    let lo = -58;
+                    let hi = top - 8;
+                    if hi <= lo {
+                        continue;
+                    }
+                    let mut y = lo + (self.rand() % (hi - lo) as u32) as i32;
+                    // Settle onto a floor.
+                    while y > lo && !solid(w.get(x, y - 1, z)) {
+                        y -= 1;
+                    }
+                    if sky(w, (x, y, z)) {
+                        continue;
+                    }
+                    y
+                };
+                if blocks::is_water(w.get(x, y, z)) {
+                    // Drowned rise from water at night and in deep water.
+                    if self.rand().is_multiple_of(6) {
+                        self.spawn(server, Kind::Drowned, (x as f32 + 0.5, y as f32, z as f32 + 0.5));
+                    }
+                    continue;
+                }
+                if !standable(w, (x, y, z)) || !solid(w.get(x, y - 1, z)) {
+                    continue;
+                }
+                // Hostiles need darkness (vanilla: block light 0).
+                if w.block_light(x, y, z) > 0 {
+                    continue;
+                }
+                let roll = self.rand() % 100;
+                let biome = w.biome_at(x, y, z);
+                use crate::overworld::biome::id as b;
+                if biome == Some(b::MUSHROOM_ISLAND) || biome == Some(b::DEEP_DARK) {
+                    continue; // no hostile spawns
+                }
+                if !sky(w, (x, y + 1, z)) && y < 60 && self.rand().is_multiple_of(12) {
+                    self.spawn(server, Kind::Bat, (x as f32 + 0.5, y as f32 + 1.0, z as f32 + 0.5));
+                    continue;
+                }
+                let desert = matches!(biome, Some(b::DESERT));
+                let snowy = w.is_snowy(x, z);
+                let swamp = matches!(biome, Some(b::SWAMPLAND | b::MANGROVE_SWAMP));
+                let sub = self.rand() % 100;
+                let kind = match roll {
+                    0..38 if desert && sub < 80 => Kind::Husk,
+                    0..38 if sub < 5 => Kind::ZombieVillager,
+                    0..38 => Kind::Zombie,
+                    38..66 if snowy && sub < 80 => Kind::Stray,
+                    38..66 if swamp && sub < 50 => Kind::Bogged,
+                    38..66 => Kind::Skeleton,
+                    66..84 => Kind::Creeper,
+                    84..93 => Kind::Spider,
+                    93..95 => Kind::Witch,
+                    95..98 if swamp || y < 40 => Kind::Slime,
+                    95..98 => Kind::Zombie,
+                    _ => Kind::Enderman,
+                };
+                if kind == Kind::Enderman || kind == Kind::Spider {
+                    // Big mobs need room.
+                    if !walkable(w.get(x, y + 2, z)) {
+                        continue;
+                    }
+                }
+                self.spawn(server, kind, (x as f32 + 0.5, y as f32, z as f32 + 0.5));
+            }
+        }
+    }
+
+    /// Nether and End spawns near a player, roughly by biome.
+    fn spawn_other_dim(&self, server: &Server, p: &crate::players::PlayerInfo, dim: u8) {
+        let w = &server.world;
+        let (lo, hi) = crate::dims::range(dim);
+        for _ in 0..2 {
+            let a = self.randf() * std::f32::consts::TAU;
+            let r = 20.0 + self.randf() * 24.0;
+            let (x, z) = ((p.pos.0 + a.cos() * r).floor() as i32, (p.pos.2 + a.sin() * r).floor() as i32);
+            let start = (p.pos.1 as i32 + 16).min(hi - 2);
+            let Some(y) = (lo + 2..start).rev().find(|&y| solid(w.get(x, y - 1, z)) && standable(w, (x, y, z))) else { continue };
+            let roll = self.rand() % 100;
+            let kind = if dim == crate::dims::END {
+                Kind::Enderman
+            } else {
+                match w.biome_at(x, y, z) {
+                    Some(179) => if roll < 60 { Kind::Hoglin } else if roll < 90 { Kind::Piglin } else { Kind::ZombiePigman },
+                    Some(180) => Kind::Enderman,
+                    Some(178) => if roll < 70 { Kind::Skeleton } else if roll < 85 { Kind::Ghast } else { Kind::Enderman },
+                    Some(181) => if roll < 80 { Kind::MagmaCube } else { Kind::Ghast },
+                    _ => match roll {
+                        0..50 => Kind::ZombiePigman,
+                        50..70 => Kind::Piglin,
+                        70..80 => Kind::Ghast,
+                        80..90 => Kind::MagmaCube,
+                        _ => Kind::Enderman,
+                    },
+                }
+            };
+            if kind == Kind::Ghast && !(0..5).all(|dy| blocks::is_air(w.get(x, y + dy, z))) {
+                continue; // ghasts need room
+            }
+            let at = if kind.flies() { (x as f32 + 0.5, y as f32 + 3.0, z as f32 + 0.5) } else { (x as f32 + 0.5, y as f32, z as f32 + 0.5) };
+            self.spawn(server, kind, at);
+        }
+    }
+
+    /// Each chunk near a player gets one roll for a herd on grass; hostiles via spawn_hostiles.
+    // TODO: save mobs and rolled chunks, they reroll after a restart
+    pub fn spawn_near_players(&self, server: &Server) {
+        self.spawn_hostiles(server);
+        self.spawn_water(server);
+        if self.count() >= CAP {
+            return;
+        }
+        for p in server.all() {
+            let (pcx, pcz) = ((p.pos.0.floor() as i32) >> 4, (p.pos.2.floor() as i32) >> 4);
+            for _ in 0..4 {
+                let (cx, cz) = (pcx + (self.rand() % 13) as i32 - 6, pcz + (self.rand() % 13) as i32 - 6);
+                if !self.rolled.lock().unwrap().insert((cx, cz)) {
+                    continue;
+                }
+                if self.populate_village(server, cx, cz) {
+                    continue;
+                }
+                if !self.rand().is_multiple_of(10) {
+                    continue; // ~10% of chunks get animals
+                }
+                let (bx, bz) = (cx * 16 + (self.rand() % 16) as i32, cz * 16 + (self.rand() % 16) as i32);
+                let mut y = 200;
+                while y > -60 && blocks::is_air(server.world.get(bx, y, bz)) {
+                    y -= 1;
+                }
+                let ground = server.world.get(bx, y, bz);
+                let Some(kind) = animal_for(server.world.biome_at(bx, y + 1, bz), ground, self.rand()) else { continue };
+                for _ in 0..2 + self.rand() % 3 {
+                    let (ox, oz) = ((self.rand() % 5) as f32 - 2.0, (self.rand() % 5) as f32 - 2.0);
+                    self.spawn(server, kind, (bx as f32 + 0.5 + ox, (y + 1) as f32, bz as f32 + 0.5 + oz));
+                }
+            }
+        }
+    }
+}
+
+const HOSTILE_CAP: usize = 120;
+const ARROW_GRAVITY: f32 = 0.05;
+
+fn dist2(a: (f32, f32, f32), b: (f32, f32, f32)) -> f32 {
+    (a.0 - b.0).powi(2) + (a.1 - b.1).powi(2) + (a.2 - b.2).powi(2)
+}
+
+/// Mob damage multiplier: easy 2/3, normal 1, hard 1.5.
+fn difficulty_scale() -> f32 {
+    match *crate::commands::DIFFICULTY.lock().unwrap() {
+        0 => 0.0,
+        1 => 2.0 / 3.0,
+        3 => 1.5,
+        _ => 1.0,
+    }
+}
+
+/// Whether nothing solid is above `p` (64 blocks up): open sky.
+fn sky(w: &crate::world::World, p: (i32, i32, i32)) -> bool {
+    (p.1 + 1..=(p.1 + 64).min(319)).all(|y| !solid(w.get(p.0, y, p.2)) && !blocks::is_water(w.get(p.0, y, p.2)))
+}
+
+fn sound(name: &str, at: (f32, f32, f32)) -> Protocol {
+    Protocol::LevelSoundEventPacket(Box::new(bedrock::protocol::v1001::packets::LevelSoundEventPacket {
+        event_name: name.into(),
+        position: at,
+        data: -1,
+        actor_identifier: String::new(),
+        is_baby_mob: false,
+        is_global: false,
+        entity_unique_id: u64::MAX,
+        fire_at_position: None,
+    }))
+}
+
+/// Lit TNT: (entity id, position, 10 Hz ticks left).
+static PRIMED: Mutex<Vec<(i64, (f32, f32, f32), u32)>> = Mutex::new(Vec::new());
+
+/// Primes the TNT at `p` (PNX BlockTNT.prime), going off with power 4 after `fuse` 10 Hz ticks.
+/// TODO: primed TNT should fall and get pushed
+pub fn ignite_tnt(server: &Server, p: (i32, i32, i32), fuse: u32) {
+    server.set_block_quiet(0, p.0, p.1, p.2, crate::world::AIR);
+    let id = crate::players::next_id();
+    let pos = (p.0 as f32 + 0.5, p.1 as f32, p.2 as f32 + 0.5);
+    let packet = Protocol::AddActorPacket(Box::new(bedrock::protocol::v2225::packets::AddActorPacket {
+        target_actor_id: ActorUniqueID(id),
+        target_runtime_id: ActorRuntimeID(id as u64),
+        actor_type: "minecraft:tnt".into(),
+        position: pos,
+        velocity: (0.0, 0.2, 0.0),
+        rotation: (0.0, 0.0),
+        y_head_rotation: 0.0,
+        y_body_rotation: 0.0,
+        attributes: vec![],
+        // Same flag word as mobs, with IGNITED (bit 10) so it flashes.
+        actor_data: vec![DataItem { data_item_id: ActorDataIDs::Reserved0, data_item_type: DataItemType::Int64(crate::spawn::FLAGS | 1 << 10) }],
+        synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
+        actor_links: vec![],
+        passenger_of_block_data: None,
+    }));
+    let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(packet) });
+    let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(sound("fuse", pos)) });
+    PRIMED.lock().unwrap().push((id, pos, fuse));
+}
+
+/// Counts down lit TNT and sets it off.
+fn tick_tnt(server: &Server) {
+    let mut due = Vec::new();
+    PRIMED.lock().unwrap().retain_mut(|(id, pos, fuse)| {
+        *fuse = fuse.saturating_sub(1);
+        if *fuse == 0 {
+            due.push((*id, *pos));
+        }
+        *fuse > 0
+    });
+    for (id, pos) in due {
+        let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) }))) });
+        explode(server, (pos.0, pos.1 + 0.06, pos.2), 4.0, "TNT");
+    }
+}
+
+pub fn explode(server: &Server, at: (f32, f32, f32), power: f32, by: &'static str) {
+    if !server.plugins.explosion(server, at, power) {
+        return;
+    }
+    let w = &server.world;
+    let r = power.ceil() as i32;
+    let (cx, cy, cz) = (at.0.floor() as i32, (at.1 + 0.5).floor() as i32, at.2.floor() as i32);
+    let mut blown = Vec::new();
+    for x in cx - r..=cx + r {
+        for y in cy - r..=cy + r {
+            for z in cz - r..=cz + r {
+                let d = ((x - cx).pow(2) + (y - cy).pow(2) + (z - cz).pow(2)) as f32;
+                if d > power * power {
+                    continue;
+                }
+                let b = w.get(x, y, z);
+                let n = blocks::short(b);
+                if blocks::is_air(b) || blocks::is_liquid(b) || matches!(n, "bedrock" | "obsidian" | "crying_obsidian" | "barrier" | "end_portal_frame" | "reinforced_deepslate") {
+                    continue;
+                }
+                if n == "tnt" {
+                    // PNX: TNT caught in a blast gets a random short fuse (10-30 ticks).
+                    ignite_tnt(server, (x, y, z), 5 + ((x ^ y ^ z) & 7) as u32 * 2);
+                    continue;
+                }
+                server.set_block_quiet(0, x, y, z, crate::world::AIR);
+                blown.push((x, y, z));
+                // A third of blown-up blocks drop (vanilla creeper yield), as if mined.
+                if (x * 31 + y * 17 + z * 7).rem_euclid(3) == 0 {
+                    for (item, n) in crate::drops::drops(b, (x, y, z), Some("minecraft:diamond_pickaxe")) {
+                        server.entities.drop_item(server, item, n, (x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5));
+                    }
+                }
+            }
+        }
+    }
+    for p in blown {
+        crate::pop_unsupported(server, 0, p);
+    }
+    let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(sound("explode", at)) });
+    for p in server.all() {
+        let feet = (p.pos.0, p.pos.1 - 1.62, p.pos.2);
+        let d = dist2(feet, at).sqrt();
+        let reach = power * 2.0;
+        if d >= reach {
+            continue;
+        }
+        let impact = 1.0 - d / reach;
+        let damage = ((impact * impact + impact) / 2.0 * 7.0 * power + 1.0).floor() * difficulty_scale().max(0.5);
+        let (dx, dz) = (feet.0 - at.0, feet.2 - at.2);
+        let len = (dx * dx + dz * dz).sqrt().max(0.01);
+        let _ = server.events.send(Event::Damage {
+            to: p.id,
+            damage: crate::health::Damage::Explosion(damage, by),
+            knock: (dx / len * impact * 1.5, impact * 0.8, dz / len * impact * 1.5),
+        });
+    }
+}
+
+impl Mobs {
+    /// Fish schools and squid in deep-enough water near players.
+    fn spawn_water(&self, server: &Server) {
+        let aquatic = self.mobs.lock().unwrap().values().filter(|m| m.kind.aquatic()).count();
+        if aquatic >= WATER_CAP {
+            return;
+        }
+        let w = &server.world;
+        for p in server.all() {
+            let a = self.randf() * std::f32::consts::TAU;
+            let r = 12.0 + self.randf() * 28.0;
+            let (x, z) = ((p.pos.0 + a.cos() * r).floor() as i32, (p.pos.2 + a.sin() * r).floor() as i32);
+            let mut y = (p.pos.1 as i32 + 30).min(318);
+            while y > -60 && blocks::is_air(w.get(x, y, z)) {
+                y -= 1;
+            }
+            if !(blocks::is_water(w.get(x, y, z)) && blocks::is_water(w.get(x, y - 3, z))) {
+                continue;
+            }
+            let (kind, n) = match self.rand() % 3 {
+                0 => (Kind::Squid, 1 + self.rand() % 2),
+                _ if w.is_snowy(x, z) => (Kind::Salmon, 3 + self.rand() % 3),
+                1 => (Kind::Cod, 3 + self.rand() % 3),
+                _ => (Kind::Salmon, 3 + self.rand() % 3),
+            };
+            for _ in 0..n {
+                let (ox, oz) = ((self.rand() % 3) as f32 - 1.0, (self.rand() % 3) as f32 - 1.0);
+                self.spawn(server, kind, (x as f32 + 0.5 + ox, (y - 2) as f32, z as f32 + 0.5 + oz));
+            }
+        }
+    }
+
+    /// A chunk with village beds gets villagers (one per bed, up to 4), a cat now and then,
+    /// and an iron golem if it has the bell. Returns true if it's a village chunk.
+    fn populate_village(&self, server: &Server, cx: i32, cz: i32) -> bool {
+        let w = &server.world;
+        let (mut beds, mut bell, mut spots) = (0, false, Vec::new());
+        for lx in 0..16 {
+            for lz in 0..16 {
+                let (x, z) = (cx * 16 + lx, cz * 16 + lz);
+                let mut top = 200;
+                while top > -60 && blocks::is_air(w.get(x, top, z)) {
+                    top -= 1;
+                }
+                for y in (top - 12).max(-60)..=top {
+                    let n = blocks::short(w.get(x, y, z));
+                    if n == "bed" || n.ends_with("_bed") {
+                        beds += 1;
+                    }
+                    if n == "bell" {
+                        bell = true;
+                    }
+                }
+                if lx % 4 == 2 && lz % 4 == 2 && standable(w, (x, top + 1, z)) {
+                    spots.push((x as f32 + 0.5, (top + 1) as f32, z as f32 + 0.5));
+                }
+            }
+        }
+        // Beds are two blocks each.
+        let villagers = (beds / 2).min(4);
+        if villagers == 0 && !bell {
+            return false;
+        }
+        let spot = || spots.get(self.rand() as usize % spots.len().max(1)).copied();
+        for _ in 0..villagers {
+            if let Some(s) = spot() {
+                self.spawn(server, Kind::Villager, s);
+            }
+        }
+        if villagers > 0 && self.rand().is_multiple_of(3)
+            && let Some(s) = spot()
+        {
+            self.spawn(server, Kind::Cat, s);
+        }
+        if bell && let Some(s) = spot() {
+            self.spawn(server, Kind::IronGolem, s);
+        }
+        true
+    }
+}
+
+const WATER_CAP: usize = 40;
+
+impl Mobs {
+    /// Saves animals, villagers, golems and pets (not hostiles or fish), plus rolled chunks.
+    /// `keys` maps online entity ids to owner keys.
+    pub fn save(&self, path: &std::path::Path, keys: &HashMap<i64, i64>) -> std::io::Result<()> {
+        use std::fmt::Write;
+        let mut out = String::from("# Rusted mobs v1: kind x y z yaw health baby owner sitting color sheared\n");
+        for m in self.mobs.lock().unwrap().values() {
+            if m.dying > 0 || (m.kind.hostile() || m.kind.aquatic()) && m.owner.is_none() {
+                continue;
+            }
+            let _ = writeln!(
+                out,
+                "m {} {} {} {} {} {} {} {} {} {} {} {}",
+                m.kind.identifier(), m.pos.0, m.pos.1, m.pos.2, m.yaw, m.health, m.baby, m.owner.map_or(0, |o| keys.get(&o).copied().unwrap_or(o)), m.sitting as u8, m.color, m.sheared as u8,
+                m.job.as_ref().map_or("-".to_string(), |j| j.to_text())
+            );
+        }
+        for (x, z) in self.rolled.lock().unwrap().iter() {
+            let _ = writeln!(out, "c {x} {z}");
+        }
+        let tmp = path.with_extension("tmp");
+        std::fs::write(&tmp, out)?;
+        std::fs::rename(&tmp, path)
+    }
+
+    /// Loads the save file. Pets track owners by name since entity ids change per session.
+    pub fn load(&self, path: &std::path::Path, owners: &HashMap<i64, String>) -> usize {
+        let Ok(text) = std::fs::read_to_string(path) else { return 0 };
+        let _ = owners;
+        let mut n = 0;
+        let mut mobs = self.mobs.lock().unwrap();
+        for line in text.lines() {
+            let f: Vec<&str> = line.split_whitespace().collect();
+            match f.as_slice() {
+                ["c", x, z] => {
+                    if let (Ok(x), Ok(z)) = (x.parse(), z.parse()) {
+                        self.rolled.lock().unwrap().insert((x, z));
+                    }
+                }
+                ["m", kind, x, y, z, yaw, health, baby, owner, sitting, color, sheared, extra @ ..] => {
+                    let job = extra.first().and_then(|t| crate::villagers::Job::from_text(t)).map(Box::new);
+                    let num = |s: &str| s.parse::<f32>().ok().filter(|v| v.is_finite());
+                    let (Some(kind), Some(x), Some(y), Some(z), Some(yaw), Some(health)) = (Kind::from_name(kind), num(x), num(y), num(z), num(yaw), num(health)) else {
+                        continue;
+                    };
+                    let id = crate::players::next_id();
+                    let pos = (x, y, z);
+                    let owner = owner.parse::<i64>().ok().filter(|&o| o != 0);
+                    mobs.insert(id, Mob {
+                        id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health, on_ground: false, target: None, panic: 0, dying: 0,
+                        sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: baby.parse().unwrap_or(0),
+                        aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner, sitting: *sitting == "1",
+                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false,
+                    });
+                    if let Some(site) = job.and_then(|j| j.site) {
+                        crate::villagers::claim(site, id);
+                    }
+                    n += 1;
+                }
+                _ => {}
+            }
+        }
+        n
+    }
+
+    /// A player (re)joined: pets saved with their old owner key follow them again.
+    pub fn owner_joined(&self, old_key: i64, new_id: i64) {
+        for m in self.mobs.lock().unwrap().values_mut() {
+            if m.owner == Some(old_key) {
+                m.owner = Some(new_id);
+            }
+        }
+    }
+
+    /// Before saving: pets point at a stable per-name key instead of a session id.
+    pub fn owner_left(&self, id: i64, key: i64) {
+        for m in self.mobs.lock().unwrap().values_mut() {
+            if m.owner == Some(id) {
+                m.owner = Some(key);
+            }
+        }
+    }
+}
+
+/// A stable id for a player name (pets remember owners across sessions with it).
+pub fn owner_key(name: &str) -> i64 {
+    // Negative so it never collides with live entity ids.
+    -((name.to_lowercase().bytes().fold(1_469_598_103_934_665_603u64, |h, b| (h ^ b as u64).wrapping_mul(1_099_511_628_211)) >> 1) as i64) - 1
+}
+
+/// What an interaction does with the player's held item.
+#[derive(Debug, PartialEq)]
+pub enum Use {
+    Nothing,
+    /// Right-clicked a villager with a job: open its trade screen.
+    Trade,
+    /// Fed: use up one.
+    Consume,
+    /// Bucket on a cow: becomes a milk bucket.
+    Milk,
+}
+
+/// Whether a mob can stand at block `p` (feet there and above free, solid ground below).
+fn standable(w: &crate::world::World, p: (i32, i32, i32)) -> bool {
+    walkable(w.get(p.0, p.1, p.2)) && walkable(w.get(p.0, p.1 + 1, p.2)) && {
+        let below = w.get(p.0, p.1 - 1, p.2);
+        solid(below) || blocks::is_water(below)
+    }
+}
+
+/// A* toward `goal`: 8 directions, step up 1, drop up to 3, water costs more, avoids lava.
+/// Gives up after `budget` nodes and returns the path to the closest point.
+pub fn path(w: &crate::world::World, start: (i32, i32, i32), goal: (i32, i32, i32), budget: usize) -> Vec<(i32, i32, i32)> {
+    use std::cmp::Reverse;
+    use std::collections::BinaryHeap;
+    let h = |p: (i32, i32, i32)| ((p.0 - goal.0).abs() + (p.2 - goal.2).abs() + (p.1 - goal.1).abs()) as u32 * 10;
+    let mut open = BinaryHeap::new();
+    let mut came: HashMap<(i32, i32, i32), ((i32, i32, i32), u32)> = HashMap::new();
+    came.insert(start, (start, 0));
+    open.push(Reverse((h(start), start)));
+    let (mut best, mut best_h) = (start, h(start));
+    let mut expanded = 0;
+    while let Some(Reverse((_, p))) = open.pop() {
+        expanded += 1;
+        if p == goal || expanded > budget {
+            break;
+        }
+        let g = came[&p].1;
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)] {
+            let diag = dx != 0 && dz != 0;
+            // Diagonals only when both sides are open (no corner cutting).
+            if diag && !(walkable(w.get(p.0 + dx, p.1, p.2)) && walkable(w.get(p.0, p.1, p.2 + dz))) {
+                continue;
+            }
+            let (nx, nz) = (p.0 + dx, p.2 + dz);
+            let next = [0, 1, -1, -2, -3].into_iter().map(|dy| (nx, p.1 + dy, nz)).find(|&q| {
+                standable(w, q) && (q.1 <= p.1 || walkable(w.get(p.0, p.1 + 2, p.2)))
+            });
+            let Some(q) = next else { continue };
+            let water = blocks::is_water(w.get(q.0, q.1, q.2));
+            let cost = g + if diag { 14 } else { 10 } + if water { 20 } else { 0 } + ((p.1 - q.1).max(0) as u32) * 4;
+            if came.get(&q).is_none_or(|&(_, c)| cost < c) {
+                came.insert(q, (p, cost));
+                let hq = h(q);
+                if hq < best_h {
+                    (best, best_h) = (q, hq);
+                }
+                open.push(Reverse((cost + hq, q)));
+            }
+        }
+    }
+    let end = if came.contains_key(&goal) { goal } else { best };
+    let mut out = vec![];
+    let mut c = end;
+    while c != start {
+        out.push(c);
+        c = came[&c].0;
+    }
+    out.reverse();
+    out
+}
+
+/// Melee damage of the held item (vanilla Bedrock values).
+pub fn attack_damage(held: Option<&str>) -> f32 {
+    match held.unwrap_or("").trim_start_matches("minecraft:") {
+        "wooden_sword" | "golden_sword" => 5.0,
+        "stone_sword" => 6.0,
+        "iron_sword" => 7.0,
+        "diamond_sword" => 8.0,
+        "netherite_sword" => 9.0,
+        "wooden_axe" | "golden_axe" => 4.0,
+        "stone_axe" => 5.0,
+        "iron_axe" => 6.0,
+        "diamond_axe" => 7.0,
+        "netherite_axe" => 8.0,
+        "trident" => 9.0,
+        n if n.ends_with("_pickaxe") => 3.0,
+        n if n.ends_with("_shovel") => 2.5,
+        _ => 1.0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mobs_fall_wander_and_die_with_drops() {
+        let server = Server::new(); // flat world: grass top at y -61, stand at -60
+        let id = server.mobs.spawn(&server, Kind::Cow, (0.5, -55.0, 0.5));
+        for _ in 0..40 {
+            server.mobs.tick(&server);
+        }
+        let y = server.mobs.mobs.lock().unwrap()[&id].pos.1;
+        assert!((y - -60.0).abs() < 0.01, "landed on the grass: {y}");
+        server.mobs.hurt(&server, id, 4.0, (2.0, -60.0, 0.5), None);
+        assert!(server.mobs.contains(id));
+        server.mobs.hurt(&server, id, 20.0, (2.0, -60.0, 0.5), None);
+        assert_eq!(server.mobs.mobs.lock().unwrap()[&id].dying, 0, "second hit inside 0.5 s is ignored");
+        std::thread::sleep(std::time::Duration::from_millis(520));
+        server.mobs.hurt(&server, id, 20.0, (2.0, -60.0, 0.5), None);
+        for _ in 0..12 {
+            server.mobs.tick(&server);
+        }
+        assert!(!server.mobs.contains(id), "removed after dying");
+        assert_eq!(Kind::from_name("minecraft:chicken"), Some(Kind::Chicken));
+
+        // Pathfinding goes around a wall.
+        let w = &server.world;
+        let stone = blocks::id("stone");
+        for z in -3..=3 {
+            w.set(3, -60, z, stone);
+            w.set(3, -59, z, stone);
+        }
+        let p = path(w, (0, -60, 0), (6, -60, 0), 400);
+        assert_eq!(p.last(), Some(&(6, -60, 0)), "reaches the far side: {p:?}");
+        assert!(p.iter().all(|&(x, _, z)| !(x == 3 && (-3..=3).contains(&z))), "never walks through the wall");
+
+        // Feeding two cows makes a baby.
+        let a = server.mobs.spawn(&server, Kind::Cow, (10.5, -60.0, 10.5));
+        let b = server.mobs.spawn(&server, Kind::Cow, (11.5, -60.0, 10.5));
+        assert_eq!(server.mobs.interact(&server, a, Some("minecraft:wheat"), 1), Use::Consume);
+        assert_eq!(server.mobs.interact(&server, b, Some("minecraft:wheat"), 1), Use::Consume);
+        assert_eq!(server.mobs.interact(&server, b, Some("minecraft:bucket"), 1), Use::Milk);
+        let before = server.mobs.count();
+        for _ in 0..30 {
+            server.mobs.tick(&server);
+        }
+        assert_eq!(server.mobs.count(), before + 1, "a calf was born");
+
+        // A creeper blast makes a crater; bedrock survives.
+        explode(&server, (20.5, -60.0, 20.5), 3.0, Kind::Creeper.display());
+        assert!(blocks::is_air(server.world.get(20, -61, 20)), "grass blown away");
+        assert!(!blocks::is_air(server.world.get(20, -64, 20)), "bedrock stays");
+
+        // A big slime splits into 2-4 smaller ones when it dies.
+        let before = server.mobs.count();
+        let slime = server.mobs.spawn_slime(&server, Kind::Slime, (120.5, -60.0, 120.5), 4);
+        server.mobs.hurt(&server, slime, 100.0, (121.5, -60.0, 120.5), None);
+        let kids = server.mobs.mobs.lock().unwrap().values().filter(|m| m.kind == Kind::Slime && m.color == 2).count();
+        assert!((2..=4).contains(&kids), "split into {kids}");
+        assert!(server.mobs.count() >= before + 3);
+        assert_eq!(Kind::from_name("cave_spider").map(|k| k.spec().hit_effect), Some(Some((19, 7))));
+        assert_eq!(Kind::ALL.len(), 71);
+
+        // An ender pearl thrown straight down lands and teleports its thrower.
+        let mut rx = server.events.subscribe();
+        throw(&server, Throw::Pearl, 4242, (50.5, -55.0, 50.5), (90.0, 0.0));
+        for _ in 0..20 {
+            server.mobs.tick(&server);
+        }
+        let mut landed = None;
+        while let Ok(e) = rx.try_recv() {
+            if let Event::Teleport { id: 4242, feet } = e {
+                landed = Some(feet);
+            }
+        }
+        assert_eq!(landed.map(|f| f.1), Some(-60.0), "pearl teleports onto the grass");
+
+        // Lit TNT blows up after its 4 s fuse and leaves a crater.
+        ignite_tnt(&server, (30, -60, 30), 40);
+        assert!(!blocks::is_air(server.world.get(30, -61, 30)));
+        for _ in 0..40 {
+            server.mobs.tick(&server);
+        }
+        assert!(blocks::is_air(server.world.get(30, -61, 30)), "TNT crater");
+
+        // Zombies burn under the noon sun and eventually die.
+        server.set_time(6000);
+        let z = server.mobs.spawn(&server, Kind::Zombie, (40.5, -60.0, 40.5));
+        // Burn damage is 1-in-10 per tick; 30 ticks missed it ~4% of runs.
+        for _ in 0..100 {
+            server.mobs.tick(&server);
+        }
+        let hp = server.mobs.mobs.lock().unwrap().get(&z).map(|m| (m.health, m.burning));
+        assert!(hp.is_some_and(|(h, b)| b && h < 20.0), "burning in daylight: {hp:?}");
+
+        // A golem goes after a zombie and hurts it.
+        server.set_time(18_000);
+        let zombie = server.mobs.spawn(&server, Kind::Zombie, (60.5, -60.0, 60.5));
+        let _golem = server.mobs.spawn(&server, Kind::IronGolem, (62.5, -60.0, 60.5));
+        for _ in 0..60 {
+            server.mobs.tick(&server);
+        }
+        let zh = server.mobs.mobs.lock().unwrap().get(&zombie).map(|m| m.health);
+        assert!(zh.is_none_or(|h| h < 20.0), "golem fought the zombie: {zh:?}");
+
+        // Shearing drops wool once; taming a wolf eventually works.
+        let sheep = server.mobs.spawn(&server, Kind::Sheep, (80.5, -60.0, 80.5));
+        server.mobs.interact(&server, sheep, Some("minecraft:shears"), 1);
+        assert!(server.mobs.mobs.lock().unwrap()[&sheep].sheared);
+        let wolf = server.mobs.spawn(&server, Kind::Wolf, (90.5, -60.0, 90.5));
+        for _ in 0..50 {
+            server.mobs.interact(&server, wolf, Some("minecraft:bone"), 7);
+        }
+        assert_eq!(server.mobs.mobs.lock().unwrap()[&wolf].owner, Some(7), "tamed");
+
+        // Saved mobs come back (hostiles don't); the tamed wolf keeps its owner key.
+        let file = std::env::temp_dir().join(format!("rusted_mobs_{}.txt", std::process::id()));
+        let keys: HashMap<i64, i64> = [(7, owner_key("Steve"))].into();
+        server.mobs.save(&file, &keys).unwrap();
+        let again = Mobs::default();
+        let n = again.load(&file, &HashMap::new());
+        std::fs::remove_file(&file).ok();
+        let saved: Vec<Kind> = again.mobs.lock().unwrap().values().map(|m| m.kind).collect();
+        assert!(n > 0 && !saved.iter().any(|k| k.hostile()), "{saved:?}");
+        assert!(again.mobs.lock().unwrap().values().any(|m| m.kind == Kind::Wolf && m.owner == Some(owner_key("Steve"))));
+        assert_eq!(attack_damage(Some("minecraft:diamond_sword")), 8.0);
+    }
+}
