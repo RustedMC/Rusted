@@ -334,6 +334,8 @@ mod tests {
         assert_eq!(e.count, 5);
         assert!(e.resting && (e.pos.1 - -60.0).abs() < 0.01, "fell and rests on the grass: {:?}", e.pos);
         let mut inv = crate::inventory::Inventory::default();
+        // Debug builds can take longer than the delay to get here, so restart its clock.
+        server.entities.items.lock().values_mut().for_each(|e| e.born = Instant::now());
         assert!(!server.entities.pickup(&server, 1, (e.pos.0, -60.0, e.pos.2), &mut inv), "pickup delay");
         server.entities.items.lock().values_mut().for_each(|e| e.born -= PICKUP_DELAY);
         assert!(server.entities.pickup(&server, 1, (e.pos.0, -60.0, e.pos.2), &mut inv));
