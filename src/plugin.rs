@@ -165,6 +165,28 @@ pub trait Plugin: Send + Sync {
         true
     }
 
+    /// Someone is logging in, before they join. Return a message to refuse them (bans,
+    /// maintenance, a full network), or `None` to let them in.
+    fn on_pre_login(&self, _server: &Server, _name: &str, _xuid: &str) -> Option<String> {
+        None
+    }
+
+    /// Player moved to `to` (eye position). Return false to put them back where they were.
+    fn on_move(&self, _server: &Server, _player: &PlayerInfo, _to: (f32, f32, f32)) -> bool {
+        true
+    }
+
+    /// Player is about to pick up `count` of `item` off the ground. Return false to leave it.
+    fn on_item_pickup(&self, _server: &Server, _player: &PlayerInfo, _item: &str, _count: i8) -> bool {
+        true
+    }
+
+    /// Player started (`true`) or stopped sneaking.
+    fn on_sneak(&self, _server: &Server, _player: &PlayerInfo, _sneaking: bool) {}
+
+    /// Player started (`true`) or stopped sprinting.
+    fn on_sprint(&self, _server: &Server, _player: &PlayerInfo, _sprinting: bool) {}
+
     /// (name, description) of commands this plugin handles, for autocomplete.
     fn commands(&self) -> Vec<(&'static str, &'static str)> {
         vec![]
@@ -338,6 +360,27 @@ impl Plugins {
 
     pub fn item_use(&self, s: &Server, p: &PlayerInfo, item: &crate::inventory::Stack) -> bool {
         self.cancellable(|pl| pl.on_item_use(s, p, item))
+    }
+
+    /// The first refusal message any plugin gives, if one does.
+    pub fn pre_login(&self, s: &Server, name: &str, xuid: &str) -> Option<String> {
+        self.ordered().filter(|p| p.priority() != Priority::Monitor).find_map(|pl| pl.on_pre_login(s, name, xuid))
+    }
+
+    pub fn moved(&self, s: &Server, p: &PlayerInfo, to: (f32, f32, f32)) -> bool {
+        self.cancellable(|pl| pl.on_move(s, p, to))
+    }
+
+    pub fn item_pickup(&self, s: &Server, p: &PlayerInfo, item: &str, count: i8) -> bool {
+        self.cancellable(|pl| pl.on_item_pickup(s, p, item, count))
+    }
+
+    pub fn sneak(&self, s: &Server, p: &PlayerInfo, on: bool) {
+        self.each(|pl| pl.on_sneak(s, p, on));
+    }
+
+    pub fn sprint(&self, s: &Server, p: &PlayerInfo, on: bool) {
+        self.each(|pl| pl.on_sprint(s, p, on));
     }
 
     pub fn names(&self) -> Vec<String> {
@@ -713,6 +756,30 @@ mod tests {
         assert!(!plugins.allowed(&player.name, "order.admin"));
         assert!(!plugins.allowed(&player.name, "never.declared"));
         assert!(plugins.command(&server, &player, "secret", &[]).unwrap().contains("permission"));
+    }
+
+    struct Gate;
+    impl Plugin for Gate {
+        fn name(&self) -> &str {
+            "gate"
+        }
+        fn on_pre_login(&self, _: &Server, name: &str, _: &str) -> Option<String> {
+            (name == "Griefer").then(|| "Banned from the network".into())
+        }
+        fn on_item_pickup(&self, _: &Server, _: &PlayerInfo, item: &str, _: i8) -> bool {
+            item != "minecraft:diamond"
+        }
+    }
+
+    #[test]
+    fn pre_login_and_pickup_events() {
+        let server = Server::new();
+        let player = crate::players::tests::sample(1);
+        let plugins = Plugins::new(vec![Box::new(Gate)]);
+        assert_eq!(plugins.pre_login(&server, "Griefer", "").as_deref(), Some("Banned from the network"));
+        assert_eq!(plugins.pre_login(&server, "Steve", ""), None);
+        assert!(!plugins.item_pickup(&server, &player, "minecraft:diamond", 1));
+        assert!(plugins.item_pickup(&server, &player, "minecraft:dirt", 1));
     }
 
     #[test]

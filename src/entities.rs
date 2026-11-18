@@ -236,8 +236,15 @@ impl Entities {
             .map(|e| e.id)
             .collect();
         let mut changed = false;
+        let me = server.get(player);
         for id in ready {
             let e = items.get_mut(&id).unwrap();
+            let name = crate::items::name_of(e.item.id).unwrap_or("");
+            if let Some(me) = &me
+                && !server.plugins.item_pickup(server, me, name, e.count)
+            {
+                continue;
+            }
             let left = inv.add(e.item.clone(), e.count);
             if left == e.count {
                 continue; // inventory full

@@ -29,6 +29,7 @@ Plugins with the same priority run in load order.
 
 | Method | When | Cancel / edit |
 |---|---|---|
+| `on_pre_login(server, name, xuid) -> Option<String>` | Someone is logging in, before they join | Return a message to refuse them |
 | `on_join(server, player)` | Player finished joining | |
 | `on_leave(server, player)` | Player left, kicks and disconnects included | |
 | `on_chat(server, player, message: &mut String) -> bool` | Before a chat message is shown | Edit `message`, or `false` to block it |
@@ -40,6 +41,10 @@ Plugins with the same priority run in load order.
 | `on_item_use(server, player, item: &Stack) -> bool` | Right-click with an item in hand, in the air or on a block | `false` cancels the normal use |
 | `on_gamemode_change(server, player, mode: &str) -> bool` | Game mode about to change to `"survival"`, `"creative"`... | `false` keeps the old mode |
 | `on_item_drop(server, player, item: &str, count: i8)` | Player threw items out of their inventory | |
+| `on_item_pickup(server, player, item: &str, count: i8) -> bool` | About to pick up items off the ground | `false` leaves them there |
+| `on_move(server, player, to) -> bool` | Moved (`to` is the eye position) | `false` puts them back |
+| `on_sneak(server, player, sneaking: bool)` | Started or stopped sneaking | |
+| `on_sprint(server, player, sprinting: bool)` | Started or stopped sprinting | |
 
 ## Blocks
 

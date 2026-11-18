@@ -32,15 +32,25 @@ impl Session {
                 Input::StopFlying => self.flying = false,
                 Input::StartSneaking => {
                     self.sneaking = true;
+                    if let Some(me) = self.server.get(self.id) {
+                        self.server.plugins.sneak(&self.server, &me, true);
+                    }
                     self.inv.sneaking = true;
                     self.get_off();
                 }
                 Input::StopSneaking => {
                     self.sneaking = false;
+                    if let Some(me) = self.server.get(self.id) {
+                        self.server.plugins.sneak(&self.server, &me, false);
+                    }
                     self.inv.sneaking = false;
                 }
-                Input::StartSprinting => self.sprinting = true,
-                Input::StopSprinting => self.sprinting = false,
+                Input::StartSprinting | Input::StopSprinting => {
+                    self.sprinting = matches!(flag, Input::StartSprinting);
+                    if let Some(me) = self.server.get(self.id) {
+                        self.server.plugins.sprint(&self.server, &me, self.sprinting);
+                    }
+                }
                 Input::StartJumping if survival_like(&self.mode) && self.food.exhaust(if self.sprinting { 0.2 } else { 0.05 }) => {
                     let _ = self.conn.send(&[self.food.packet(self.id)]).await;
                 }
@@ -48,6 +58,14 @@ impl Session {
             }
         }
         let pos = input.player_position;
+        // Plugins can stop a move (regions, frozen players): send them back to where they were.
+        if let (Some(last), Some(me)) = (self.last_pos, self.server.get(self.id))
+            && last != pos
+            && !self.server.plugins.moved(&self.server, &me, pos)
+        {
+            let _ = self.server.events.send(players::Event::Teleport { id: self.id, feet: (last.0, last.1 - 1.62, last.2) });
+            return GO;
+        }
         let feet = (pos.0.floor() as i32, (pos.1 - 1.62).floor() as i32, pos.2.floor() as i32);
         // Gliding resets the fall, so landing from a glide doesn't hurt.
         let takes_damage = matches!(self.mode, GameType::Survival | GameType::Adventure) && !self.flying && !self.gliding;
