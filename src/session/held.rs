@@ -1,0 +1,141 @@
+//! Using what's in hand: bows, food, dropping items, pick block.
+
+use super::*;
+use bedrock::protocol::ProtoVersionPackets;
+
+type BlockPick = <Protocol as ProtoVersionPackets>::BlockPickRequestPacket;
+
+impl Session {
+    pub(super) async fn on_release(&mut self) {
+        // Let go of a drawn bow or raised trident (PNX ItemBow/ItemTrident.onRelease).
+        let slot = self.selected_slot as usize;
+        let Some(started) = self.drawing.take() else { return };
+        let Some(st) = self.inv.held(slot).cloned() else { return };
+        let held = items::name_of(st.item.id).unwrap_or("");
+        let Some(me) = self.server.get(self.id) else { return };
+        let ticks = started.elapsed().as_secs_f32() * 20.0;
+        let data = st.item.user_data_buffer.clone();
+        if held == "minecraft:trident" && ticks >= 10.0 {
+            let mut item = st.item.clone();
+            item.stack_size = 1;
+            self.server.mobs.player_shoot(&self.server, self.id, me.pos, me.rot, 1.0, true, 0, 0, false, Some(item));
+            if survival_like(&self.mode) {
+                self.inv.use_one(slot);
+                let _ = self.conn.send(&[self.inv.content_packet()]).await;
+            }
+        } else if held == "minecraft:bow" {
+            let f = ticks / 20.0;
+            let force = ((f * f + f * 2.0) / 3.0).min(1.0);
+            if force < 0.1 {
+                return;
+            }
+            let infinity = enchant::level(&data, 22) > 0;
+            let arrow_slot = (0..36).find(|&i| self.inv.held(i).and_then(|s| items::name_of(s.item.id)) == Some("minecraft:arrow"));
+            if survival_like(&self.mode) && arrow_slot.is_none() {
+                return; // nothing to shoot
+            }
+            let keep = !survival_like(&self.mode) || infinity;
+            if !keep && let Some(a) = arrow_slot {
+                self.inv.use_one(a);
+            }
+            let drop = (!keep).then(|| items::item_by_name("minecraft:arrow")).flatten();
+            self.server.mobs.player_shoot(&self.server, self.id, me.pos, me.rot, force, false, enchant::level(&data, 19), enchant::level(&data, 20), enchant::level(&data, 21) > 0, drop);
+            wear(&mut self.conn, &self.server, self.id, &mut self.inv, slot, 1, &self.mode).await;
+            let _ = self.conn.send(&[self.inv.content_packet()]).await;
+        }
+    }
+
+    pub(super) async fn on_consume(&mut self) {
+        // Finished eating (release action 1 = consume).
+        let slot = self.selected_slot as usize;
+        let held = self.inv.held(slot).and_then(|s| items::name_of(s.item.id)).unwrap_or("");
+        let eaten = hunger::food(held);
+        // Drinks and bowls give their container back (PNX ItemFood/ItemPotion/ItemBucket).
+        let leftover = match held {
+            "minecraft:milk_bucket" => Some("minecraft:bucket"),
+            "minecraft:honey_bottle" | "minecraft:potion" => Some("minecraft:glass_bottle"),
+            "minecraft:mushroom_stew" | "minecraft:rabbit_stew" | "minecraft:beetroot_soup" | "minecraft:suspicious_stew" => Some("minecraft:bowl"),
+            _ => None,
+        };
+        if (eaten.is_some() || leftover.is_some()) && survival_like(&self.mode) {
+            if let Some((points, sat)) = eaten {
+                self.food.eat(points, sat);
+            }
+            let roll = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos() % 100;
+            let mut gained: Vec<(i32, effects::Effect)> = effects::food(held).into_iter()
+                .filter(|e| roll < e.3)
+                .map(|(e, amplifier, ticks, _)| (e, effects::Effect { amplifier, ticks, particles: true }))
+                .collect();
+            if held == "minecraft:potion" {
+                let aux = self.inv.held(slot).map_or(0, |s| s.item.aux_value);
+                gained.extend(effects::potion(aux).into_iter().map(|(e, amplifier, ticks)| (e, effects::Effect { amplifier, ticks, particles: true })));
+            }
+            // Milk clears everything; honey cures poison.
+            let cured: Vec<i32> = match held {
+                "minecraft:milk_bucket" => self.effects.active.keys().copied().collect(),
+                "minecraft:honey_bottle" => vec![effects::POISON],
+                _ => vec![],
+            };
+            for e in cured {
+                self.effects.active.remove(&e);
+                let _ = self.conn.send(&[effect_packet(self.id, e, None)]).await;
+            }
+            let _ = self.conn.send(&[movement_packet(self.id, self.effects.speed())]).await;
+            for (e, x) in gained {
+                give_effect(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, &mut self.food, &mut self.effects, &mut self.inv, e, x).await;
+            }
+            self.inv.use_one(slot);
+            if let Some(it) = leftover.and_then(items::item_by_name) {
+                if self.inv.held(slot).is_none() {
+                    self.inv.set_slot(slot, it, 1);
+                } else {
+                    let left = self.inv.add(it.clone(), 1);
+                    if left > 0 && let Some(me) = self.server.get(self.id) {
+                        self.server.entities.drop_item(&self.server, it, left, (me.pos.0, me.pos.1 - 1.0, me.pos.2));
+                    }
+                }
+            }
+            let _ = self.conn.send(&[self.food.packet(self.id), self.inv.content_packet()]).await;
+        }
+    }
+
+    pub(super) async fn on_drop(&mut self, t: &Transaction) {
+        // Q outside the inventory screen: a world-interaction action (the thrown
+        // stack) plus a container action (the hotbar slot it came from).
+        let thrown = t.actions.iter().find(|a| format!("{:?}", a.source.source_type) == "WorldInteraction").map_or(0, |a| a.to_item_descriptor.stack_size as i8);
+        let slot = t.actions.iter().find(|a| format!("{:?}", a.source.source_type) == "Container").map(|a| a.slot as usize);
+        if thrown > 0
+            && let Some(slot) = slot
+            && let Some(st) = self.inv.held(slot).cloned()
+            && let Some(me) = self.server.get(self.id)
+        {
+            let n = thrown.min(st.count);
+            for _ in 0..n {
+                self.inv.use_one(slot);
+            }
+            self.server.plugins.item_drop(&self.server, &me, items::name_of(st.item.id).unwrap_or(""), n);
+            let (at, vel) = throw_from(&me);
+            self.server.entities.drop_item_vel(&self.server, st.item, n, at, vel);
+            let item = self.inv.held(slot).map_or_else(spawn::air, inventory::Stack::to_network);
+            let _ = self.conn.send(&[Protocol::InventorySlotPacket(Box::new(InventorySlotPacket {
+                container_id: 0, slot: slot as u32, container_name_data: None, storage_item: None, item,
+            }))]).await;
+        }
+    }
+
+    pub(super) async fn on_block_pick(&mut self, r: &BlockPick) {
+        let p = &r.position;
+        if let Some(item) = items::item_for_block(self.server.world.get(p.x, p.y, p.z))
+            && let Some(stack) = self.inv.set_slot(self.selected_slot as usize, item.clone(), items::max_stack(item.id))
+        {
+            let item = stack.to_network();
+            let _ = self.conn.send(&[Protocol::InventorySlotPacket(Box::new(InventorySlotPacket {
+                container_id: 0,
+                slot: self.selected_slot,
+                container_name_data: None,
+                storage_item: None,
+                item,
+            }))]).await;
+        }
+    }
+}

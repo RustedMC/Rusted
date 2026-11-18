@@ -2,6 +2,17 @@
 
 use super::*;
 
+mod cmd;
+mod combat;
+mod events;
+mod held;
+mod input;
+mod interact;
+mod state;
+mod windows;
+
+pub(crate) use state::*;
+
 pub(crate) async fn set_game_mode(conn: &mut dims::DimConn, id: i64, mode: &GameType) {
     use bedrock::protocol::v662::packets::SetPlayerGameTypePacket;
     let _ = conn
