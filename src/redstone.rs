@@ -275,13 +275,7 @@ fn sched(e: &mut Engine, p: Pos, job: Job, delay: u64) {
 }
 
 fn rename(b: i32, new: &str) -> i32 {
-    match any_state(&format!("minecraft:{new}")) {
-        Some(base) => {
-            let st: Vec<(&str, State)> = entry(b).map(|e| e.states.iter().map(|(k, v)| (k.as_str(), v.clone())).collect()).unwrap_or_default();
-            with(base, &st)
-        }
-        None => b,
-    }
+    crate::blocks::rename(b, new)
 }
 
 /// Should this diode be on now, and which block should it be.

@@ -285,7 +285,7 @@ fn load(path: &str) -> HashMap<String, Template> {
         }
     }
     walk("", &root, &mut raw);
-    raw.retain(|(n, _)| n.starts_with("bastion/") || n.starts_with("nether_fossils/"));
+    raw.retain(|(n, _)| n.starts_with("bastion/") || n.starts_with("nether_fossils/") || n.starts_with("ruined_portal/"));
     let palette_of = |o: &nbtx::Value| -> Vec<i32> {
         match nbt_get(o, "palette") {
             Some(nbtx::Value::List(nbtx::ValueList::Int(v))) => v.clone(),

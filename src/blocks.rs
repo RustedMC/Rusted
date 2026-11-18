@@ -99,6 +99,17 @@ pub fn with(id: i32, changes: &[(&str, State)]) -> i32 {
 }
 
 /// Any state of a block by name; placement orients it afterwards.
+/// `b` as the block `new` (short name), keeping whatever states the two share.
+pub fn rename(b: i32, new: &str) -> i32 {
+    match any_state(&format!("minecraft:{new}")) {
+        Some(base) => {
+            let st: Vec<(&str, State)> = entry(b).map(|e| e.states.iter().map(|(k, v)| (k.as_str(), v.clone())).collect()).unwrap_or_default();
+            with(base, &st)
+        }
+        None => b,
+    }
+}
+
 pub fn any_state(name: &str) -> Option<i32> {
     let r = registry();
     r.by_name.get(name).and_then(|v| v.first()).map(|&i| r.ids[i])

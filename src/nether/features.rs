@@ -2,7 +2,6 @@
 // from PNX NetherPopulatorStage, OreGeneratorFeature, the nether *Populator classes and
 // LegacyNetherTree / LegacyCrimsonTree / LegacyWarpedTree.
 //! Nether populators. Each chunk is decorated inside a 3x3 region so neighbours can spill in.
-//! TODO: ruined portals aren't ported yet.
 
 use super::rng::NukkitRandom;
 use super::{ids, Nether, NetherChunk, BASALT_DELTAS, CRIMSON_FOREST, WARPED_FOREST};

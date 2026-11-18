@@ -25,6 +25,10 @@ const FORTRESS_RADIUS: i32 = 8;
 const BASTION_RADIUS: i32 = 8;
 const FOSSIL: Placement = Placement::new(0x0766_9456_5C61_6765, 2, 32, Spread::Legacy);
 const FOSSIL_RADIUS: i32 = 1;
+/// PNX PopulatorRuinedPortal NETHER_PLACEMENT.
+const PORTAL: Placement = Placement::new(40_552_231, 10, 25, Spread::Linear);
+/// Giant portals are up to about 20 blocks across.
+const PORTAL_RADIUS: i32 = 2;
 
 fn region_seed(seed: i64, rx: i32, rz: i32) -> i32 {
     rx.wrapping_mul(0x9939_F508u32 as i32).wrapping_add(rz.wrapping_mul(0xF156_5BD5u32 as i32)).wrapping_add(seed as i32).wrapping_add(SALT)
@@ -149,6 +153,76 @@ pub fn apply(n: &Nether, ch: &mut NetherChunk, cx: i32, cz: i32) {
             copy(&b, ch, cx, cz);
         }
     }
+    // PopulatorRuinedPortal
+    for sx in cx - PORTAL_RADIUS..=cx + PORTAL_RADIUS {
+        for sz in cz - PORTAL_RADIUS..=cz + PORTAL_RADIUS {
+            if !PORTAL.is_candidate(seed, sx, sz) {
+                continue;
+            }
+            let b = cached(n, 3, sx, sz, || Built::Blocks(group(ruined_portal(n, sx, sz))));
+            copy(&b, ch, cx, cz);
+        }
+    }
+}
+
+/// PNX `PopulatorRuinedPortal` in the Nether: a portal in blackstone, sunk to where 3 of its
+/// corners rest on solid ground, sometimes high up in an air pocket.
+fn ruined_portal(n: &Nether, cx: i32, cz: i32) -> Vec<(i32, i32, i32, i32)> {
+    use crate::overworld::feature::random_range;
+    let mut r = Xoroshiro::new(0);
+    r.set_seed(n.seed ^ chunk_hash(cx, cz));
+    let (x, z) = ((cx << 4) + 7, (cz << 4) + 7);
+    let big = r.next_bounded_int(20) == 0;
+    let name = if big { format!("ruined_portal/giant_portal_{}", r.next_int_below(3) + 1) } else { format!("ruined_portal/portal_{}", r.next_int_below(10) + 1) };
+    let Some(tpl) = templates::get(&name) else { return vec![] };
+    let [sx, _, sz] = tpl.size;
+    let air_pocket = r.next_float() < 0.5;
+    let start = if air_pocket {
+        random_range(&mut r, 32, 100)
+    } else if r.next_boolean() {
+        random_range(&mut r, 27, 29)
+    } else {
+        random_range(&mut r, 29, 100)
+    };
+    let get = |x: i32, y: i32, z: i32| n.terrain_chunk(x >> 4, z >> 4).get(x & 15, y, z & 15);
+    let ground = |b: i32| bl::is_full(b);
+    let min_y = super::MIN_Y + 15;
+    let mut y = start;
+    while y > min_y {
+        let corners = [(x, z), (x + sx - 1, z), (x, z + sz - 1), (x + sx - 1, z + sz - 1)];
+        if corners.iter().filter(|&&(a, b)| ground(get(a, y, b))).count() >= 3 {
+            break;
+        }
+        y -= 1;
+    }
+    let mut staged = templates::Blocks::default();
+    tpl.stage(&mut staged, (x, y, z));
+    for (bx, by, bz, v) in staged.list() {
+        let short = bl::short(v);
+        let swap = match short {
+            "jigsaw" => Some(ids().netherrack),
+            "obsidian" if r.next_int_below(5) == 0 => crate::blocks::any_state("minecraft:crying_obsidian"),
+            "chiseled_stone_bricks" => Some(crate::blocks::rename(v, "chiseled_polished_blackstone")),
+            "cracked_stone_bricks" => Some(crate::blocks::rename(v, "cracked_polished_blackstone_bricks")),
+            "stone_bricks" => Some(crate::blocks::rename(v, "polished_blackstone_bricks")),
+            "stone_brick_slab" => Some(crate::blocks::rename(v, "polished_blackstone_brick_slab")),
+            "stone_brick_stairs" => Some(crate::blocks::rename(v, "polished_blackstone_brick_stairs")),
+            "stone_brick_wall" => Some(crate::blocks::rename(v, "polished_blackstone_wall")),
+            "mossy_stone_bricks" => {
+                staged.unset(bx, by, bz);
+                None
+            }
+            _ => None,
+        };
+        if let Some(b) = swap {
+            staged.set(bx, by, bz, b);
+        }
+    }
+    let out = staged.list();
+    for &(bx, by, bz, v) in &out {
+        crate::loot::generated((bx, by + crate::dims::base(crate::dims::NETHER), bz), v, "ruined_portal");
+    }
+    out
 }
 
 /// `NetherFossilPopulator.apply` for its start chunk, reading the undecorated terrain.
@@ -192,3 +266,23 @@ fn fossil(n: &Nether, cx: i32, cz: i32) -> Vec<(i32, i32, i32, i32)> {
 pub fn complex_for_tests(seed: i64, rx: i32, rz: i32) -> (i32, i32, bool) {
     complex(seed, rx, rz)
 }
+
+#[cfg(test)]
+mod portal_tests {
+    use super::*;
+
+    #[test]
+    fn nether_ruined_portals_generate_in_blackstone() {
+        if !std::path::Path::new("data/structures.nbt").exists() {
+            return; // template data isn't in every checkout
+        }
+        crate::blocks::init();
+        let n = Nether::new(7);
+        let start = (0..200).flat_map(|x| (0..200).map(move |z| (x, z))).find(|&(x, z)| PORTAL.is_candidate(n.seed, x, z)).expect("a portal chunk");
+        let blocks = ruined_portal(&n, start.0, start.1);
+        assert!(!blocks.is_empty(), "the portal template loaded");
+        assert!(blocks.iter().any(|b| bl::short(b.3).contains("obsidian")), "has its obsidian frame");
+        assert!(!blocks.iter().any(|b| bl::short(b.3) == "stone_bricks"), "stone bricks became blackstone");
+    }
+}
+
