@@ -320,3 +320,60 @@ mod tests {
         assert!(offers(&item("minecraft:dirt"), 15, 1).is_empty());
     }
 }
+
+/// Bedrock dye colours in banner order (0 black ... 15 white).
+const DYES: [&str; 16] = [
+    "black", "red", "green", "brown", "blue", "purple", "cyan", "light_gray",
+    "gray", "pink", "lime", "yellow", "light_blue", "magenta", "orange", "white",
+];
+
+/// Patterns that need a banner pattern item in the loom's third slot.
+const NEEDS_ITEM: [&str; 8] = ["cre", "sku", "flo", "moj", "glb", "pig", "flw", "gus"];
+
+/// Loom result: `banner` with `pattern` added in the colour of `dye`. At most 6 patterns.
+pub fn loom(banner: &Item, dye: &str, pattern: &str, has_pattern_item: bool) -> Option<Item> {
+    use crate::itemdata::{ItemData, Tag};
+    if crate::items::name_of(banner.id)? != "minecraft:banner" || pattern.is_empty() || pattern.len() > 4 {
+        return None;
+    }
+    if NEEDS_ITEM.contains(&pattern) && !has_pattern_item {
+        return None;
+    }
+    let colour = DYES.iter().position(|d| dye == format!("minecraft:{d}_dye"))? as i32;
+    let mut data = ItemData::read(&banner.user_data_buffer);
+    let mut patterns = match data.get("Patterns") {
+        Some(Tag::List(_, p)) => p.clone(),
+        _ => vec![],
+    };
+    if patterns.len() >= 6 {
+        return None;
+    }
+    patterns.push(Tag::Compound(vec![("Color".into(), Tag::Int(colour)), ("Pattern".into(), Tag::String(pattern.into()))]));
+    data.set("Patterns", Tag::List(10, patterns));
+    let mut out = banner.clone();
+    out.stack_size = 1;
+    out.user_data_buffer = data.write();
+    Some(out)
+}
+
+#[cfg(test)]
+mod loom_tests {
+    use super::*;
+    use crate::itemdata::{ItemData, Tag};
+
+    #[test]
+    fn loom_adds_patterns_up_to_six() {
+        crate::blocks::init();
+        let mut banner = crate::items::item_by_name("minecraft:banner").unwrap();
+        for n in 1..=6 {
+            banner = loom(&banner, "minecraft:red_dye", "bo", false).expect("pattern added");
+            let Some(Tag::List(_, p)) = ItemData::read(&banner.user_data_buffer).get("Patterns").cloned() else { panic!() };
+            assert_eq!(p.len(), n);
+        }
+        assert!(loom(&banner, "minecraft:red_dye", "bo", false).is_none(), "six is the most");
+        let plain = crate::items::item_by_name("minecraft:banner").unwrap();
+        assert!(loom(&plain, "minecraft:red_dye", "cre", false).is_none(), "creeper needs its pattern item");
+        assert!(loom(&plain, "minecraft:red_dye", "cre", true).is_some());
+        assert!(loom(&plain, "minecraft:stick", "bo", false).is_none(), "needs a dye");
+    }
+}

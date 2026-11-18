@@ -65,6 +65,10 @@ pub const SMITH_TEMPLATE: usize = 9;
 pub const TRADE_A: usize = 10;
 pub const TRADE_B: usize = 11;
 pub const BEACON_PAYMENT: usize = 12;
+// The loom reuses the anvil and grindstone slots: only one screen is open at a time.
+pub const LOOM_BANNER: usize = 1;
+pub const LOOM_DYE: usize = 2;
+pub const LOOM_PATTERN: usize = 3;
 
 pub const CHEST_SLOTS: usize = 27;
 
@@ -136,6 +140,9 @@ fn place_of(info: &ItemStackRequestSlotInfo<Protocol>) -> Option<Place> {
         // table screens keep their inputs in the UI grid until closed
         ContainerEnumName::AnvilInputContainer => Some(Place::Craft(ANVIL_INPUT)),
         ContainerEnumName::BeaconPaymentContainer => Some(Place::Craft(BEACON_PAYMENT)),
+        ContainerEnumName::LoomInputContainer => Some(Place::Craft(LOOM_BANNER)),
+        ContainerEnumName::LoomDyeContainer => Some(Place::Craft(LOOM_DYE)),
+        ContainerEnumName::LoomMaterialContainer => Some(Place::Craft(LOOM_PATTERN)),
         ContainerEnumName::AnvilMaterialContainer => Some(Place::Craft(ANVIL_MATERIAL)),
         ContainerEnumName::GrindstoneInputContainer => Some(Place::Craft(GRIND_INPUT)),
         ContainerEnumName::GrindstoneAdditionalContainer => Some(Place::Craft(GRIND_EXTRA)),
@@ -672,6 +679,20 @@ impl Inventory {
                                     out
                                 }
                             };
+                            let net_id = self.fresh_id();
+                            self.created = Some(Stack { item, count: 1, net_id });
+                            true
+                        }
+                        None => false,
+                    }
+                }
+                // Loom: the banner gets the chosen pattern in the dye's colour.
+                ItemStackRequestActionType::CraftLoom { pattern_id, .. } => {
+                    let banner = self.craft[LOOM_BANNER].as_ref().map(|s| &s.item);
+                    let dye = self.craft[LOOM_DYE].as_ref().and_then(|s| crate::items::name_of(s.item.id));
+                    let has_pattern_item = self.craft[LOOM_PATTERN].is_some();
+                    match banner.zip(dye).and_then(|(b, d)| crate::tables::loom(b, d, pattern_id, has_pattern_item)) {
+                        Some(item) => {
                             let net_id = self.fresh_id();
                             self.created = Some(Stack { item, count: 1, net_id });
                             true

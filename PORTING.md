@@ -10,7 +10,7 @@ This file tracks how far each part of PNX has come over.
 | `level/generator` | overworld, Nether, End, features, structures | ✅ seed-exact with PNX |
 | `level` | ticking, light, weather, explosions, portals, dimensions | 🟡 block light only, no sky light; no lightning-charged creepers |
 | `block` | block behaviour, interactions, crops, fluids, fire | 🟡 most blocks work; no rails, sculk, trial spawners, vaults |
-| `blockentity` + `inventory` | containers and their screens | 🟡 chests, furnaces, hoppers, brewing, anvil, grindstone, enchanting, smithing, shulkers, dispensers, beacons; no loom, cartography, crafter, lectern |
+| `blockentity` + `inventory` | containers and their screens | 🟡 chests, furnaces, hoppers, brewing, anvil, grindstone, enchanting, smithing, shulkers, dispensers, beacons, looms; no cartography, crafter, lectern |
 | `item` | tools, food, armour, enchantments, effects | 🟡 bows, tridents and potions work; fishing, shields, totems, crossbows (Multishot, Quick Charge) and elytra with rocket boosts work; ground-launched fireworks don't fly yet |
 | `entity` | mobs and AI | 🟡 71 mob types on a simpler AI than PNX's behaviour system; riding horses, donkeys, mules, pigs, striders and camels, horse taming and saddles, boats, minecarts on rails; no chest boats, chest/hopper/TNT minecarts, llama caravans or dragon perching |
 | `entity` (villagers) | jobs, trading, raids | 🟡 trading uses PNX's tables; no gossip, breeding or wandering traders |
