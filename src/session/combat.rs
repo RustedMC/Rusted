@@ -13,6 +13,12 @@ impl Session {
     pub(super) async fn on_mob_use(&mut self, t: &Transaction) {
         // Right-click on a mob: feed it, or milk a cow.
         let InventoryTransactionData::ItemUseOnEntity(e) = &t.data else { return };
+        if !self.server.mobs.contains(e.actor_runtime_id as i64) {
+            if let Some(me) = self.server.get(self.id) {
+                self.server.plugins.entity_click(&self.server, &me, e.actor_runtime_id as i64, false);
+            }
+            return;
+        }
         let slot = self.selected_slot as usize;
         let held = self.inv.held(slot).and_then(|s| items::name_of(s.item.id));
         let changed = match self.server.mobs.interact(&self.server, e.actor_runtime_id as i64, held, self.id) {
@@ -60,6 +66,12 @@ impl Session {
         // Attack (action 1) on a mob.
         let InventoryTransactionData::ItemUseOnEntity(e) = &t.data else { return };
         let target = e.actor_runtime_id as i64;
+        if !self.server.mobs.contains(target) && self.server.get(target).is_none() {
+            if let Some(me) = self.server.get(self.id) {
+                self.server.plugins.entity_click(&self.server, &me, target, true);
+            }
+            return;
+        }
         if !matches!(self.mode, GameType::Spectator) && self.server.mobs.contains(target)
             && let Some(me) = self.server.get(self.id)
         {

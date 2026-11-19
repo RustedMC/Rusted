@@ -9,6 +9,7 @@ mod saves;
 mod ai;
 mod beacon;
 mod demo;
+mod lobby;
 mod blockops;
 mod session;
 mod cmdargs;

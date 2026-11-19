@@ -289,6 +289,10 @@ pub trait Plugin: Send + Sync {
     /// Chunk (cx, cz) was sent to the player (it came into their view).
     fn on_chunk_load(&self, _server: &Server, _player: &PlayerInfo, _chunk: (i32, i32)) {}
 
+    /// Player right-clicked (`attack` false) or hit (`attack` true) entity `entity`, which isn't
+    /// one of Rusted's mobs: a plugin's own NPC, say.
+    fn on_entity_click(&self, _server: &Server, _player: &PlayerInfo, _entity: i64, _attack: bool) {}
+
     /// (name, description) of commands this plugin handles, for autocomplete.
     fn commands(&self) -> Vec<(&'static str, &'static str)> {
         vec![]
@@ -302,7 +306,7 @@ pub trait Plugin: Send + Sync {
 
 /// Every loaded plugin. Add yours here.
 pub fn all() -> Vec<Box<dyn Plugin>> {
-    vec![Box::new(crate::demo::Demo)]
+    vec![Box::new(crate::demo::Demo), Box::new(crate::lobby::Lobby)]
 }
 
 /// Registered plugins, plus helpers to run an event through all of them.
@@ -438,6 +442,10 @@ impl Plugins {
 
     pub fn item_drop(&self, s: &Server, p: &PlayerInfo, item: &str, count: i8) {
         self.each(|pl| pl.on_item_drop(s, p, item, count));
+    }
+
+    pub fn entity_click(&self, s: &Server, p: &PlayerInfo, entity: i64, attack: bool) {
+        self.each(|pl| pl.on_entity_click(s, p, entity, attack));
     }
 
     pub fn mob_damage(&self, s: &Server, mob: i64, kind: &str, damage: f32, from: (f32, f32, f32)) -> bool {

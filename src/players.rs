@@ -74,6 +74,21 @@ pub struct PlayerInfo {
     pub head_yaw: f32,
 }
 
+/// Each player's held item and armor (helmet, chestplate, leggings, boots), refreshed every
+/// second by their session. For plugins that copy how a player looks.
+pub static EQUIPMENT: Mutex<Option<HashMap<i64, Equipment>>> = Mutex::new(None);
+
+#[derive(Clone, Default)]
+pub struct Equipment {
+    pub held: Option<crate::inventory::Stack>,
+    pub armor: [Option<crate::inventory::Stack>; 4],
+}
+
+/// What player `id` is holding and wearing, as of the last second.
+pub fn equipment(id: i64) -> Equipment {
+    EQUIPMENT.lock().as_ref().and_then(|m| m.get(&id).cloned()).unwrap_or_default()
+}
+
 #[derive(Clone)]
 pub struct Server {
     pub players: Arc<Mutex<HashMap<i64, PlayerInfo>>>,

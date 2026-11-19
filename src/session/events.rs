@@ -6,6 +6,11 @@ use players::Event;
 impl Session {
     pub async fn every_second(&mut self) {
         self.regen_ticks += 1;
+        {
+            let armor = std::array::from_fn(|i| self.inv.held(inventory::ARMOR + i).cloned());
+            let eq = players::Equipment { held: self.inv.held(self.selected_slot as usize).cloned(), armor };
+            players::EQUIPMENT.lock().get_or_insert_with(Default::default).insert(self.id, eq);
+        }
         self.idle += 1;
         let limit = config::get().player_idle_timeout * 60;
         if limit > 0 && self.idle >= limit && !commands::is_op(&self.name) {
