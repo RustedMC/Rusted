@@ -22,8 +22,6 @@
 /whitelist.txt
 /banned-players.txt
 
-# Vanilla structure templates (from PNX's jar, origin/licence unclear): local only
-/data/structures.nbt
 
 # Server logs
 *.log

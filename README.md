@@ -45,9 +45,8 @@ The first run creates `server.properties` (port, MOTD, seed, game mode, difficul
 view distance, allowlist) and `identity.pem`. Don't share `identity.pem`, it's the server's
 private key.
 
-Some generated structures (mansions, end cities, bastions, ...) need a structure template
-file, `data/structures.nbt`, which isn't in the repo yet because its license is unclear.
-Without it those structures are just skipped.
+Structures like villages, mansions, end cities and bastions are built from templates in
+`data/structures.nbt`, which is included. Keep the `data` folder next to the server.
 
 ## Hosting on a VPS
 
