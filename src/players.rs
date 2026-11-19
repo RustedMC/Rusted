@@ -318,12 +318,9 @@ pub fn skin_from_client(c: &ClientData) -> SerializedSkin<V2225> {
         skin_image_width: w,
         skin_image_height: h,
         skin_image_bytes: image,
-        // shortcut: skin animations (a persona skin's blinking face) are left out while we find
-        // out how 1.26 wants their type and expression encoded; the skin just doesn't blink.
         animations: c
             .animated_image_data
             .iter()
-            .filter(|_| !c.persona_skin)
             .map(|a| SerializedSkinAnimationFrame {
                 image_width: a.image_width as u32,
                 image_height: a.image_height as u32,
@@ -353,7 +350,6 @@ pub fn skin_from_client(c: &ClientData) -> SerializedSkin<V2225> {
         arm_size: if c.arm_size == "slim" { ArmSizeType::Slim } else { ArmSizeType::Wide },
         skin_color: 0,
         // character creator skins have to go back exactly as sent or clients reject them
-        // (packets::player_list_add fixes how bedrock-rs writes the piece types)
         persona_pieces: c
             .persona_pieces
             .iter()
@@ -369,8 +365,8 @@ pub fn skin_from_client(c: &ClientData) -> SerializedSkin<V2225> {
             .piece_tint_colours
             .iter()
             .map(|t| PieceTintColorsEntry {
-                // Login data says "persona_eyes"; the game's piece-type names have no prefix.
-                piece_type: t.piece_type.trim_start_matches("persona_").to_string(),
+                // Login data says "persona_eyes"; tints are sent with the game's own name, "eyes".
+                piece_type: tint_name(&t.piece_type),
                 colors: t.colours.clone().map(|hex| parse_argb(&hex)),
             })
             .collect(),
@@ -393,6 +389,17 @@ fn json_or_empty_object(s: String) -> String {
 /// "#ffefbbb0" to ARGB i32
 fn parse_argb(hex: &str) -> i32 {
     u32::from_str_radix(hex.trim_start_matches('#'), 16).unwrap_or(0) as i32
+}
+
+/// A piece type's name as the game writes it in tint colours (Cloudburst PersonaPieceType's
+/// serialize names): "persona_facial_hair" is "facialhair", "persona_hand" is "hands".
+fn tint_name(login: &str) -> String {
+    let n = login.trim_start_matches("persona_");
+    match n {
+        "hand" => "hands".into(),
+        "high_pants" => n.into(),
+        _ => n.replace('_', ""),
+    }
 }
 
 /// Piece types look like "persona_left_arm".
@@ -512,5 +519,17 @@ pub(crate) mod tests {
         s.moved(7, (1.0, 0.0, 0.0), (0.0, 0.0), 0.0);
         assert!(matches!(rx.try_recv(), Ok(Event::Move { id: 7, pos: (1.0, _, _), .. })));
         assert!(rx.try_recv().is_err());
+    }
+}
+
+#[cfg(test)]
+mod tint_tests {
+    #[test]
+    fn tint_names_match_the_game() {
+        assert_eq!(super::tint_name("persona_eyes"), "eyes");
+        assert_eq!(super::tint_name("persona_facial_hair"), "facialhair");
+        assert_eq!(super::tint_name("persona_hand"), "hands");
+        assert_eq!(super::tint_name("persona_high_pants"), "high_pants");
+        assert_eq!(super::tint_name("persona_left_leg"), "leftleg");
     }
 }

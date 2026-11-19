@@ -365,7 +365,7 @@ pub(crate) fn chat_packet(from: String, message: String) -> Protocol {
 }
 
 pub(crate) fn player_list_add(p: &players::PlayerInfo) -> Protocol {
-    persona_fix(PlayerListPacket {
+    Protocol::PlayerListPacket(Box::new(PlayerListPacket {
         entries: vec![PlayerListEntry::Add(AddPlayerListEntry {
             uuid: p.uuid,
             target_actor_id: ActorUniqueID(p.id),
@@ -380,87 +380,7 @@ pub(crate) fn player_list_add(p: &players::PlayerInfo) -> Protocol {
             is_sub_client: false,
             color: players::white(),
         })],
-    })
-}
-
-/// bedrock-rs writes a persona piece's type as a 4-byte number for 1.26, but the game reads
-/// it as its name ("skeleton", "hair", ...) and drops anyone who gets the number. So skins with
-/// pieces are encoded here and each piece's number swapped for its name, found by the unique
-/// piece id written just before it.
-// shortcut: patches the encoded bytes; drop it once bedrock-rs encodes PersonaPieceType as a string.
-fn persona_fix(pk: PlayerListPacket<Protocol>) -> Protocol {
-    use bedrock::protocol::{Packet, ProtoCodec, UnknownPacket};
-    let pieces: Vec<(String, String, i32)> = pk.entries.iter().flat_map(|e| match e {
-        PlayerListEntry::Add(a) => a.serialized_skin.persona_pieces.iter().map(|p| (p.piece_id.clone(), snake(&format!("{:?}", p.piece_type)), p.piece_type.clone() as i32)).collect(),
-        _ => vec![],
-    }).collect();
-    // Tint colours too: bedrock-rs writes 4 fixed i32s, the game reads a list of "#aarrggbb" texts.
-    let tints: Vec<(String, [i32; 4])> = pk.entries.iter().flat_map(|e| match e {
-        PlayerListEntry::Add(a) => a.serialized_skin.piece_tint_colors.iter().map(|t| (t.piece_type.clone(), t.colors)).collect(),
-        _ => vec![],
-    }).collect();
-    if pieces.is_empty() && tints.is_empty() {
-        return Protocol::PlayerListPacket(Box::new(pk));
-    }
-    let mut buf = Vec::new();
-    if ProtoCodec::serialize(&pk, &mut buf).is_err() {
-        return Protocol::PlayerListPacket(Box::new(pk));
-    }
-    for (id, name, number) in pieces {
-        let mut needle = varint(id.len());
-        needle.extend_from_slice(id.as_bytes());
-        // The id can also turn up inside the skin's JSON; the real one is followed by the
-        // piece type's 4-byte number, which never appears in JSON text.
-        let n = needle.len();
-        let Some(at) = (0..buf.len().saturating_sub(n + 4)).find(|&i| buf[i..i + n] == needle[..] && buf[i + n..i + n + 4] == number.to_le_bytes()).map(|i| i + n) else {
-            continue;
-        };
-        let mut text = varint(name.len());
-        text.extend_from_slice(name.as_bytes());
-        buf.splice(at..at + 4, text.iter().copied());
-    }
-    for (name, colors) in tints {
-        let mut needle = varint(name.len());
-        needle.extend_from_slice(name.as_bytes());
-        let raw: Vec<u8> = colors.iter().flat_map(|c| c.to_le_bytes()).collect();
-        let n = needle.len();
-        let Some(at) = (0..buf.len().saturating_sub(n + 16)).find(|&i| buf[i..i + n] == needle[..] && buf[i + n..i + n + 16] == raw[..]).map(|i| i + n) else {
-            continue;
-        };
-        let mut list = varint(4);
-        for c in colors {
-            let hex = format!("#{:08x}", c as u32);
-            list.extend(varint(hex.len()));
-            list.extend_from_slice(hex.as_bytes());
-        }
-        buf.splice(at..at + 16, list.iter().copied());
-    }
-    Protocol::Unknown(Box::new(UnknownPacket { id: <PlayerListPacket<Protocol> as Packet>::ID, buf: buf.into() }))
-}
-
-fn varint(mut n: usize) -> Vec<u8> {
-    let mut out = Vec::new();
-    loop {
-        let b = (n & 0x7f) as u8;
-        n >>= 7;
-        if n == 0 {
-            out.push(b);
-            return out;
-        }
-        out.push(b | 0x80);
-    }
-}
-
-/// "FacialHair" -> "facial_hair"
-fn snake(s: &str) -> String {
-    let mut out = String::new();
-    for (i, c) in s.chars().enumerate() {
-        if c.is_uppercase() && i > 0 {
-            out.push('_');
-        }
-        out.extend(c.to_lowercase());
-    }
-    out
+    }))
 }
 
 pub(crate) fn add_player(p: &players::PlayerInfo) -> Protocol {
@@ -512,15 +432,4 @@ pub(crate) fn move_player(id: i64, pos: (f32, f32, f32), rot: (f32, f32), head_y
         teleport_data: None,
         tick: 0,
     }))
-}
-
-#[cfg(test)]
-mod persona_tests {
-    #[test]
-    fn names_and_varints() {
-        assert_eq!(super::snake("FacialHair"), "facial_hair");
-        assert_eq!(super::snake("Skeleton"), "skeleton");
-        assert_eq!(super::varint(5), vec![5]);
-        assert_eq!(super::varint(300), vec![0xac, 0x02]);
-    }
 }
