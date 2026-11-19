@@ -424,6 +424,7 @@ pub fn started() -> std::time::Instant {
 pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
     let l = lists();
     let reply = match args {
+        ["scoreboard", rest @ ..] => crate::ui::command(server, sender, rest),
         ["list"] => {
             let names: Vec<String> = server.all().into_iter().map(|p| p.name).collect();
             format!("There are {}/{} players online:\n{}", names.len(), crate::config::get().max_players, names.join(", "))

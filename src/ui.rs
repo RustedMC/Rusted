@@ -204,17 +204,36 @@ fn display_packet(slot: &str, name: &str, o: &Objective, desc: bool) -> Protocol
     }))
 }
 
+/// Score lines, written by hand: bedrock-rs uses a per-entry layout ("changeplayer" names)
+/// the game doesn't read. Cloudburst's SetScoreSerializer: an action byte (0 set), then per
+/// line the id (signed varint), objective, score (i32 LE), type byte (3 fake player) and name.
 fn scores_packet(name: &str, o: &Objective) -> Protocol {
-    use bedrock::protocol::v2168::packets::{ScorePacketEntry, SetScorePacket};
-    use bedrock::protocol::v662::types::ScoreboardId;
-    Protocol::SetScorePacket(Box::new(SetScorePacket {
-        score_info: o.scores.iter().map(|(who, &v)| ScorePacketEntry::ChangeFakePlayer {
-            scoreboard_id: ScoreboardId { id: line_id(name, who) },
-            objective_name: name.into(),
-            score_value: v,
-            fake_player_name: who.clone(),
-        }).collect(),
-    }))
+    use bedrock::protocol::UnknownPacket;
+    fn var(out: &mut Vec<u8>, mut n: u64) {
+        loop {
+            let b = (n & 0x7f) as u8;
+            n >>= 7;
+            if n == 0 {
+                return out.push(b);
+            }
+            out.push(b | 0x80);
+        }
+    }
+    fn text(out: &mut Vec<u8>, s: &str) {
+        var(out, s.len() as u64);
+        out.extend_from_slice(s.as_bytes());
+    }
+    let mut out = vec![0u8];
+    var(&mut out, o.scores.len() as u64);
+    for (who, &v) in &o.scores {
+        let id = line_id(name, who);
+        var(&mut out, ((id << 1) ^ (id >> 63)) as u64);
+        text(&mut out, name);
+        out.extend_from_slice(&v.to_le_bytes());
+        out.push(3);
+        text(&mut out, who);
+    }
+    Protocol::Unknown(Box::new(UnknownPacket { id: 108, buf: out.into() }))
 }
 
 fn remove_packet(name: &str) -> Protocol {
@@ -426,35 +445,58 @@ pub fn command(server: &Server, me: &str, args: &[&str]) -> String {
 
 /// Bedrock colours: 0 pink, 1 blue, 2 red, 3 green, 4 yellow, 5 purple, 6 white.
 pub fn boss_bar(server: &Server, to: i64, text: &str, percent: f32, color: u8) {
-    use bedrock::protocol::v2193::packets::{BossEventPacket, BossEventUpdateType};
-    use bedrock::protocol::v662::types::ActorUniqueID;
-    for event_type in [BossEventUpdateType::Add, BossEventUpdateType::UpdatePercent, BossEventUpdateType::UpdateName] {
-        let p = Protocol::BossEventPacket(Box::new(BossEventPacket {
-            target_actor_id: ActorUniqueID(to),
-            event_type,
-            name: text.into(),
-            filtered_name: text.into(),
-            health_percent: percent.clamp(0.0, 1.0),
-            color,
-            overlay: 0,
-        }));
-        let _ = server.events.send(Event::Packet { to, packet: Box::new(p) });
-    }
+    send_boss(server, to, &boss_event(to, 0, Some((text, percent, color))));
 }
 
 pub fn remove_boss_bar(server: &Server, to: i64) {
-    use bedrock::protocol::v2193::packets::{BossEventPacket, BossEventUpdateType};
-    use bedrock::protocol::v662::types::ActorUniqueID;
-    let p = Protocol::BossEventPacket(Box::new(BossEventPacket {
-        target_actor_id: ActorUniqueID(to),
-        event_type: BossEventUpdateType::Remove,
-        name: String::new(),
-        filtered_name: String::new(),
-        health_percent: 0.0,
-        color: 0,
-        overlay: 0,
-    }));
+    send_boss(server, to, &boss_event(to, 2, None));
+}
+
+/// The boss bar packet, written by hand: bedrock-rs leaves out the "darken sky" short and
+/// writes colour and overlay as single bytes, so the game drops it. Layout from Cloudburst's
+/// BossEventSerializer: actor id, event, then for Add the title, filtered title, health,
+/// darken sky (u16 LE), colour and overlay (varints).
+fn boss_event(actor: i64, event: u32, add: Option<(&str, f32, u8)>) -> Vec<u8> {
+    fn var(out: &mut Vec<u8>, mut n: u64) {
+        loop {
+            let b = (n & 0x7f) as u8;
+            n >>= 7;
+            if n == 0 {
+                return out.push(b);
+            }
+            out.push(b | 0x80);
+        }
+    }
+    let mut out = Vec::new();
+    var(&mut out, ((actor << 1) ^ (actor >> 63)) as u64); // zigzag, like every actor unique id
+    var(&mut out, event as u64);
+    if let Some((text, percent, color)) = add {
+        for s in [text, text] {
+            var(&mut out, s.len() as u64);
+            out.extend_from_slice(s.as_bytes());
+        }
+        out.extend_from_slice(&percent.clamp(0.0, 1.0).to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        var(&mut out, color as u64);
+        var(&mut out, 0);
+    }
+    out
+}
+
+fn send_boss(server: &Server, to: i64, buf: &[u8]) {
+    use bedrock::protocol::UnknownPacket;
+    let p = Protocol::Unknown(Box::new(UnknownPacket { id: 74, buf: buf.into() }));
     let _ = server.events.send(Event::Packet { to, packet: Box::new(p) });
+}
+
+#[cfg(test)]
+mod boss_tests {
+    #[test]
+    fn add_layout() {
+        let b = super::boss_event(1, 0, Some(("hi", 1.0, 4)));
+        // id 1 zigzags to 2, event 0, "hi" twice, 1.0f, darken 0, colour 4, overlay 0
+        assert_eq!(b, [2, 0, 2, b'h', b'i', 2, b'h', b'i', 0, 0, 0x80, 0x3f, 0, 0, 4, 0]);
+    }
 }
 
 // ---- chest menus
