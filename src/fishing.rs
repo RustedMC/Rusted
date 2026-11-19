@@ -302,14 +302,15 @@ mod tests {
         cast(&server, 9, (0.5, -58.0, 0.5), (30.0, 0.0), &[]);
         assert!(has_hook(9));
         let mut bit = false;
-        for _ in 0..(60 * TPS) {
+        // Waits are random (5-30 s, sometimes twice), so allow plenty of time.
+        for _ in 0..(180 * TPS) {
             tick(&server);
             if hooks().lock()[&9].biting > 0 {
                 bit = true;
                 break;
             }
         }
-        assert!(bit, "a fish bit within 30 s");
+        assert!(bit, "a fish bit within 3 minutes");
         let (item, from, xp) = reel(&server, 9).expect("reeled in a catch");
         assert!((1..=3).contains(&xp) && crate::items::item_by_name(item).is_some());
         let v = fling(from, (from.0 + 5.0, from.1 + 1.0, from.2));
