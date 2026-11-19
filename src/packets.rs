@@ -439,15 +439,6 @@ fn snake(s: &str) -> String {
     out
 }
 
-#[cfg(test)]
-mod persona_tests {
-    #[test]
-    fn names_and_varints() {
-        assert_eq!(super::snake("FacialHair"), "facial_hair");
-        assert_eq!(super::snake("Skeleton"), "skeleton");
-        assert_eq!(super::varint(5), vec![5]);
-        assert_eq!(super::varint(300), vec![0xac, 0x02]);
-    }
 }
 
 pub(crate) fn add_player(p: &players::PlayerInfo) -> Protocol {
@@ -500,3 +491,13 @@ pub(crate) fn move_player(id: i64, pos: (f32, f32, f32), rot: (f32, f32), head_y
         tick: 0,
     }))
 }
+
+#[cfg(test)]
+mod persona_tests {
+    #[test]
+    fn names_and_varints() {
+        assert_eq!(super::snake("FacialHair"), "facial_hair");
+        assert_eq!(super::snake("Skeleton"), "skeleton");
+        assert_eq!(super::varint(5), vec![5]);
+        assert_eq!(super::varint(300), vec![0xac, 0x02]);
+    }
