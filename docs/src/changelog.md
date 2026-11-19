@@ -20,6 +20,21 @@
 - Nether lava springs flow.
 - Mineshafts have chest minecarts with loot. Hoppers empty them, and they keep their items over a restart.
 
+**Fixes from testing**
+- Fences, iron bars, glass panes, walls, redstone dust and stairs join their neighbours. Bedrock now expects the server to work these out.
+- Structures have their fences back.
+- Zombies don't burn at night anymore. The server's clock stops with `doDaylightCycle` off and resyncs with players every 12 seconds.
+- Survival mining works like vanilla: other players see the cracks, and breaks finish properly.
+- Breaking either half of tall grass or a large fern removes both halves.
+
+**For server owners**
+- `start.bat` and `start.sh` open a console you can type commands into, like PocketMine and PowerNukkitX. They restart the server after a crash.
+- Automatic world backups (`backup-interval`, `backup-keep`).
+- RCON for hosting panels (`enable-rcon`, `rcon.port`, `rcon.password`).
+- `spawn-protection`, `player-idle-timeout`, and custom `join-message` and `leave-message`.
+- New settings are added to an existing `server.properties` automatically.
+- Quieter console output by default. Set `RUST_LOG=debug` for everything.
+
 **Commands and plugins**
 - Command replies use vanilla wording.
 - New plugin events: `on_mob_damage`, `on_inventory_action` and `on_chunk_load`. `on_container_open` also fires for chest minecarts.
