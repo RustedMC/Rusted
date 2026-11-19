@@ -194,7 +194,7 @@ Found a bug or have an idea? Open an issue, or come say hi on the
 
 ---
 
-<sub>By Gardery, under the [LGPL-3.0](LICENSE) like PowerNukkitX. Credits in [NOTICE.md](NOTICE.md).
+<sub>By SXCULPZ and Claude, under the [LGPL-3.0](LICENSE) like PowerNukkitX. Credits in [NOTICE.md](NOTICE.md).
 Rusted is independent server software and is not an official Minecraft product. It is not
 approved by or associated with Mojang or Microsoft. Minecraft is a trademark of Microsoft
 Corporation.</sub>
