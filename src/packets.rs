@@ -390,26 +390,30 @@ pub(crate) fn player_list_add(p: &players::PlayerInfo) -> Protocol {
 // shortcut: patches the encoded bytes; drop it once bedrock-rs encodes PersonaPieceType as a string.
 fn persona_fix(pk: PlayerListPacket<Protocol>) -> Protocol {
     use bedrock::protocol::{Packet, ProtoCodec, UnknownPacket};
-    let pieces: Vec<(String, String)> = pk.entries.iter().flat_map(|e| match e {
-        PlayerListEntry::Add(a) => a.serialized_skin.persona_pieces.iter().map(|p| (p.piece_id.clone(), snake(&format!("{:?}", p.piece_type)))).collect(),
+    let pieces: Vec<(String, String, i32)> = pk.entries.iter().flat_map(|e| match e {
+        PlayerListEntry::Add(a) => a.serialized_skin.persona_pieces.iter().map(|p| (p.piece_id.clone(), snake(&format!("{:?}", p.piece_type)), p.piece_type.clone() as i32)).collect(),
         _ => vec![],
     }).collect();
     if pieces.is_empty() {
         return Protocol::PlayerListPacket(Box::new(pk));
     }
+    println!("skin pieces: {:?}", pieces.iter().map(|p| p.1.as_str()).collect::<Vec<_>>());
     let mut buf = Vec::new();
     if ProtoCodec::serialize(&pk, &mut buf).is_err() {
         return Protocol::PlayerListPacket(Box::new(pk));
     }
-    let mut from = 0;
-    for (id, name) in pieces {
+    for (id, name, number) in pieces {
         let mut needle = varint(id.len());
         needle.extend_from_slice(id.as_bytes());
-        let Some(at) = buf[from..].windows(needle.len()).position(|w| w == needle.as_slice()).map(|i| from + i + needle.len()) else { continue };
+        // The id can also turn up inside the skin's JSON; the real one is followed by the
+        // piece type's 4-byte number, which never appears in JSON text.
+        let n = needle.len();
+        let Some(at) = (0..buf.len().saturating_sub(n + 4)).find(|&i| buf[i..i + n] == needle[..] && buf[i + n..i + n + 4] == number.to_le_bytes()).map(|i| i + n) else {
+            continue;
+        };
         let mut text = varint(name.len());
         text.extend_from_slice(name.as_bytes());
         buf.splice(at..at + 4, text.iter().copied());
-        from = at + text.len();
     }
     Protocol::Unknown(Box::new(UnknownPacket { id: <PlayerListPacket<Protocol> as Packet>::ID, buf: buf.into() }))
 }
