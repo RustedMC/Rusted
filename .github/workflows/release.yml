@@ -24,10 +24,12 @@ jobs:
       - run: cargo build --release
       - name: Package (Windows)
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path target/release/rusted.exe, README.md, LICENSE, LICENSE-APACHE, NOTICE.md -DestinationPath ${{ matrix.file }}
+        run: Compress-Archive -Path target/release/rusted.exe, deploy/start.bat, README.md, LICENSE, LICENSE-APACHE, NOTICE.md -DestinationPath ${{ matrix.file }}
       - name: Package (Linux)
         if: runner.os == 'Linux'
-        run: tar -czf ${{ matrix.file }} -C target/release rusted -C ../.. README.md LICENSE LICENSE-APACHE NOTICE.md deploy/rusted.service
+        run: |
+          cp deploy/start.sh target/release/start.sh && chmod +x target/release/start.sh target/release/rusted
+          tar -czf ${{ matrix.file }} -C target/release rusted start.sh -C ../.. README.md LICENSE LICENSE-APACHE NOTICE.md deploy/rusted.service
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.file }}
@@ -50,8 +52,8 @@ jobs:
           body: |
             Alpha build of Rusted for Minecraft: Bedrock Edition **1.26.60**.
 
-            **Windows:** unzip and run `rusted.exe`.
-            **Linux:** `tar -xzf rusted-linux-x64.tar.gz && ./rusted`. To run it as a service, see the [hosting guide](https://rustedmc.github.io/Rusted/hosting.html).
+            **Windows:** unzip and double-click `start.bat`. A console opens where you can type commands like `help`, `op <name>` and `stop`.
+            **Linux:** `tar -xzf rusted-linux-x64.tar.gz && ./start.sh`. To run it as a service, see the [hosting guide](https://rustedmc.github.io/Rusted/hosting.html).
 
             Then add a server in Minecraft with your machine's address, port `19132`.
             Docs: https://rustedmc.github.io/Rusted/ · Discord: https://discord.gg/HBegxHxREc

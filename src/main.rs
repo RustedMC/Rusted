@@ -141,9 +141,21 @@ type Protocol = V2225;
 
 const PROTOCOL: i32 = Protocol::PROTOCOL_VERSION.cast_signed();
 
+const BANNER: &str = r"
+  ____            _           _
+ |  _ \ _   _ ___| |_ ___  __| |
+ | |_) | | | / __| __/ _ \/ _` |
+ |  _ <| |_| \__ \ ||  __/ (_| |
+ |_| \_\__,_|___/\__\___|\__,_|
+";
+
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "debug,rtc=warn,rtc_sctp=warn,rtc_dtls=warn,rtc_ice=warn,webrtc=warn".into())).init();
+    // Quiet by default like other servers; set RUST_LOG=debug to see everything.
+    tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,raknet=warn,rtc=warn,rtc_sctp=warn,rtc_dtls=warn,rtc_ice=warn,webrtc=warn".into())).init();
+    let started = std::time::Instant::now();
+    println!("{}", BANNER);
+    println!("Starting Rusted {} for Minecraft: Bedrock Edition 1.26.60", commands::VERSION);
     let _ = jigsaw_structure_data(); // fail fast if the bundled data is bad
 
     // Kept on disk so players are only asked "Trust this server?" once.
@@ -400,6 +412,7 @@ async fn main() {
             }
         });
     }
+    println!("Done ({:.1}s)! Players can join on port {}. Type \"help\" for commands, \"stop\" to shut down.", started.elapsed().as_secs_f32(), config::get().port);
     // Console commands (stdin), run as an operator.
     {
         let server = server.clone();

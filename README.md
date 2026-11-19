@@ -24,8 +24,10 @@ has the honest breakdown, part by part.
 ## Running it
 
 **Just want to play?** Download the server for Windows or Linux from the
-[latest release](https://github.com/RustedMC/Rusted/releases/latest), run it, and add a server
-in Minecraft with your machine's address, port `19132`.
+[latest release](https://github.com/RustedMC/Rusted/releases/latest), unzip it and run
+`start.bat` (Windows) or `./start.sh` (Linux). A console opens where you type commands like
+`help`, `op <name>` and `stop`, the same as PocketMine or PowerNukkitX. Then add a server in
+Minecraft with your machine's address, port `19132`.
 
 To build it yourself, you need [Rust](https://rustup.rs) (and the Visual Studio C++ build tools on Windows).
 
