@@ -318,9 +318,12 @@ pub fn skin_from_client(c: &ClientData) -> SerializedSkin<V2225> {
         skin_image_width: w,
         skin_image_height: h,
         skin_image_bytes: image,
+        // shortcut: skin animations (a persona skin's blinking face) are left out while we find
+        // out how 1.26 wants their type and expression encoded; the skin just doesn't blink.
         animations: c
             .animated_image_data
             .iter()
+            .filter(|_| !c.persona_skin)
             .map(|a| SerializedSkinAnimationFrame {
                 image_width: a.image_width as u32,
                 image_height: a.image_height as u32,
