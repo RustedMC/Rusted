@@ -21,6 +21,7 @@ mod hunger;
 mod fishing;
 mod rockets;
 mod sculk;
+mod connect;
 mod lectern;
 mod loot;
 mod minecart;
@@ -264,6 +265,13 @@ async fn main() {
                 }
                 if turn % 16 == 0 {
                     server.entities.despawn_old(&server);
+                }
+                // Keep everyone's sky on the server's clock (PNX sends the time every 12 s), so
+                // what mobs think is day is what players see.
+                if turn % 48 == 0 {
+                    let t = server.time();
+                    let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(clock_packet(t)) });
+                    let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(time_packet(t)) });
                 }
                 random_ticks(&server, &mut rng);
                 if turn % 6 == 0 {

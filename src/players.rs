@@ -80,7 +80,8 @@ pub struct Server {
     pub events: tokio::sync::broadcast::Sender<Event>,
     pub world: crate::world::World,
     /// Ticks at the last /time set and when that happened. Runs at 20 ticks/s.
-    clock: Arc<Mutex<(i32, std::time::Instant)>>,
+    /// Time of day at `.1`, and whether the clock is stopped (doDaylightCycle off).
+    clock: Arc<Mutex<(i32, std::time::Instant, bool)>>,
     /// /gamerule overrides on top of vanilla defaults, not saved.
     pub game_rules: Arc<Mutex<Vec<bedrock::protocol::v844::types::GameRuleChanged>>>,
     pub plugins: Arc<crate::plugin::Plugins>,
@@ -109,7 +110,7 @@ impl Server {
             players: Arc::default(),
             events: tokio::sync::broadcast::channel(1024).0,
             world,
-            clock: Arc::new(Mutex::new((1000, std::time::Instant::now()))), // morning
+            clock: Arc::new(Mutex::new((1000, std::time::Instant::now(), false))), // morning
             game_rules: Arc::default(),
             plugins: Arc::new(crate::plugin::Plugins::new(crate::plugin::all())),
             fluids: Arc::default(),
@@ -163,6 +164,16 @@ impl Server {
                 crate::sculk::block_changed(self, (x, y, z), old, id); // placing and breaking are heard
             }
             let _ = self.events.send(Event::Block { x, y, z, id, old, by, effects });
+            // Fences, panes, walls, dust and stairs around here re-join their neighbours.
+            let get = |x, y, z| self.world.get(x, y, z);
+            for q in crate::connect::around((x, y, z)) {
+                if let Some(nb) = crate::connect::shape(&get, q) {
+                    let was = self.world.get(q.0, q.1, q.2);
+                    if self.world.set(q.0, q.1, q.2, nb) {
+                        let _ = self.events.send(Event::Block { x: q.0, y: q.1, z: q.2, id: nb, old: was, by: 0, effects: false });
+                    }
+                }
+            }
         }
     }
 
@@ -189,13 +200,23 @@ impl Server {
     }
 
     /// 24000 per day
+    /// 24000 per day. Stands still while doDaylightCycle is off, like the players' clocks do.
     pub fn time(&self) -> i32 {
-        let (base, since) = *self.clock.lock();
-        base.wrapping_add((since.elapsed().as_millis() / 50) as i32)
+        use bedrock::protocol::v844::types::Type;
+        let running = self.game_rules.lock().iter().find(|r| r.rule_name == "doDaylightCycle").is_none_or(|r| matches!(r.rule_type, Type::Bool(true)));
+        let mut c = self.clock.lock();
+        let now = c.0.wrapping_add((c.1.elapsed().as_millis() / 50) as i32);
+        if running && !c.2 {
+            return now;
+        }
+        // Stopping or restarting: fold the time so far in, so it carries on from here.
+        *c = (if c.2 { c.0 } else { now }, std::time::Instant::now(), !running);
+        c.0
     }
 
     pub fn set_time(&self, ticks: i32) {
-        *self.clock.lock() = (ticks, std::time::Instant::now());
+        let mut c = self.clock.lock();
+        (c.0, c.1) = (ticks, std::time::Instant::now());
     }
 
     /// Players only, not NPCs.

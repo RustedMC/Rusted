@@ -282,7 +282,16 @@ impl World {
         }
     }
 
+    /// A generated block, with its connections worked out from the generated blocks around it.
     fn generated_at(&self, x: i32, y: i32, z: i32) -> i32 {
+        let b = self.raw_generated_at(x, y, z);
+        if !crate::connect::connects(b) {
+            return b;
+        }
+        crate::connect::shape(&|x, y, z| self.raw_generated_at(x, y, z), (x, y, z)).unwrap_or(b)
+    }
+
+    fn raw_generated_at(&self, x: i32, y: i32, z: i32) -> i32 {
         let dim = crate::dims::of(y);
         if dim != crate::dims::OVERWORLD {
             let (lo, hi) = crate::dims::range(dim);
@@ -458,7 +467,10 @@ impl World {
         let default_biome = if dim == crate::dims::NETHER { 8 } else { 9 };
         encode_range(
             &local,
-            |lx, y, lz| col.as_ref().map_or(AIR, |c| c.get(lx, y, lz)),
+            |lx, y, lz| {
+                let b = col.as_ref().map_or(AIR, |c| c.get(lx, y, lz));
+                if crate::connect::connects(b) { self.generated_at(cx * 16 + lx, y + lo, cz * 16 + lz) } else { b }
+            },
             |lx, y, lz| col.as_ref().map_or(default_biome, |c| c.biome(lx, y, lz) as i32),
             0,
             ((hi - lo + 1) / 16) as usize,
@@ -482,7 +494,11 @@ impl World {
             ),
             Generator::Vanilla { ow, cache, .. } => {
                 let ch = cache.get(ow, cx, cz);
-                encode_column(&edits, |lx, y, lz| ch.get(lx, y, lz), |lx, y, lz| ch.biome(lx, y, lz) as i32)
+                let shaped = |lx: i32, y: i32, lz: i32| {
+                    let b = ch.get(lx, y, lz);
+                    if crate::connect::connects(b) { self.generated_at(cx * 16 + lx, y, cz * 16 + lz) } else { b }
+                };
+                encode_column(&edits, shaped, |lx, y, lz| ch.biome(lx, y, lz) as i32)
             }
             Generator::Normal { seed, cache } => {
                 let g = cache.get(*seed, cx, cz);

@@ -95,10 +95,145 @@ fn legacy_map(want: &HashSet<i32>) -> HashMap<i32, i32> {
             }
         }
     }
+    // Blocks that gained server-side connection states (fences, panes, walls, stairs): hash them
+    // without those, at their unconnected defaults, so old templates find them.
+    for b in list.to_values() {
+        let Some(nbtx::Value::Int(nid)) = nbt_get(&b, "network_id") else { continue };
+        let Some(e) = crate::blocks::entry(*nid) else { continue };
+        let new_state = |k: &str| k.starts_with("minecraft:connection_") || k == "minecraft:corner" || k.starts_with("wall_connection_type_") || k == "wall_post_bit";
+        if !e.states.iter().any(|(k, _)| new_state(k)) {
+            continue;
+        }
+        let defaults = e.states.iter().filter(|(k, _)| new_state(k)).all(|(k, v)| matches!(v, State::Bool(false)) || *v == State::Str("none".into()) || (k == "wall_post_bit" && *v == State::Bool(true)));
+        if !defaults {
+            continue;
+        }
+        let kept: Vec<(String, State)> = e.states.iter().filter(|(k, _)| !new_state(k)).cloned().collect();
+        for h in [state_hash(&e.name, &kept, None)] {
+            if want.contains(&h) {
+                out.entry(h).or_insert((*nid, true));
+            }
+        }
+        // Walls used to have a wall_block_type too; fences an older name. Try one dropped as well.
+        for i in 0..kept.len() {
+            let h = state_hash(&e.name, &kept, Some(i));
+            if want.contains(&h) {
+                out.entry(h).or_insert((*nid, true));
+            }
+        }
+    }
+    // Blocks Bedrock split out of one old block by a type state (fence + wood_type became
+    // oak_fence, ...): hash the old name with that state too, so old templates still find them.
+    for b in list.to_values() {
+        let Some(nbtx::Value::Int(nid)) = nbt_get(&b, "network_id") else { continue };
+        let Some(e) = crate::blocks::entry(*nid) else { continue };
+        for (old_name, key, value) in legacy_names(e.name.trim_start_matches("minecraft:")) {
+            let mut st = e.states.clone();
+            st.push((key.to_string(), State::Str(value)));
+            st.sort_by(|a, b| a.0.cmp(&b.0));
+            let h = state_hash(&format!("minecraft:{old_name}"), &st, None);
+            if want.contains(&h) {
+                out.entry(h).or_insert((*nid, true));
+            }
+        }
+    }
     out.into_iter().map(|(k, (v, _))| (k, v)).collect()
 }
 
+/// The old (name, state, value) a current block was split out of, if it was.
+fn legacy_names(n: &str) -> Vec<(&'static str, &'static str, String)> {
+    const COLORS: [&str; 16] = ["white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray", "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black"];
+    const WOODS: [&str; 6] = ["oak", "spruce", "birch", "jungle", "acacia", "dark_oak"];
+    let mut out = Vec::new();
+    for c in COLORS {
+        let old = if c == "light_gray" { "silver".to_string() } else { c.to_string() };
+        for (suffix, block) in [("_wool", "wool"), ("_carpet", "carpet"), ("_concrete", "concrete"), ("_concrete_powder", "concrete_powder"), ("_stained_glass", "stained_glass"), ("_stained_glass_pane", "stained_glass_pane"), ("_terracotta", "stained_hardened_clay"), ("_shulker_box", "shulker_box")] {
+            if n == format!("{c}{suffix}") {
+                out.push((block, "color", old.clone()));
+            }
+        }
+    }
+    for w in WOODS {
+        if n == format!("{w}_fence") {
+            out.push(("fence", "wood_type", w.to_string()));
+        }
+        if n == format!("{w}_planks") {
+            out.push(("planks", "wood_type", w.to_string()));
+        }
+        if n == format!("{w}_sapling") {
+            out.push(("sapling", "sapling_type", w.to_string()));
+        }
+        let new_wood = matches!(w, "acacia" | "dark_oak");
+        if n == format!("{w}_log") {
+            out.push(if new_wood { ("log2", "new_log_type", w.to_string()) } else { ("log", "old_log_type", w.to_string()) });
+        }
+        if n == format!("{w}_leaves") {
+            out.push(if new_wood { ("leaves2", "new_leaf_type", w.to_string()) } else { ("leaves", "old_leaf_type", w.to_string()) });
+        }
+    }
+    let typed: &[(&str, &str, &str, &str)] = &[
+        ("stone", "stone", "stone_type", "stone"),
+        ("granite", "stone", "stone_type", "granite"),
+        ("polished_granite", "stone", "stone_type", "granite_smooth"),
+        ("diorite", "stone", "stone_type", "diorite"),
+        ("polished_diorite", "stone", "stone_type", "diorite_smooth"),
+        ("andesite", "stone", "stone_type", "andesite"),
+        ("polished_andesite", "stone", "stone_type", "andesite_smooth"),
+        ("sandstone", "sandstone", "sand_stone_type", "default"),
+        ("chiseled_sandstone", "sandstone", "sand_stone_type", "heiroglyphs"),
+        ("cut_sandstone", "sandstone", "sand_stone_type", "cut"),
+        ("smooth_sandstone", "sandstone", "sand_stone_type", "smooth"),
+        ("red_sandstone", "red_sandstone", "sand_stone_type", "default"),
+        ("chiseled_red_sandstone", "red_sandstone", "sand_stone_type", "heiroglyphs"),
+        ("cut_red_sandstone", "red_sandstone", "sand_stone_type", "cut"),
+        ("smooth_red_sandstone", "red_sandstone", "sand_stone_type", "smooth"),
+        ("stone_bricks", "stonebrick", "stone_brick_type", "default"),
+        ("mossy_stone_bricks", "stonebrick", "stone_brick_type", "mossy"),
+        ("cracked_stone_bricks", "stonebrick", "stone_brick_type", "cracked"),
+        ("chiseled_stone_bricks", "stonebrick", "stone_brick_type", "chiseled"),
+        ("poppy", "red_flower", "flower_type", "poppy"),
+        ("blue_orchid", "red_flower", "flower_type", "orchid"),
+        ("allium", "red_flower", "flower_type", "allium"),
+        ("azure_bluet", "red_flower", "flower_type", "houstonia"),
+        ("red_tulip", "red_flower", "flower_type", "tulip_red"),
+        ("orange_tulip", "red_flower", "flower_type", "tulip_orange"),
+        ("white_tulip", "red_flower", "flower_type", "tulip_white"),
+        ("pink_tulip", "red_flower", "flower_type", "tulip_pink"),
+        ("oxeye_daisy", "red_flower", "flower_type", "oxeye"),
+        ("cornflower", "red_flower", "flower_type", "cornflower"),
+        ("lily_of_the_valley", "red_flower", "flower_type", "lily_of_the_valley"),
+        ("short_grass", "tallgrass", "tall_grass_type", "default"),
+        ("fern", "tallgrass", "tall_grass_type", "fern"),
+        ("sunflower", "double_plant", "double_plant_type", "sunflower"),
+        ("lilac", "double_plant", "double_plant_type", "syringa"),
+        ("tall_grass", "double_plant", "double_plant_type", "grass"),
+        ("large_fern", "double_plant", "double_plant_type", "fern"),
+        ("rose_bush", "double_plant", "double_plant_type", "rose"),
+        ("peony", "double_plant", "double_plant_type", "paeonia"),
+        ("quartz_block", "quartz_block", "chisel_type", "default"),
+        ("chiseled_quartz_block", "quartz_block", "chisel_type", "chiseled"),
+        ("quartz_pillar", "quartz_block", "chisel_type", "lines"),
+        ("smooth_quartz", "quartz_block", "chisel_type", "smooth"),
+        ("prismarine", "prismarine", "prismarine_block_type", "default"),
+        ("dark_prismarine", "prismarine", "prismarine_block_type", "dark"),
+        ("prismarine_bricks", "prismarine", "prismarine_block_type", "bricks"),
+        ("purpur_block", "purpur_block", "chisel_type", "default"),
+        ("purpur_pillar", "purpur_block", "chisel_type", "lines"),
+        ("dirt", "dirt", "dirt_type", "normal"),
+        ("coarse_dirt", "dirt", "dirt_type", "coarse"),
+        ("sand", "sand", "sand_type", "normal"),
+        ("red_sand", "sand", "sand_type", "red"),
+    ];
+    for &(new, old, key, value) in typed {
+        if n == new {
+            out.push((old, key, value.to_string()));
+        }
+    }
+    out
+}
+
 static UNKNOWN: AtomicUsize = AtomicUsize::new(0);
+
 
 /// Palette states (summed over templates) that did not resolve to a Rusted block.
 pub(crate) fn unknown_states() -> usize {
@@ -1105,6 +1240,9 @@ mod tests {
         assert!(!get("pillager_outpost/base_plate").unwrap().jigsaws.is_empty());
         assert!(registry().len() > 1000);
         eprintln!("unresolved palette states: {}", unknown_states());
+        let fences = registry().iter().filter(|(_, t)| t.palette.iter().flatten().any(|&v| bl::short(v).ends_with("fence"))).count();
+        eprintln!("templates with fences: {fences}");
+        assert!(fences > 20, "villages and others keep their fences");
         // Rotation keeps the block count and swaps the footprint.
         let mut m = 0;
         t.for_each(Rotation::R90, Mirror::X, |x, _, z, _| {

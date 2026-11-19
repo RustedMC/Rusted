@@ -68,6 +68,11 @@ fn registry() -> &'static Registry {
     })
 }
 
+/// Every block id, in palette order.
+pub fn ids() -> &'static [i32] {
+    &registry().ids
+}
+
 pub fn entry(id: i32) -> Option<&'static Entry> {
     let r = registry();
     r.by_id.get(&id).map(|&i| &r.entries[i])
