@@ -3297,10 +3297,15 @@ pub fn attack_damage(held: Option<&str>) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    /// Thrown items and lit TNT are server-wide lists any server's tick moves, so tests that
+    /// tick mobs take turns.
+    static SERIAL: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
     use super::*;
 
     #[test]
     fn mobs_fall_wander_and_die_with_drops() {
+        let _serial = SERIAL.lock();
         let server = Server::new(); // flat world: grass top at y -61, stand at -60
         let id = server.mobs.spawn(&server, Kind::Cow, (0.5, -55.0, 0.5));
         for _ in 0..40 {
@@ -3361,15 +3366,19 @@ mod tests {
         // An ender pearl thrown straight down lands and teleports its thrower.
         let mut rx = server.events.subscribe();
         throw(&server, Throw::Pearl, 4242, (50.5, -55.0, 50.5), (90.0, 0.0));
-        for _ in 0..20 {
-            server.mobs.tick(&server);
-        }
+        // Read events every tick, so a busy test run can't push the teleport out of the channel.
         let mut landed = None;
-        loop {
-            match rx.try_recv() {
-                Ok(Event::Teleport { id: 4242, feet }) => landed = Some(feet),
-                Ok(_) | Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {}
-                Err(_) => break,
+        for _ in 0..30 {
+            server.mobs.tick(&server);
+            loop {
+                match rx.try_recv() {
+                    Ok(Event::Teleport { id: 4242, feet }) => landed = Some(feet),
+                    Ok(_) | Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {}
+                    Err(_) => break,
+                }
+            }
+            if landed.is_some() {
+                break;
             }
         }
         assert_eq!(landed.map(|f| f.1), Some(-60.0), "pearl teleports onto the grass");
@@ -3428,6 +3437,7 @@ mod tests {
 
     #[test]
     fn sheep_eat_grass_and_babies_follow_parents() {
+        let _serial = SERIAL.lock();
         let server = Server::new();
         // A sheared sheep on grass eats it within a minute, long before the 3-minute timer.
         let sheep = server.mobs.spawn(&server, Kind::Sheep, (500.5, -60.0, 0.5));
@@ -3464,6 +3474,7 @@ mod tests {
 
     #[test]
     fn riding_saddles_and_horse_taming() {
+        let _serial = SERIAL.lock();
         let server = Server::new();
         server.join(crate::players::tests::sample(7));
         let at = |x: f32| (x, -60.0, 0.5);
@@ -3584,6 +3595,7 @@ mod tests {
 
     #[test]
     fn mineshaft_chest_minecarts_spawn_once_with_loot() {
+        let _serial = SERIAL.lock();
         crate::blocks::init();
         let server = Server::new();
         let at = (900, -60, 900);
