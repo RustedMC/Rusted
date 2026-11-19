@@ -366,7 +366,8 @@ pub fn skin_from_client(c: &ClientData) -> SerializedSkin<V2225> {
             .piece_tint_colours
             .iter()
             .map(|t| PieceTintColorsEntry {
-                piece_type: t.piece_type.clone(),
+                // Login data says "persona_eyes"; the game's piece-type names have no prefix.
+                piece_type: t.piece_type.trim_start_matches("persona_").to_string(),
                 colors: t.colours.clone().map(|hex| parse_argb(&hex)),
             })
             .collect(),

@@ -397,7 +397,11 @@ fn persona_fix(pk: PlayerListPacket<Protocol>) -> Protocol {
     if pieces.is_empty() {
         return Protocol::PlayerListPacket(Box::new(pk));
     }
-    println!("skin pieces: {:?}", pieces.iter().map(|p| p.1.as_str()).collect::<Vec<_>>());
+    let tints: Vec<&str> = pk.entries.iter().flat_map(|e| match e {
+        PlayerListEntry::Add(a) => a.serialized_skin.piece_tint_colors.iter().map(|t| t.piece_type.as_str()).collect(),
+        _ => vec![],
+    }).collect();
+    println!("skin pieces: {:?} tints: {tints:?}", pieces.iter().map(|p| p.1.as_str()).collect::<Vec<_>>());
     let mut buf = Vec::new();
     if ProtoCodec::serialize(&pk, &mut buf).is_err() {
         return Protocol::PlayerListPacket(Box::new(pk));
