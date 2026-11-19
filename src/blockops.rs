@@ -231,6 +231,15 @@ pub(crate) fn break_block(server: &players::Server, id: i64, p: (i32, i32, i32),
         let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(stop) });
     }
     let partner = containers::chest_pair(&server.world, p);
+    // Tall grass, large ferns, sunflowers and the like: the other half goes too (no extra drop).
+    if blocks::has_state(old, "upper_block_bit") && !blocks::entry(old).is_some_and(|e| e.name.ends_with("_door")) {
+        let top = matches!(blocks::state(old, "upper_block_bit"), Some(blocks::State::Bool(true)));
+        let other = if top { (p.0, p.1 - 1, p.2) } else { (p.0, p.1 + 1, p.2) };
+        let ob = server.world.get(other.0, other.1, other.2);
+        if blocks::entry(ob).map(|e| &e.name) == blocks::entry(old).map(|e| &e.name) {
+            server.set_block_quiet(id, other.0, other.1, other.2, world::AIR);
+        }
+    }
     server.set_block(id, p.0, p.1, p.2, world::AIR);
     if let Some(o) = partner {
         announce_chest(server, o);

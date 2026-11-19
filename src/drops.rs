@@ -125,6 +125,43 @@ fn entry_int(block: i32, key: &str) -> i32 {
     }
 }
 
+/// Roughly how many game ticks mining `block` takes with `tool` (vanilla: hardness x 1.5 s
+/// with a usable tool, x 5 without, divided by the tool's speed). Only used for the crack
+/// animation other players see; the miner's own client times the break itself.
+pub fn break_ticks(block: i32, tool: Option<&str>) -> i32 {
+    let n = crate::blocks::entry(block).map_or("", |e| e.name.as_str()).trim_start_matches("minecraft:");
+    let hardness: f32 = match n {
+        "obsidian" | "crying_obsidian" | "respawn_anchor" => 50.0,
+        "ancient_debris" => 30.0,
+        "bedrock" | "barrier" | "end_portal_frame" => return i32::MAX / 2,
+        "ender_chest" => 22.5,
+        n if n.ends_with("_ore") => 3.0,
+        n if n.contains("deepslate") => 3.0,
+        n if n.contains("planks") || n.ends_with("_log") || n.ends_with("_wood") || n.contains("chest") || n.contains("fence") || n.ends_with("_door") => 2.0,
+        "stone" | "cobblestone" | "stone_bricks" | "bricks" | "andesite" | "diorite" | "granite" | "blackstone" => 1.5,
+        n if n.contains("stone") || n.contains("brick") => 1.5,
+        n if n.contains("dirt") || n == "grass_block" || n.contains("sand") || n == "gravel" || n == "clay" || n == "farmland" || n.contains("mud") => 0.6,
+        n if n.contains("leaves") => 0.2,
+        n if n.contains("glass") => 0.3,
+        n if n.contains("wool") || n.contains("carpet") => 0.8,
+        n if crate::overworld::feature::blocks::is_plant(block) || n.contains("torch") || n.contains("sapling") || n == "redstone_wire" => 0.0,
+        _ => 1.0,
+    };
+    let t = tool.unwrap_or("").trim_start_matches("minecraft:");
+    let speed = match t.split('_').next() {
+        Some("wooden") => 2.0,
+        Some("stone") => 4.0,
+        Some("iron") => 6.0,
+        Some("diamond") => 8.0,
+        Some("netherite") => 9.0,
+        Some("golden") => 12.0,
+        _ => 1.0,
+    };
+    let is_tool = t.ends_with("_pickaxe") || t.ends_with("_axe") || t.ends_with("_shovel") || t.ends_with("_hoe");
+    let secs = hardness * if is_tool { 1.5 / speed } else { 1.5 };
+    (secs * 20.0).ceil() as i32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

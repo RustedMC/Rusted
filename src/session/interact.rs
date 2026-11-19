@@ -511,16 +511,55 @@ impl Session {
         // Creative breaks instantly; survival reports the finished break as a prediction.
         if let PlayerActionType::CreativeDestroyBlock | PlayerActionType::PredictDestroyBlock = a.action {
             let p = &a.block_position;
-            if spawn::can_build(&self.mode)
-                && self.server.get(self.id).is_some_and(|me| self.server.plugins.block_break(&self.server, &me, (p.x, p.y, p.z), self.server.world.get(p.x, p.y, p.z)))
-            {
-                let held = self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id));
-                let tool = self.inv.held(self.selected_slot as usize).map(|s| s.item.user_data_buffer.clone()).unwrap_or_default();
-                break_block(&self.server, self.id, (p.x, p.y, p.z), survival_like(&self.mode).then_some(held), &tool);
-                let uses = mining_wear(held);
-                wear(&mut self.conn, &self.server, self.id, &mut self.inv, self.selected_slot as usize, uses, &self.mode).await;
-            } else {
-                let _ = self.conn.send(&[update_block(p.x, p.y, p.z, self.server.world.get(p.x, p.y, p.z))]).await;
+            self.destroy_block((p.x, p.y, p.z)).await;
+        }
+    }
+
+    /// Breaks the block the player finished mining (or hit in creative), with drops, wear and
+    /// plugin checks; puts it back on their screen if it may not break.
+    pub(super) async fn destroy_block(&mut self, p: (i32, i32, i32)) {
+        if spawn::can_build(&self.mode)
+            && self.server.world.get(p.0, p.1, p.2) != world::AIR
+            && self.server.get(self.id).is_some_and(|me| self.server.plugins.block_break(&self.server, &me, p, self.server.world.get(p.0, p.1, p.2)))
+        {
+            let held = self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id));
+            let tool = self.inv.held(self.selected_slot as usize).map(|s| s.item.user_data_buffer.clone()).unwrap_or_default();
+            break_block(&self.server, self.id, p, survival_like(&self.mode).then_some(held), &tool);
+            let uses = mining_wear(held);
+            wear(&mut self.conn, &self.server, self.id, &mut self.inv, self.selected_slot as usize, uses, &self.mode).await;
+        } else {
+            let _ = self.conn.send(&[update_block(p.0, p.1, p.2, self.server.world.get(p.0, p.1, p.2))]).await;
+        }
+    }
+
+    /// Mining progress the client reports inside its movement packets (server-side block
+    /// breaking): others see the cracks and punches, and the finished break goes through.
+    pub(super) async fn on_block_actions(&mut self, actions: &[bedrock::protocol::v2168::types::PlayerBlockActionData<Protocol>]) {
+        for a in actions {
+            let pos = &a.position;
+            let p = (pos.x, pos.y, pos.z);
+            let center = (p.0 as f32 + 0.5, p.1 as f32 + 0.5, p.2 as f32 + 0.5);
+            let block = self.server.world.get(p.0, p.1, p.2);
+            let event = |id: i32, data: i32| Protocol::LevelEventPacket(Box::new(LevelEventPacket { event_id: id, position: center, data }));
+            match a.action_type {
+                PlayerActionType::StartDestroyBlock => {
+                    // LevelEvent 3600 starts the crack animation; data is 65535 / break ticks.
+                    let ticks = crate::drops::break_ticks(block, self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id))).max(1);
+                    let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(event(3600, 65535 / ticks)) });
+                }
+                PlayerActionType::CrackBlock | PlayerActionType::ContinueDestroyBlock => {
+                    // 2014: the little punch particles, on the face being mined.
+                    let face = a.facing;
+                    let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(event(2014, block | (face << 24))) });
+                }
+                PlayerActionType::AbortDestroyBlock => {
+                    let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(event(3601, 0)) });
+                }
+                PlayerActionType::PredictDestroyBlock | PlayerActionType::CreativeDestroyBlock => {
+                    let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(event(3601, 0)) });
+                    self.destroy_block(p).await;
+                }
+                _ => {}
             }
         }
     }

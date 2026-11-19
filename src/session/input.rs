@@ -23,6 +23,9 @@ impl Session {
     }
 
     pub(super) async fn on_input(&mut self, input: &AuthInput) -> Flow {
+        if let Some(actions) = &input.player_block_actions {
+            self.on_block_actions(actions).await;
+        }
         use bedrock::protocol::v2168::enums::PlayerAuthInputData as Input;
         for flag in &input.input_data {
             match flag {

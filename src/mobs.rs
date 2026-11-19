@@ -3365,9 +3365,11 @@ mod tests {
             server.mobs.tick(&server);
         }
         let mut landed = None;
-        while let Ok(e) = rx.try_recv() {
-            if let Event::Teleport { id: 4242, feet } = e {
-                landed = Some(feet);
+        loop {
+            match rx.try_recv() {
+                Ok(Event::Teleport { id: 4242, feet }) => landed = Some(feet),
+                Ok(_) | Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {}
+                Err(_) => break,
             }
         }
         assert_eq!(landed.map(|f| f.1), Some(-60.0), "pearl teleports onto the grass");
