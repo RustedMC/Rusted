@@ -425,59 +425,87 @@ pub fn command(server: &Server, me: &str, args: &[&str]) -> String {
 // ---- boss bars
 
 /// Bedrock colours: 0 pink, 1 blue, 2 red, 3 green, 4 yellow, 5 purple, 6 white.
+/// Each player's boss bar entity: an invisible, zero-size creeper the bar belongs to, the way
+/// PNX's DummyBossBar does it (the game only shows a bar for an entity it knows about).
+static BOSS_ENTITIES: Mutex<Option<HashMap<i64, i64>>> = Mutex::new(None);
+
 pub fn boss_bar(server: &Server, to: i64, text: &str, percent: f32, color: u8) {
-    send_boss(server, to, &boss_event(to, 0, Some((text, percent, color))));
+    use bedrock::protocol::v2193::packets::{BossEventPacket, BossEventUpdateType};
+    use bedrock::protocol::v662::types::{ActorRuntimeID, ActorUniqueID, DataItem, PropertySyncData};
+    use bedrock::protocol::v924::enums::ActorDataIDs;
+    use bedrock::protocol::v2168::enums::DataItemType;
+    let Some(p) = server.get(to) else { return };
+    // Just under the player, so it stays in range as they move.
+    let at = (p.pos.0, p.pos.1 - 10.0, p.pos.2);
+    let (boss, new) = {
+        let mut m = BOSS_ENTITIES.lock();
+        let m = m.get_or_insert_with(HashMap::new);
+        match m.get(&to) {
+            Some(&id) => (id, false),
+            None => {
+                let id = crate::players::next_id();
+                m.insert(to, id);
+                (id, true)
+            }
+        }
+    };
+    let send = |packet: Protocol| {
+        let _ = server.events.send(Event::Packet { to, packet: Box::new(packet) });
+    };
+    if new {
+        send(Protocol::AddActorPacket(Box::new(bedrock::protocol::v2225::packets::AddActorPacket {
+            target_actor_id: ActorUniqueID(boss),
+            target_runtime_id: ActorRuntimeID(boss as u64),
+            actor_type: "minecraft:creeper".into(),
+            position: at,
+            velocity: (0.0, 0.0, 0.0),
+            rotation: (0.0, 0.0),
+            y_head_rotation: 0.0,
+            y_body_rotation: 0.0,
+            attributes: vec![],
+            actor_data: vec![
+                DataItem { data_item_id: ActorDataIDs::Reserved038, data_item_type: DataItemType::Float(0.0) },
+                DataItem { data_item_id: ActorDataIDs::Name, data_item_type: DataItemType::String(text.into()) },
+            ],
+            synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
+            actor_links: vec![],
+            passenger_of_block_data: None,
+        })));
+    } else {
+        send(Protocol::MoveActorAbsolutePacket(Box::new(bedrock::protocol::v662::packets::MoveActorAbsolutePacket {
+            move_data: bedrock::protocol::v662::types::MoveActorAbsoluteData { actor_runtime_id: ActorRuntimeID(boss as u64), header: 0, position: at, rotation_x: 0, rotation_y: 0, rotation_y_head: 0 },
+        })));
+    }
+    for event_type in [BossEventUpdateType::Add, BossEventUpdateType::UpdatePercent, BossEventUpdateType::UpdateName] {
+        send(Protocol::BossEventPacket(Box::new(BossEventPacket {
+            target_actor_id: ActorUniqueID(boss),
+            event_type,
+            name: text.into(),
+            filtered_name: text.into(),
+            health_percent: percent.clamp(0.0, 1.0),
+            color,
+            overlay: 0,
+        })));
+    }
 }
 
 pub fn remove_boss_bar(server: &Server, to: i64) {
-    send_boss(server, to, &boss_event(to, 2, None));
-}
-
-/// The boss bar packet, written by hand: bedrock-rs leaves out the "darken sky" short and
-/// writes colour and overlay as single bytes, so the game drops it. Layout from Cloudburst's
-/// BossEventSerializer: actor id, event, then for Add the title, filtered title, health,
-/// darken sky (u16 LE), colour and overlay (varints).
-fn boss_event(actor: i64, event: u32, add: Option<(&str, f32, u8)>) -> Vec<u8> {
-    fn var(out: &mut Vec<u8>, mut n: u64) {
-        loop {
-            let b = (n & 0x7f) as u8;
-            n >>= 7;
-            if n == 0 {
-                return out.push(b);
-            }
-            out.push(b | 0x80);
-        }
-    }
-    let mut out = Vec::new();
-    var(&mut out, ((actor << 1) ^ (actor >> 63)) as u64); // zigzag, like every actor unique id
-    var(&mut out, event as u64);
-    if let Some((text, percent, color)) = add {
-        for s in [text, text] {
-            var(&mut out, s.len() as u64);
-            out.extend_from_slice(s.as_bytes());
-        }
-        out.extend_from_slice(&percent.clamp(0.0, 1.0).to_le_bytes());
-        out.extend_from_slice(&0u16.to_le_bytes());
-        var(&mut out, color as u64);
-        var(&mut out, 0);
-    }
-    out
-}
-
-fn send_boss(server: &Server, to: i64, buf: &[u8]) {
-    use bedrock::protocol::UnknownPacket;
-    let p = Protocol::Unknown(Box::new(UnknownPacket { id: 74, buf: buf.into() }));
-    let _ = server.events.send(Event::Packet { to, packet: Box::new(p) });
-}
-
-#[cfg(test)]
-mod boss_tests {
-    #[test]
-    fn add_layout() {
-        let b = super::boss_event(1, 0, Some(("hi", 1.0, 4)));
-        // id 1 zigzags to 2, event 0, "hi" twice, 1.0f, darken 0, colour 4, overlay 0
-        assert_eq!(b, [2, 0, 2, b'h', b'i', 2, b'h', b'i', 0, 0, 0x80, 0x3f, 0, 0, 4, 0]);
-    }
+    use bedrock::protocol::v2193::packets::{BossEventPacket, BossEventUpdateType};
+    use bedrock::protocol::v662::types::ActorUniqueID;
+    let Some(boss) = BOSS_ENTITIES.lock().as_mut().and_then(|m| m.remove(&to)) else { return };
+    let send = |packet: Protocol| {
+        let _ = server.events.send(Event::Packet { to, packet: Box::new(packet) });
+    };
+    send(Protocol::BossEventPacket(Box::new(BossEventPacket {
+        target_actor_id: ActorUniqueID(boss),
+        event_type: BossEventUpdateType::Remove,
+        name: String::new(),
+        filtered_name: String::new(),
+        health_percent: 0.0,
+        color: 0,
+        overlay: 0,
+    })));
+    send(Protocol::RemoveActorPacket(Box::new(bedrock::protocol::v662::packets::RemoveActorPacket { target_actor_id: ActorUniqueID(boss) })));
 }
 
 // ---- chest menus
