@@ -17,6 +17,8 @@
 A Minecraft: Bedrock Edition server written in Rust, ported from
 [PowerNukkitX](https://github.com/PowerNukkitX/PowerNukkitX).
 
+<p align="center"><img src="assets/promo/features.png" alt="What's in Rusted" width="100%"></p>
+
 It's an alpha. You can join, survive, build redstone, go to the Nether and the End and trade
 with villagers, but plenty is still missing or simpler than in PNX. [PORTING.md](PORTING.md)
 has the honest breakdown, part by part.
