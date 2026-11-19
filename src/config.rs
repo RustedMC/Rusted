@@ -34,6 +34,8 @@ pub struct Config {
     pub enable_rcon: bool,
     pub rcon_port: u16,
     pub rcon_password: String,
+    /// Players must accept the packs in resource_packs/ to join.
+    pub force_resource_packs: bool,
 }
 
 const DEFAULTS: &str = "\
@@ -70,6 +72,9 @@ leave-message=§e{player} left the game
 enable-rcon=false
 rcon.port=25575
 rcon.password=
+# Resource packs in the resource_packs/ folder are sent to players. true = they must accept
+# them to join.
+force-resource-packs=false
 ";
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
@@ -148,6 +153,7 @@ fn from_map(defaults: HashMap<String, String>, mut m: HashMap<String, String>) -
         enable_rcon: s("enable-rcon") == "true",
         rcon_port: s("rcon.port").parse().unwrap_or(25575),
         rcon_password: s("rcon.password"),
+        force_resource_packs: s("force-resource-packs") == "true",
     }
 }
 

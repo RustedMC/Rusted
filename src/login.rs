@@ -125,33 +125,91 @@ pub(crate) async fn handle_login(unknown_conn: Connection<Unknown>, server: play
     let saved_mode = std::fs::read_to_string(player_path(&display_name).with_extension("mode")).ok();
     let start_mode = saved_mode.as_deref().and_then(|m| game_type_from(m.trim())).or_else(|| game_type_from(&config::get().gamemode)).unwrap_or(GameType::Survival);
 
-    conn.send(&[
-        Protocol::ResourcePacksInfoPacket(Box::new(ResourcePacksInfoPacket {
-            resource_pack_required: false,
-            has_addon_packs: false,
+    // Resource packs (packs::all): offer them, send whatever the client asks for in chunks,
+    // then the stack, until it says it's done (vanilla's handshake order).
+    let packs = crate::packs::all();
+    let required = config::get().force_resource_packs && !packs.is_empty();
+    conn.send(&[Protocol::ResourcePacksInfoPacket(Box::new(ResourcePacksInfoPacket {
+        resource_pack_required: required,
+        has_addon_packs: false,
+        has_scripts: false,
+        force_disable_vibrant_visuals: false,
+        world_template_uuid: Uuid::nil(),
+        world_template_version: String::new(),
+        resource_packs: packs.iter().map(|p| bedrock::protocol::v2168::packets::ResourcePackEntry {
+            id: p.uuid,
+            version: p.version.clone(),
+            size: p.bytes.len() as u64,
+            content_key: String::new(),
+            sub_pack_name: String::new(),
+            content_identity: String::new(),
             has_scripts: false,
-            force_disable_vibrant_visuals: false,
-            world_template_uuid: Uuid::nil(),
-            resource_packs: vec![],
-            world_template_version: String::new(),
-        })),
-        Protocol::ResourcePackStackPacket(Box::new(ResourcePackStackPacket {
-            texture_pack_required: false,
-            addon_list: vec![],
-            base_game_version: BaseGameVersion(String::from("*")),
-            experiments: data_driven_experiments(),
-            include_editor_packs: false,
-        })),
-    ])
+            is_addon: false,
+            is_ray_tracing_capable: false,
+            cdn_url: String::new(),
+        }).collect(),
+    }))])
     .await
     .unwrap();
-    println!("ResourcePacksInfo");
-    println!("ResourcePackStack");
-
-    println!("{:#?}", conn.recv().await.unwrap());
-    println!("ClientCacheStatus");
-    println!("{:#?}", conn.recv().await.unwrap());
-    println!("ResourcePackClientResponse");
+    let stack = Protocol::ResourcePackStackPacket(Box::new(ResourcePackStackPacket {
+        texture_pack_required: required,
+        addon_list: packs.iter().map(|p| bedrock::protocol::v898::packets::PackEntry { id: p.uuid.to_string(), version: p.version.clone(), sub_pack_name: String::new() }).collect(),
+        base_game_version: BaseGameVersion(String::from("*")),
+        experiments: data_driven_experiments(),
+        include_editor_packs: false,
+    }));
+    'packs: loop {
+        let Ok(batch) = conn.recv().await else { return };
+        for packet in batch {
+            use bedrock::protocol::v2168::packets::ResourcePackClientResponsePacket as R;
+            match packet {
+                Protocol::ResourcePackClientResponsePacket(r) => match *r {
+                    R::Downloading(ids) => {
+                        let mut out = Vec::new();
+                        for p in ids.iter().filter_map(|id| crate::packs::find(id)) {
+                            out.push(Protocol::ResourcePackDataInfoPacket(Box::new(bedrock::protocol::v662::packets::ResourcePackDataInfoPacket {
+                                resource_name: p.id(),
+                                chunk_size: crate::packs::CHUNK as u32,
+                                chunk_amount: p.bytes.len().div_ceil(crate::packs::CHUNK) as u32,
+                                file_size: p.bytes.len() as u64,
+                                file_hash: p.sha256.clone(),
+                                is_premium: false,
+                                pack_type: bedrock::protocol::v662::enums::PackType::Resources,
+                            })));
+                        }
+                        let _ = conn.send(&out).await;
+                    }
+                    R::DownloadingFinished => {
+                        let _ = conn.send(std::slice::from_ref(&stack)).await;
+                    }
+                    R::ResourcePackStackFinished => break 'packs,
+                    R::Cancel => {
+                        if required {
+                            println!("{display_name} declined the resource packs");
+                            return;
+                        }
+                        let _ = conn.send(std::slice::from_ref(&stack)).await;
+                    }
+                },
+                Protocol::ResourcePackChunkRequestPacket(r) => {
+                    if let Some(p) = crate::packs::find(&r.resource_name) {
+                        let start = r.chunk as usize * crate::packs::CHUNK;
+                        let end = (start + crate::packs::CHUNK).min(p.bytes.len());
+                        if start < end {
+                            let _ = conn.send(&[Protocol::ResourcePackChunkDataPacket(Box::new(bedrock::protocol::v662::packets::ResourcePackChunkDataPacket {
+                                resource_name: r.resource_name.clone(),
+                                chunk_id: r.chunk,
+                                byte_offset: start as u64,
+                                chunk_data: p.bytes[start..end].to_vec(),
+                            }))]).await;
+                        }
+                    }
+                }
+                _ => {} // client cache status and the like
+            }
+        }
+    }
+    println!("{display_name}: resource packs done ({} offered)", packs.len());
 
     // 1.26 world clock; PNX sends it before StartGame. Clock id copied from PNX's join.
     conn.send(&[clock_packet(server.time())]).await.unwrap();

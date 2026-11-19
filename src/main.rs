@@ -10,6 +10,7 @@ mod ai;
 mod beacon;
 mod demo;
 mod lobby;
+mod packs;
 mod blockops;
 mod session;
 mod cmdargs;
