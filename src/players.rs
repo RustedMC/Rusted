@@ -349,10 +349,13 @@ pub fn skin_from_client(c: &ClientData) -> SerializedSkin<V2225> {
         full_id: format!("{}{}", c.skin_id, c.cape_id),
         arm_size: if c.arm_size == "slim" { ArmSizeType::Slim } else { ArmSizeType::Wide },
         skin_color: 0,
-        // character creator skins have to go back exactly as sent or clients reject them
+        // Character-creator (persona) skins go out as classic skins: bedrock-rs writes a piece's
+        // type as a number for 1.26, but the game wants its name, and kicks everyone who gets it.
+        // shortcut: no persona pieces, upgrade once bedrock-rs encodes PersonaPieceType as a string.
         persona_pieces: c
             .persona_pieces
             .iter()
+            .filter(|_| PERSONA_PIECES_WORK)
             .map(|p| PersonaPiecesEntry {
                 piece_id: p.piece_id.clone(),
                 piece_type: piece_type(&p.piece_type),
@@ -364,13 +367,14 @@ pub fn skin_from_client(c: &ClientData) -> SerializedSkin<V2225> {
         piece_tint_colors: c
             .piece_tint_colours
             .iter()
+            .filter(|_| PERSONA_PIECES_WORK)
             .map(|t| PieceTintColorsEntry {
                 piece_type: t.piece_type.clone(),
                 colors: t.colours.clone().map(|hex| parse_argb(&hex)),
             })
             .collect(),
         is_premium_skin: c.premium_skin,
-        is_persona_skin: c.persona_skin,
+        is_persona_skin: c.persona_skin && PERSONA_PIECES_WORK,
         is_persona_cape_on_classic_skin: c.cape_on_classic_skin,
         is_primary_user: true,
         overrides_player_appearance: c.override_skin,
@@ -379,6 +383,9 @@ pub fn skin_from_client(c: &ClientData) -> SerializedSkin<V2225> {
         profile_hash: c.profile_hash.clone(),
     }
 }
+
+/// Whether persona pieces can be sent as-is (see the note where skins are built).
+const PERSONA_PIECES_WORK: bool = false;
 
 /// Skin JSON has to parse on the client even if the player sent nothing.
 fn json_or_empty_object(s: String) -> String {
