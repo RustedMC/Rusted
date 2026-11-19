@@ -394,14 +394,14 @@ fn persona_fix(pk: PlayerListPacket<Protocol>) -> Protocol {
         PlayerListEntry::Add(a) => a.serialized_skin.persona_pieces.iter().map(|p| (p.piece_id.clone(), snake(&format!("{:?}", p.piece_type)), p.piece_type.clone() as i32)).collect(),
         _ => vec![],
     }).collect();
-    if pieces.is_empty() {
-        return Protocol::PlayerListPacket(Box::new(pk));
-    }
-    let tints: Vec<&str> = pk.entries.iter().flat_map(|e| match e {
-        PlayerListEntry::Add(a) => a.serialized_skin.piece_tint_colors.iter().map(|t| t.piece_type.as_str()).collect(),
+    // Tint colours too: bedrock-rs writes 4 fixed i32s, the game reads a list of "#aarrggbb" texts.
+    let tints: Vec<(String, [i32; 4])> = pk.entries.iter().flat_map(|e| match e {
+        PlayerListEntry::Add(a) => a.serialized_skin.piece_tint_colors.iter().map(|t| (t.piece_type.clone(), t.colors)).collect(),
         _ => vec![],
     }).collect();
-    println!("skin pieces: {:?} tints: {tints:?}", pieces.iter().map(|p| p.1.as_str()).collect::<Vec<_>>());
+    if pieces.is_empty() && tints.is_empty() {
+        return Protocol::PlayerListPacket(Box::new(pk));
+    }
     let mut buf = Vec::new();
     if ProtoCodec::serialize(&pk, &mut buf).is_err() {
         return Protocol::PlayerListPacket(Box::new(pk));
@@ -418,6 +418,22 @@ fn persona_fix(pk: PlayerListPacket<Protocol>) -> Protocol {
         let mut text = varint(name.len());
         text.extend_from_slice(name.as_bytes());
         buf.splice(at..at + 4, text.iter().copied());
+    }
+    for (name, colors) in tints {
+        let mut needle = varint(name.len());
+        needle.extend_from_slice(name.as_bytes());
+        let raw: Vec<u8> = colors.iter().flat_map(|c| c.to_le_bytes()).collect();
+        let n = needle.len();
+        let Some(at) = (0..buf.len().saturating_sub(n + 16)).find(|&i| buf[i..i + n] == needle[..] && buf[i + n..i + n + 16] == raw[..]).map(|i| i + n) else {
+            continue;
+        };
+        let mut list = varint(4);
+        for c in colors {
+            let hex = format!("#{:08x}", c as u32);
+            list.extend(varint(hex.len()));
+            list.extend_from_slice(hex.as_bytes());
+        }
+        buf.splice(at..at + 16, list.iter().copied());
     }
     Protocol::Unknown(Box::new(UnknownPacket { id: <PlayerListPacket<Protocol> as Packet>::ID, buf: buf.into() }))
 }
