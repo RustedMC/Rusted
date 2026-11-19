@@ -69,8 +69,9 @@ fn attr(name: &str, min: f32, max: f32, value: f32) -> AttributeData<Protocol> {
 
 /// Only the health attribute, for updates after damage/regen.
 pub fn health_packet(id: i64, health: f32) -> Protocol {
-    let mut a = attr("minecraft:health", 0.0, 20.0, health);
-    a.default_value = 20.0;
+    let max = crate::health::max_of(id);
+    let mut a = attr("minecraft:health", 0.0, max, health);
+    a.default_value = max;
     Protocol::UpdateAttributesPacket(Box::new(UpdateAttributesPacket {
         target_runtime_id: ActorRuntimeID(id as u64),
         attribute_list: vec![a],

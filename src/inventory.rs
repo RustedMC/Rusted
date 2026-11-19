@@ -376,6 +376,31 @@ impl Inventory {
         self.slots.iter_mut().chain([&mut self.cursor]).chain(self.craft.iter_mut()).filter_map(Option::take).collect()
     }
 
+    /// Removes exactly `n` of item `name` from the main slots, or nothing if there are fewer.
+    /// Returns one of the stacks (as a template) and `n`.
+    pub fn take_count(&mut self, name: &str, n: u32) -> Option<(Stack, u32)> {
+        let is = |s: &Option<Stack>| s.as_ref().is_some_and(|st| crate::items::name_of(st.item.id) == Some(name));
+        let have: u32 = self.slots[..MAIN].iter().filter(|s| is(s)).map(|s| s.as_ref().map_or(0, |st| st.count.max(0) as u32)).sum();
+        if n == 0 || have < n {
+            return None;
+        }
+        let template = self.slots[..MAIN].iter().find(|s| is(s))?.clone()?;
+        let mut left = n;
+        for s in self.slots[..MAIN].iter_mut().filter(|s| is(s)) {
+            let st = s.as_mut()?;
+            let take = left.min(st.count as u32);
+            st.count -= take as i8;
+            left -= take;
+            if st.count <= 0 {
+                *s = None;
+            }
+            if left == 0 {
+                break;
+            }
+        }
+        Some((template, n))
+    }
+
     /// For /clear <player> <item>, returns how many were removed.
     pub fn clear_item(&mut self, name: &str) -> u32 {
         let full = if name.contains(':') { name.to_string() } else { format!("minecraft:{name}") };
@@ -836,6 +861,20 @@ mod tests {
 
     fn success(r: &ItemStackResponseInfo<Protocol>) -> bool {
         matches!(r.result, ItemStackNetResult::Success)
+    }
+
+    #[test]
+    fn take_count_is_all_or_nothing() {
+        crate::blocks::init();
+        let dirt = crate::items::item_by_name("minecraft:dirt").unwrap();
+        let mut inv = Inventory::default();
+        inv.add(dirt.clone(), 64);
+        inv.add(dirt, 10);
+        assert!(inv.take_count("minecraft:dirt", 100).is_none(), "only 74");
+        let (_, n) = inv.take_count("minecraft:dirt", 70).unwrap();
+        assert_eq!(n, 70);
+        assert_eq!(inv.take_count("minecraft:dirt", 4).map(|t| t.1), Some(4));
+        assert!(inv.take_count("minecraft:dirt", 1).is_none(), "all gone");
     }
 
     #[test]

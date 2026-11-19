@@ -1,12 +1,12 @@
 //! Lobby core: everything a hub server needs, all set in plugins/lobby/config.txt.
 //!
 //! - A server selector (chest menu) with each server's live player count
-//! - NPCs that look like you, wear your gear and send players to a server when clicked:
-//!   `/npc <name> <ip> <port> [scale] [player|fixed]`
+//! - NPCs live in the npcs plugin (`/npc`); they can open this selector or send players on
 //! - A per-player sidebar and boss bar with placeholders
 //! - Lobby items (selector, play, settings) given on join
 //! - A settings form: show players, sidebar, boss bar, who can send friend requests
-//! - World protection, no damage, and a void catch
+//! - World protection, no damage, no hunger, a void catch and launch pads (slime by default)
+//! - Lobby items locked in place (no dropping or moving them)
 //!
 //! It's off until `enabled = true` is set, so normal servers aren't affected.
 
@@ -45,6 +45,8 @@ struct Target {
     icon: String,
     slot: usize,
     lore: String,
+    /// Icon for the styled form: a texture path ("textures/items/diamond") or an https URL.
+    image: String,
 }
 
 /// Servers from the config: server.1.name, server.1.ip, ... up to server.27.
@@ -59,6 +61,7 @@ fn servers() -> Vec<Target> {
                 icon: c.get(&format!("server.{n}.icon")).unwrap_or("minecraft:grass_block").to_string(),
                 slot: c.get(&format!("server.{n}.slot")).and_then(|s| s.parse().ok()).unwrap_or(9 + n).min(26),
                 lore: get(&mut c, &format!("server.{n}.lore"), "§7Click to join"),
+                image: get(&mut c, &format!("server.{n}.image"), "textures/blocks/grass_side_carried"),
                 name,
             })
         })
@@ -106,15 +109,47 @@ fn start_pinging() {
     });
 }
 
+/// "§a3 §7playing" for a server's last ping, for NPC name tags.
+pub fn players_text(ip: &str, port: u16) -> String {
+    count_text(&Target { name: String::new(), ip: ip.into(), port, icon: String::new(), slot: 0, lore: String::new(), image: String::new() })
+}
+
+pub fn open_servers(server: &Server, to: i64) {
+    open_selector(server, to);
+}
+
 fn count_text(t: &Target) -> String {
     match count(&t.ip, t.port) {
-        Some((on, max)) => format!("§a{on}§7/§a{max} §7playing"),
+        Some((on, _)) => format!("§7{on} playing"),
         None => "§cOffline".into(),
     }
 }
 
 fn open_selector(server: &Server, to: i64) {
     let mut c = config();
+    // "form" is the styled grid from the lobby resource pack (its title starts with "rusted:");
+    // "chest" works without any pack.
+    if get(&mut c, "selector.style", "chest") == "form" {
+        let title = get(&mut c, "selector.title", "Servers");
+        let body = get(&mut c, "selector.text", "");
+        let _ = c.save();
+        let list = servers();
+        let form = Form::Simple {
+            title: format!("rusted_grid:{}", icons(&title)),
+            content: icons(&body),
+            buttons: list.iter().map(|t| (format!("§f{}
+{}", t.name, count_text(t)), Some(t.image.clone()))).collect(),
+        };
+        ui::show(server, to, form, move |server, player, answer| {
+            if let Response::Button(i) = answer
+                && let Some(t) = list.get(i)
+            {
+                server.tell(player.id, &format!("§7Sending you to §b{}§7...", t.name));
+                server.transfer(player.id, &t.ip, t.port);
+            }
+        });
+        return;
+    }
     let title = get(&mut c, "selector.title", "§lPick a server");
     let _ = c.save();
     let mut items = vec![None; 27];
@@ -161,13 +196,18 @@ pub fn friend_requests(p: &PlayerInfo) -> &'static str {
 
 fn open_settings(server: &Server, p: &PlayerInfo) {
     let s = settings(p);
+    let mut c = config();
+    let title = get(&mut c, "settings.title", "Settings");
+    // "form" uses the lobby pack's styled window; "classic" is the plain game form.
+    let styled = get(&mut c, "settings.style", "form") == "form";
+    let _ = c.save();
     let form = Form::Custom {
-        title: "Settings".into(),
+        title: if styled { format!("rusted:{title}") } else { title },
         elements: vec![
             Element::Toggle { text: "Show other players".into(), default: s.show_players },
             Element::Toggle { text: "Show the sidebar".into(), default: s.sidebar },
             Element::Toggle { text: "Show the boss bar".into(), default: s.boss_bar },
-            Element::StepSlider { text: "Who can send you friend requests".into(), steps: vec!["Anyone".into(), "Friends of friends".into(), "No one".into()], default: s.friend_requests },
+            Element::StepSlider { text: "Friend requests from".into(), steps: vec!["Anyone".into(), "Friends of friends".into(), "No one".into()], default: s.friend_requests },
         ],
     };
     ui::show(server, p.id, form, |server, player, answer| {
@@ -181,7 +221,8 @@ fn open_settings(server: &Server, p: &PlayerInfo) {
         let _ = d.save();
         apply_visibility(server, player);
         refresh_hud(server, player);
-        server.tell(player.id, "§aSettings saved.");
+        server.sound(player.id, "random.orb");
+        server.actionbar(player.id, "§aSettings saved");
     });
 }
 
@@ -204,13 +245,25 @@ fn apply_visibility(server: &Server, p: &PlayerInfo) {
 // Sidebar and boss bar
 
 fn fill(text: &str, server: &Server, p: &PlayerInfo) -> String {
-    let mut out = text
-        .replace("{player}", &p.name)
-        .replace("{online}", &server.all().len().to_string())
-        .replace("{max}", &crate::config::get().max_players.to_string());
+    let mut out = crate::placeholders::fill(text, server, p);
     for t in servers() {
         let n = count(&t.ip, t.port).map_or("-".to_string(), |c| c.0.to_string());
         out = out.replace(&format!("{{count:{}}}", t.name), &n);
+        let dot = if count(&t.ip, t.port).is_some() { "{icon:12}" } else { "{icon:21}" };
+        out = out.replace(&format!("{{status:{}}}", t.name), dot);
+    }
+    icons(&out)
+}
+
+/// `{icon:N}` becomes glyph U+E100+N from the lobby pack's font (0 player, 1 globe, 2 people,
+/// 3 coin, 4 sword, 5 heart, 6 crown, 7 arrow, 8 gear, 9 controller, 10 trophy, 11 chat, 12 green dot,
+/// 13 clock, 16-19 the RUSTED logo, 20 a divider, 21 red dot).
+fn icons(text: &str) -> String {
+    let mut out = text.to_string();
+    while let Some(start) = out.find("{icon:") {
+        let Some(len) = out[start..].find('}') else { break };
+        let glyph = out[start + 6..start + len].parse::<u32>().ok().and_then(|n| char::from_u32(0xE100 + n.min(255)));
+        out.replace_range(start..=start + len, &glyph.map_or(String::new(), String::from));
     }
     out
 }
@@ -221,21 +274,23 @@ fn send(server: &Server, to: i64, packet: Protocol) {
 
 /// Rebuilds this player's sidebar and boss bar from the config.
 fn refresh_hud(server: &Server, p: &PlayerInfo) {
-    use bedrock::protocol::v2168::packets::{ScorePacketEntry, SetScorePacket};
-    use bedrock::protocol::v662::enums::ObjectiveSortOrder;
-    use bedrock::protocol::v662::types::ScoreboardId;
     let s = settings(p);
     let mut c = config();
-    send(server, p.id, Protocol::RemoveObjectivePacket(Box::new(bedrock::protocol::v662::packets::RemoveObjectivePacket { objective_name: "lobby".into() })));
+    ui::remove_sidebar(server, p.id, "lobby");
     if s.sidebar {
-        let title = fill(&get(&mut c, "sidebar.title", "§l§6LOBBY"), server, p);
+        let title = fill(&get(&mut c, "sidebar.title", "§6§lRUSTED"), server, p);
         let mut lines = Vec::new();
         for n in 1..=15 {
             let default = match n {
-                1 => "§7Name: §f{player}",
-                2 => "§7Online: §a{online}§7/§a{max}",
-                3 => " ",
-                4 => "§eplay.example.com",
+                1 => " ",
+                2 => "§6§lYOU",
+                3 => "§7Name §f{player}",
+                4 => " ",
+                5 => "§6§lNETWORK",
+                6 => "§7Online §f{online}",
+                7 => "§7Survival §a{count:Survival}",
+                8 => " ",
+                9 => "§eplay.example.com",
                 _ => "",
             };
             let line = get(&mut c, &format!("sidebar.line.{n}"), default);
@@ -243,22 +298,7 @@ fn refresh_hud(server: &Server, p: &PlayerInfo) {
                 lines.push(fill(&line, server, p));
             }
         }
-        send(server, p.id, Protocol::SetDisplayObjectivePacket(Box::new(bedrock::protocol::v662::packets::SetDisplayObjectivePacket {
-            display_slot_name: "sidebar".into(),
-            objective_name: "lobby".into(),
-            objective_display_name: title,
-            criteria_name: "dummy".into(),
-            sort_order: ObjectiveSortOrder::Descending,
-        })));
-        // Highest score shows first; each line needs a different text, so blanks get § padding.
-        let count = lines.len() as i32;
-        let entries = lines.into_iter().enumerate().map(|(i, mut text)| {
-            if text.trim().is_empty() {
-                text = "§r".repeat(i + 1);
-            }
-            ScorePacketEntry::ChangeFakePlayer { scoreboard_id: ScoreboardId { id: 9000 + i as i64 }, objective_name: "lobby".into(), score_value: count - i as i32, fake_player_name: text }
-        }).collect();
-        send(server, p.id, Protocol::SetScorePacket(Box::new(SetScorePacket { score_info: entries })));
+        ui::sidebar(server, p.id, "lobby", &title, lines);
     }
     let bar = get(&mut c, "boss-bar.text", "§bWelcome to the lobby, §f{player}");
     let _ = c.save();
@@ -267,6 +307,83 @@ fn refresh_hud(server: &Server, p: &PlayerInfo) {
     } else {
         ui::remove_boss_bar(server, p.id);
     }
+}
+
+
+/// Puts a player back at the lobby spawn with fresh lobby items.
+fn send_to_lobby(server: &Server, p: &PlayerInfo) {
+    let spawn = config().get_or("spawn", "");
+    let v: Vec<f32> = spawn.split(',').filter_map(|n| n.trim().parse().ok()).collect();
+    let at = if v.len() == 3 { (v[0], v[1], v[2]) } else { crate::commands::world_spawn(server) };
+    server.teleport(p.id, at);
+    lobby_items(server, p);
+    refresh_hud(server, p);
+}
+
+/// /lobbyadmin: tools for running the lobby without a restart.
+fn admin(server: &Server, args: &[&str]) -> String {
+    match args {
+        ["reload"] => {
+            // Settings are read live; this re-applies them to everyone online right now.
+            for p in server.all() {
+                lobby_items(server, &p);
+                refresh_hud(server, &p);
+            }
+            "§aLobby config re-applied to everyone online.".into()
+        }
+        ["status"] => {
+            let mut out = format!("§6§lLobby status
+§7Players here: §f{}", server.all().len());
+            for t in servers() {
+                out.push_str(&format!("
+§7{} §8({}:{}) §f{}", t.name, t.ip, t.port, count_text(&t)));
+            }
+            out
+        }
+        ["npcs"] => crate::npcs::list(),
+        ["lobbyall"] => {
+            for p in server.all() {
+                send_to_lobby(server, &p);
+            }
+            "§aSent everyone to the lobby spawn.".into()
+        }
+        _ => "§6/lobbyadmin §freload §7- re-apply the config to everyone
+§6/lobbyadmin §fstatus §7- servers and player counts
+§6/lobbyadmin §fnpcs §7- list NPCs
+§6/lobbyadmin §flobbyall §7- send everyone to spawn".into(),
+    }
+}
+
+/// Last launch per player, so one pad doesn't fire every move packet.
+static LAUNCHED: Mutex<Option<HashMap<i64, std::time::Instant>>> = Mutex::new(None);
+
+/// Standing on the launch-pad block throws the player forward and up.
+fn launch_pad(server: &Server, p: &PlayerInfo, to: (f32, f32, f32)) {
+    let mut c = config();
+    let block = get(&mut c, "launch-pad.block", "minecraft:slime");
+    if block.is_empty() {
+        return;
+    }
+    let below = server.world.get(to.0.floor() as i32, (to.1 - 1.62 - 0.5).floor() as i32, to.2.floor() as i32);
+    if crate::blocks::entry(below).is_none_or(|e| e.name != block) {
+        return;
+    }
+    let mut last = LAUNCHED.lock();
+    let last = last.get_or_insert_with(HashMap::new);
+    if last.get(&p.id).is_some_and(|t| t.elapsed().as_millis() < 1000) {
+        return;
+    }
+    last.insert(p.id, std::time::Instant::now());
+    let power: f32 = get(&mut c, "launch-pad.power", "2.5").parse().unwrap_or(2.5);
+    let up: f32 = get(&mut c, "launch-pad.up", "1.0").parse().unwrap_or(1.0);
+    let _ = c.save();
+    let yaw = p.rot.1.to_radians();
+    send(server, p.id, Protocol::SetActorMotionPacket(Box::new(bedrock::protocol::v662::packets::SetActorMotionPacket {
+        target_runtime_id: bedrock::protocol::v662::types::ActorRuntimeID(p.id as u64),
+        motion: (-yaw.sin() * power, up, yaw.cos() * power),
+        server_tick: 0,
+    })));
+    server.sound(p.id, "mob.enderdragon.flap");
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -299,231 +416,6 @@ fn lobby_items(server: &Server, p: &PlayerInfo) {
 
 // ---------------------------------------------------------------------------------------------
 // NPCs
-
-#[derive(Clone)]
-struct Npc {
-    id: i64,
-    name: String,
-    ip: String,
-    port: u16,
-    scale: f32,
-    look_at_player: bool,
-    pos: (f32, f32, f32),
-    rot: (f32, f32),
-    skin: std::sync::Arc<bedrock::protocol::v2225::types::SerializedSkin<Protocol>>,
-    equipment: crate::players::Equipment,
-}
-
-static NPCS: Mutex<Vec<Npc>> = Mutex::new(Vec::new());
-
-fn npc_file() -> std::path::PathBuf {
-    std::path::Path::new("plugins").join(NAME).join("npcs.txt")
-}
-
-fn skin_file(n: &Npc) -> std::path::PathBuf {
-    std::path::Path::new("plugins").join(NAME).join("npc-skins").join(format!("{}.skin", n.name.replace(|c: char| !c.is_ascii_alphanumeric(), "_")))
-}
-
-fn save_npcs() {
-    use bedrock::protocol::ProtoCodec;
-    let npcs = NPCS.lock().clone();
-    let mut text = String::from("# name|ip|port|scale|look|x|y|z|yaw|pitch (skins in npc-skins/)\n");
-    for n in &npcs {
-        text.push_str(&format!("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}\n", n.name, n.ip, n.port, n.scale, if n.look_at_player { "player" } else { "fixed" }, n.pos.0, n.pos.1, n.pos.2, n.rot.1, n.rot.0));
-        let mut bytes = Vec::new();
-        if ProtoCodec::serialize(&*n.skin, &mut bytes).is_ok() {
-            let path = skin_file(n);
-            let _ = std::fs::create_dir_all(path.parent().unwrap_or(std::path::Path::new(".")));
-            let _ = std::fs::write(path, bytes);
-        }
-    }
-    let _ = std::fs::create_dir_all(npc_file().parent().unwrap_or(std::path::Path::new(".")));
-    let _ = std::fs::write(npc_file(), text);
-}
-
-fn load_npcs() {
-    use bedrock::protocol::ProtoCodec;
-    let Ok(text) = std::fs::read_to_string(npc_file()) else { return };
-    let mut out = Vec::new();
-    for line in text.lines().filter(|l| !l.starts_with('#') && !l.trim().is_empty()) {
-        let f: Vec<&str> = line.split('|').collect();
-        if f.len() < 10 {
-            continue;
-        }
-        let num = |i: usize| f[i].parse::<f32>().unwrap_or(0.0);
-        let id = crate::players::next_id();
-        let skin_path = std::path::Path::new("plugins").join(NAME).join("npc-skins").join(format!("{}.skin", f[0].replace(|c: char| !c.is_ascii_alphanumeric(), "_")));
-        let Ok(bytes) = std::fs::read(skin_path) else { continue };
-        let Ok(skin) = ProtoCodec::deserialize(&mut &bytes[..]) else { continue };
-        let n = Npc {
-            id,
-            name: f[0].into(),
-            ip: f[1].into(),
-            port: f[2].parse().unwrap_or(19132),
-            scale: num(3).max(0.1),
-            look_at_player: f[4] == "player",
-            pos: (num(5), num(6), num(7)),
-            rot: (num(9), num(8)),
-            skin: std::sync::Arc::new(skin),
-            equipment: Default::default(),
-        };
-        out.push(n);
-    }
-    *NPCS.lock() = out;
-}
-
-/// The packets that put an NPC in front of a player: a player-list entry (for the skin), the
-/// player itself, its gear and size, then off the player list again so it isn't in the tab list.
-fn npc_packets(n: &Npc) -> Vec<Protocol> {
-    use bedrock::protocol::v662::types::{ActorRuntimeID, DataItem, PropertySyncData};
-    use bedrock::protocol::v924::enums::ActorDataIDs;
-    use bedrock::protocol::v2168::enums::DataItemType;
-    let target = Target { name: n.name.clone(), ip: n.ip.clone(), port: n.port, icon: String::new(), slot: 0, lore: String::new() };
-    let info = PlayerInfo {
-        id: n.id,
-        uuid: uuid::Uuid::from_u128(n.id as u128 ^ 0x5275_7374_6564_4e50_4300_0000_0000_0000),
-        name: format!("§l§b{}\n{}", n.name, if n.ip.is_empty() { String::new() } else { count_text(&target) }),
-        xuid: String::new(),
-        skin: n.skin.clone(),
-        pos: (n.pos.0, n.pos.1 + 1.62, n.pos.2),
-        rot: n.rot,
-        head_yaw: n.rot.1,
-    };
-    let air = crate::spawn::air;
-    let stack = |s: &Option<Stack>| s.as_ref().map_or_else(air, Stack::to_network);
-    vec![
-        crate::packets::player_list_add(&info),
-        crate::packets::add_player(&info),
-        Protocol::MobEquipmentPacket(Box::new(bedrock::protocol::v975::packets::MobEquipmentPacket {
-            target_runtime_id: ActorRuntimeID(n.id as u64),
-            item: stack(&n.equipment.held),
-            slot: 0,
-            selected_slot: 0,
-            container_id: bedrock::protocol::v662::enums::ContainerID(0),
-        })),
-        Protocol::MobArmorEquipmentPacket(Box::new(bedrock::protocol::v1001::packets::MobArmorEquipmentPacket {
-            target_runtime_id: ActorRuntimeID(n.id as u64),
-            head: stack(&n.equipment.armor[0]),
-            torso: stack(&n.equipment.armor[1]),
-            legs: stack(&n.equipment.armor[2]),
-            feet: stack(&n.equipment.armor[3]),
-            body: air(),
-        })),
-        Protocol::SetActorDataPacket(Box::new(bedrock::protocol::v662::packets::SetActorDataPacket {
-            target_runtime_id: ActorRuntimeID(n.id as u64),
-            actor_data: vec![DataItem { data_item_id: ActorDataIDs::Reserved038, data_item_type: DataItemType::Float(n.scale) }],
-            synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
-            tick: 0,
-        })),
-    ]
-}
-
-fn npc_unlist(n: &Npc) -> Protocol {
-    use bedrock::protocol::v2225::packets::{PlayerListEntry, PlayerListPacket};
-    let uuid = uuid::Uuid::from_u128(n.id as u128 ^ 0x5275_7374_6564_4e50_4300_0000_0000_0000);
-    Protocol::PlayerListPacket(Box::new(PlayerListPacket { entries: vec![PlayerListEntry::Remove { uuid }] }))
-}
-
-fn show_npcs(server: &Server, to: i64) {
-    let npcs = NPCS.lock().clone();
-    for n in &npcs {
-        for p in npc_packets(n) {
-            send(server, to, p);
-        }
-    }
-    // Off the tab list a moment later, once the client has the skin.
-    server.scheduler.run_later(40, move |server| {
-        for n in &npcs {
-            send(server, to, npc_unlist(n));
-        }
-    });
-}
-
-/// NPCs that look at players turn their head toward each viewer separately.
-fn turn_npcs(server: &Server) {
-    let npcs = NPCS.lock().clone();
-    for p in server.all() {
-        for n in npcs.iter().filter(|n| n.look_at_player) {
-            let eye = (n.pos.0, n.pos.1 + 1.62 * n.scale, n.pos.2);
-            let (dx, dy, dz) = (p.pos.0 - eye.0, p.pos.1 - eye.1, p.pos.2 - eye.2);
-            if dx * dx + dz * dz > 32.0 * 32.0 {
-                continue;
-            }
-            let yaw = (-dx).atan2(dz).to_degrees();
-            let pitch = (-dy).atan2((dx * dx + dz * dz).sqrt()).to_degrees();
-            send(server, p.id, crate::packets::move_player(n.id, (n.pos.0, n.pos.1 + 1.62, n.pos.2), (pitch, yaw), yaw));
-        }
-    }
-}
-
-fn npc_command(server: &Server, player: &PlayerInfo, args: &[&str]) -> String {
-    if !crate::commands::is_op(&player.name) {
-        return "§cOnly operators can manage NPCs.".into();
-    }
-    match args {
-        ["remove", name] => {
-            let gone: Vec<Npc> = {
-                let mut list = NPCS.lock();
-                let gone = list.iter().filter(|n| n.name.eq_ignore_ascii_case(name)).cloned().collect();
-                list.retain(|n| !n.name.eq_ignore_ascii_case(name));
-                gone
-            };
-            if gone.is_empty() {
-                return format!("§cNo NPC called {name}.");
-            }
-            for n in &gone {
-                let _ = std::fs::remove_file(skin_file(n));
-                let packet = Protocol::RemoveActorPacket(Box::new(bedrock::protocol::v662::packets::RemoveActorPacket {
-                    target_actor_id: bedrock::protocol::v662::types::ActorUniqueID(n.id),
-                }));
-                let _ = server.events.send(crate::players::Event::Relay { from: 0, packet: Box::new(packet) });
-            }
-            save_npcs();
-            format!("§aRemoved {name}.")
-        }
-        ["list"] => {
-            let list = NPCS.lock();
-            if list.is_empty() {
-                return "§7No NPCs yet. Make one with /npc <name> <ip> <port> [scale] [player|fixed]".into();
-            }
-            list.iter().map(|n| format!("§b{} §7-> {}:{} (scale {}, {})", n.name, n.ip, n.port, n.scale, if n.look_at_player { "looks at players" } else { "fixed" })).collect::<Vec<_>>().join("\n")
-        }
-        [name, ip, port, rest @ ..] => {
-            let Ok(port) = port.parse::<u16>() else { return "§cThe port must be a number, like 19132.".into() };
-            let scale = rest.first().and_then(|s| s.parse::<f32>().ok()).unwrap_or(1.0).clamp(0.1, 10.0);
-            let look_at_player = rest.get(1).is_none_or(|m| !m.eq_ignore_ascii_case("fixed"));
-            let n = Npc {
-                id: crate::players::next_id(),
-                name: (*name).into(),
-                ip: (*ip).into(),
-                port,
-                scale,
-                look_at_player,
-                pos: (player.pos.0, player.pos.1 - 1.62, player.pos.2),
-                rot: player.rot,
-                skin: player.skin.clone(),
-                equipment: crate::players::equipment(player.id),
-            };
-            {
-                let mut list = NPCS.lock();
-                list.retain(|o| !o.name.eq_ignore_ascii_case(name));
-                list.push(n.clone());
-            }
-            save_npcs();
-            for p in server.all() {
-                for packet in npc_packets(&n) {
-                    send(server, p.id, packet);
-                }
-            }
-            let unlist = n.clone();
-            server.scheduler.run_later(40, move |server| {
-                let _ = server.events.send(crate::players::Event::Relay { from: 0, packet: Box::new(npc_unlist(&unlist)) });
-            });
-            format!("§aMade NPC §b{name}§a. Clicking it sends players to {ip}:{port}.")
-        }
-        _ => "§cUse /npc <name> <ip> <port> [scale] [player|fixed], /npc remove <name> or /npc list".into(),
-    }
-}
 
 // ---------------------------------------------------------------------------------------------
 
@@ -560,7 +452,6 @@ impl Plugin for Lobby {
         if !on() {
             return;
         }
-        load_npcs();
         start_pinging();
         server.scheduler.run_repeating(40, 40, |server| {
             for p in server.all() {
@@ -568,11 +459,7 @@ impl Plugin for Lobby {
             }
             true
         });
-        server.scheduler.run_repeating(5, 5, |server| {
-            turn_npcs(server);
-            true
-        });
-        println!("Lobby core on: {} servers, {} NPCs", servers().len(), NPCS.lock().len());
+        println!("Lobby core on: {} servers", servers().len());
     }
 
     fn on_join(&self, server: &Server, player: &PlayerInfo) {
@@ -585,12 +472,21 @@ impl Plugin for Lobby {
         if v.len() == 3 {
             server.teleport(player.id, (v[0], v[1], v[2]));
         }
-        lobby_items(server, player);
+        let title = get(&mut c, "join.title", "§6§lRUSTED");
+        let subtitle = get(&mut c, "join.subtitle", "§7Welcome, §f{player}");
+        let no_hunger = get(&mut c, "no-hunger", "true") == "true";
+        let _ = c.save();
+        if !title.is_empty() {
+            server.title(player.id, &fill(&title, server, player), &fill(&subtitle, server, player));
+        }
+        if no_hunger {
+            server.effect(player.id, 23, 255, 1_000_000); // saturation
+        }
         let id = player.id;
-        // A moment later, once the player is in the world.
+        // A moment later, once the player is in the world and their saved inventory has loaded.
         server.scheduler.run_later(20, move |server| {
             let Some(p) = server.get(id) else { return };
-            show_npcs(server, id);
+            lobby_items(server, &p);
             refresh_hud(server, &p);
             apply_visibility(server, &p);
             // Hide this player from everyone who chose not to see others.
@@ -599,6 +495,7 @@ impl Plugin for Lobby {
             }
         });
     }
+
 
     fn on_item_use(&self, server: &Server, player: &PlayerInfo, item: &Stack) -> bool {
         if !on() {
@@ -619,18 +516,6 @@ impl Plugin for Lobby {
         false
     }
 
-    fn on_entity_click(&self, server: &Server, player: &PlayerInfo, entity: i64, _attack: bool) {
-        let target = NPCS.lock().iter().find(|n| n.id == entity).cloned();
-        if let Some(n) = target {
-            if n.ip.eq_ignore_ascii_case("menu") {
-                open_selector(server, player.id);
-            } else {
-                server.tell(player.id, &format!("§7Sending you to §b{}§7...", n.name));
-                server.transfer(player.id, &n.ip, n.port);
-            }
-        }
-    }
-
     fn on_block_break(&self, _server: &Server, player: &PlayerInfo, _pos: (i32, i32, i32), _block: i32) -> bool {
         !(on() && config().get_or("protect-world", "true") == "true" && !crate::commands::is_op(&player.name))
     }
@@ -643,8 +528,17 @@ impl Plugin for Lobby {
         !(on() && config().get_or("no-damage", "true") == "true")
     }
 
+    fn on_item_drop(&self, _server: &Server, _player: &PlayerInfo, _item: &str, _count: i8) -> bool {
+        !(on() && config().get_or("items.lock", "true") == "true")
+    }
+
+    fn on_inventory_action(&self, _server: &Server, _player: &PlayerInfo, _action: &str, _container: &str) -> bool {
+        !(on() && config().get_or("items.lock", "true") == "true")
+    }
+
     fn on_move(&self, server: &Server, player: &PlayerInfo, to: (f32, f32, f32)) -> bool {
         if on() {
+            launch_pad(server, player, to);
             let void: f32 = config().get_or("void-y", "-70").parse().unwrap_or(-70.0);
             if to.1 - 1.62 < void {
                 let spawn = config().get_or("spawn", "");
@@ -660,9 +554,18 @@ impl Plugin for Lobby {
         vec![
             ("servers", "Opens the server selector"),
             ("settings", "Opens your lobby settings"),
-            ("npc", "Makes an NPC that sends players to a server"),
             ("setlobby", "Sets the lobby spawn to where you stand"),
+            ("lobby", "Teleports you back to the lobby"),
+            ("hub", "Teleports you back to the lobby"),
+            ("lobbyadmin", "Lobby tools for ops: reload, status, npcs"),
         ]
+    }
+
+    fn usage(&self, command: &str) -> &'static [&'static str] {
+        match command {
+            "lobbyadmin" => &["reload|status|npcs|lobbyall"],
+            _ => &[],
+        }
     }
 
     fn on_command(&self, server: &Server, player: &PlayerInfo, name: &str, args: &[&str]) -> Option<String> {
@@ -678,7 +581,12 @@ impl Plugin for Lobby {
                 open_settings(server, player);
                 Some(String::new())
             }
-            "npc" => Some(npc_command(server, player, args)),
+            "lobby" | "hub" => {
+                send_to_lobby(server, player);
+                Some("§aBack at the lobby.".into())
+            }
+            "lobbyadmin" if crate::commands::is_op(&player.name) => Some(admin(server, args)),
+            "lobbyadmin" => Some("§cYou do not have permission to use this command".into()),
             "setlobby" if crate::commands::is_op(&player.name) => {
                 let mut c = config();
                 c.set("spawn", &format!("{:.1},{:.1},{:.1}", player.pos.0, player.pos.1 - 1.62, player.pos.2));
@@ -692,6 +600,12 @@ impl Plugin for Lobby {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn icon_placeholders() {
+        assert_eq!(super::icons("{icon:0} a {icon:13}"), "\u{E100} a \u{E10D}");
+        assert_eq!(super::icons("{icon:x} b {icon:"), " b {icon:");
+    }
+
     #[test]
     fn placeholders() {
         crate::blocks::init();

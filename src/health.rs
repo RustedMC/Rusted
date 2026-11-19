@@ -2,6 +2,19 @@
 //! movement reports, which makes it easy to test.
 
 pub const MAX_HEALTH: f32 = 20.0;
+
+/// Max health per player id when it isn't 20 (lifesteal hearts). Sessions pick changes up
+/// within a second.
+static MAXES: parking_lot::Mutex<Option<std::collections::HashMap<i64, f32>>> = parking_lot::Mutex::new(None);
+
+pub fn max_of(id: i64) -> f32 {
+    MAXES.lock().as_ref().and_then(|m| m.get(&id).copied()).unwrap_or(MAX_HEALTH)
+}
+
+/// Sets a player's max health (2 to 200, i.e. 1 to 100 hearts).
+pub fn set_max(id: i64, max: f32) {
+    MAXES.lock().get_or_insert_with(Default::default).insert(id, max.clamp(2.0, 200.0));
+}
 /// Vanilla kills you 64 blocks under the world floor.
 pub const VOID_Y: f32 = -128.0;
 
@@ -26,6 +39,8 @@ pub enum Damage {
 
 pub struct Health {
     pub health: f32,
+    /// this player's max health (20 unless a plugin changed it)
+    pub max: f32,
     /// Highest feet y while falling, reset once vertical movement stops.
     fall_from: Option<f32>,
     last_y: Option<f32>,
@@ -34,7 +49,7 @@ pub struct Health {
 
 impl Default for Health {
     fn default() -> Self {
-        Self { health: MAX_HEALTH, fall_from: None, last_y: None, dead: false }
+        Self { health: MAX_HEALTH, max: MAX_HEALTH, fall_from: None, last_y: None, dead: false }
     }
 }
 
@@ -83,15 +98,16 @@ impl Health {
 
     /// Natural regen step, true if health changed.
     pub fn regenerate(&mut self) -> bool {
-        if self.dead || self.health >= MAX_HEALTH {
+        if self.dead || self.health >= self.max {
             return false;
         }
-        self.health = (self.health + 1.0).min(MAX_HEALTH);
+        self.health = (self.health + 1.0).min(self.max);
         true
     }
 
     pub fn respawn(&mut self) {
-        *self = Self::default();
+        let max = self.max;
+        *self = Self { health: max, max, ..Self::default() };
     }
 }
 

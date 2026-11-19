@@ -1,0 +1,804 @@
+{
+  "namespace": "server_form",
+  "long_form": {
+    "modifications": [
+      {
+        "array_name": "bindings",
+        "operation": "insert_back",
+        "value": [
+          {
+            "binding_name": "#title_text"
+          },
+          {
+            "binding_type": "view",
+            "source_property_name": "((#title_text - 'rusted:' - 'rusted_grid:') = #title_text)",
+            "target_property_name": "#visible"
+          }
+        ]
+      }
+    ]
+  },
+  "rusted_long_form_panel": {
+    "type": "panel",
+    "bindings": [
+      {
+        "binding_name": "#title_text"
+      }
+    ],
+    "controls": [
+      {
+        "dim": {
+          "type": "image",
+          "texture": "textures/ui/Black",
+          "size": [
+            "100%",
+            "100%"
+          ],
+          "layer": 1,
+          "bindings": [
+            {
+              "binding_type": "view",
+              "source_control_name": "rusted_long_form_panel",
+              "source_property_name": "(not ((#title_text - 'rusted:') = #title_text))",
+              "target_property_name": "#visible"
+            }
+          ],
+          "alpha": 0.55
+        }
+      },
+      {
+        "grid_dim": {
+          "type": "image",
+          "texture": "textures/ui/Black",
+          "size": [
+            "100%",
+            "100%"
+          ],
+          "layer": 1,
+          "bindings": [
+            {
+              "binding_type": "view",
+              "source_control_name": "rusted_long_form_panel",
+              "source_property_name": "(not ((#title_text - 'rusted_grid:') = #title_text))",
+              "target_property_name": "#visible"
+            }
+          ],
+          "alpha": 0.55
+        }
+      },
+      {
+        "rusted_form@server_form.rusted_form": {
+          "bindings": [
+            {
+              "binding_type": "view",
+              "source_control_name": "rusted_long_form_panel",
+              "source_property_name": "(not ((#title_text - 'rusted:') = #title_text))",
+              "target_property_name": "#visible"
+            }
+          ]
+        }
+      },
+      {
+        "rusted_grid_window@server_form.rusted_grid_window": {
+          "bindings": [
+            {
+              "binding_type": "view",
+              "source_control_name": "rusted_long_form_panel",
+              "source_property_name": "(not ((#title_text - 'rusted_grid:') = #title_text))",
+              "target_property_name": "#visible"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "rusted_form": {
+    "type": "stack_panel",
+    "orientation": "vertical",
+    "size": [
+      300,
+      "100%c"
+    ],
+    "anchor_from": "center",
+    "anchor_to": "center",
+    "layer": 2,
+    "controls": [
+      {
+        "header@server_form.rusted_header": {}
+      },
+      {
+        "accent": {
+          "type": "image",
+          "texture": "textures/ui/rusted/accent",
+          "size": [
+            "100%",
+            2
+          ]
+        }
+      },
+      {
+        "body_panel": {
+          "type": "image",
+          "texture": "textures/ui/rusted/panel",
+          "size": [
+            "100%",
+            "100%c + 12px"
+          ],
+          "controls": [
+            {
+              "content": {
+                "type": "stack_panel",
+                "orientation": "vertical",
+                "anchor_from": "top_middle",
+                "anchor_to": "top_middle",
+                "offset": [
+                  0,
+                  6
+                ],
+                "size": [
+                  "100% - 14px",
+                  "100%c"
+                ],
+                "controls": [
+                  {
+                    "grid@server_form.rusted_button_grid": {}
+                  }
+                ],
+                "layer": 1
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "rusted_header": {
+    "type": "image",
+    "texture": "textures/ui/rusted/header",
+    "size": [
+      "100%",
+      22
+    ],
+    "anchor_from": "top_left",
+    "anchor_to": "top_left",
+    "controls": [
+      {
+        "title": {
+          "type": "label",
+          "text": "#rusted_title",
+          "color": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "shadow": true,
+          "anchor_from": "center",
+          "anchor_to": "center",
+          "offset": [
+            0,
+            0
+          ],
+          "bindings": [
+            {
+              "binding_name": "#title_text"
+            },
+            {
+              "binding_type": "view",
+              "source_property_name": "(#title_text - 'rusted:' - 'rusted_grid:')",
+              "target_property_name": "#rusted_title"
+            }
+          ]
+        }
+      },
+      {
+        "close@server_form.rusted_close": {}
+      }
+    ]
+  },
+  "rusted_close": {
+    "type": "button",
+    "size": [
+      16,
+      16
+    ],
+    "anchor_from": "right_middle",
+    "anchor_to": "right_middle",
+    "offset": [
+      -4,
+      0
+    ],
+    "default_control": "default",
+    "hover_control": "hover",
+    "pressed_control": "hover",
+    "button_mappings": [
+      {
+        "from_button_id": "button.menu_select",
+        "to_button_id": "button.menu_exit",
+        "mapping_type": "pressed"
+      },
+      {
+        "from_button_id": "button.menu_ok",
+        "to_button_id": "button.menu_exit",
+        "mapping_type": "focused"
+      }
+    ],
+    "controls": [
+      {
+        "default": {
+          "type": "image",
+          "texture": "textures/ui/rusted/close"
+        }
+      },
+      {
+        "hover": {
+          "type": "image",
+          "texture": "textures/ui/rusted/close_hover"
+        }
+      },
+      {
+        "x": {
+          "type": "image",
+          "texture": "textures/ui/rusted/x",
+          "size": [
+            10,
+            10
+          ],
+          "layer": 2
+        }
+      }
+    ]
+  },
+  "rusted_button_grid": {
+    "type": "grid",
+    "size": [
+      "100%",
+      "default"
+    ],
+    "grid_item_template": "server_form.rusted_grid_button",
+    "grid_rescaling_type": "horizontal",
+    "grid_dimensions": [
+      1,
+      1
+    ],
+    "collection_name": "form_buttons",
+    "bindings": [
+      {
+        "binding_name": "#form_button_length",
+        "binding_name_override": "#maximum_grid_items"
+      }
+    ]
+  },
+  "rusted_grid_button": {
+    "type": "panel",
+    "size": [
+      "100%",
+      34
+    ],
+    "controls": [
+      {
+        "button": {
+          "type": "button",
+          "size": [
+            "100%",
+            "100% - 4px"
+          ],
+          "default_control": "default",
+          "hover_control": "hover",
+          "pressed_control": "pressed",
+          "button_mappings": [
+            {
+              "from_button_id": "button.menu_select",
+              "to_button_id": "button.form_button_click",
+              "mapping_type": "pressed"
+            },
+            {
+              "from_button_id": "button.menu_ok",
+              "to_button_id": "button.form_button_click",
+              "mapping_type": "focused"
+            }
+          ],
+          "bindings": [
+            {
+              "binding_type": "collection_details",
+              "binding_collection_name": "form_buttons"
+            }
+          ],
+          "controls": [
+            {
+              "default": {
+                "type": "image",
+                "texture": "textures/ui/rusted/button"
+              }
+            },
+            {
+              "hover": {
+                "type": "image",
+                "texture": "textures/ui/rusted/button_hover"
+              }
+            },
+            {
+              "pressed": {
+                "type": "image",
+                "texture": "textures/ui/rusted/button_pressed"
+              }
+            },
+            {
+              "icon": {
+                "type": "image",
+                "size": [
+                  24,
+                  24
+                ],
+                "layer": 2,
+                "anchor_from": "left_middle",
+                "anchor_to": "left_middle",
+                "offset": [
+                  8,
+                  -1
+                ],
+                "bindings": [
+                  {
+                    "binding_name": "#form_button_texture",
+                    "binding_name_override": "#texture",
+                    "binding_type": "collection",
+                    "binding_collection_name": "form_buttons"
+                  }
+                ]
+              }
+            },
+            {
+              "label": {
+                "type": "label",
+                "text": "#form_button_text",
+                "color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "shadow": true,
+                "layer": 2,
+                "size": [
+                  "100% - 42px",
+                  "default"
+                ],
+                "anchor_from": "left_middle",
+                "anchor_to": "left_middle",
+                "offset": [
+                  38,
+                  -1
+                ],
+                "bindings": [
+                  {
+                    "binding_name": "#form_button_text",
+                    "binding_type": "collection",
+                    "binding_collection_name": "form_buttons"
+                  }
+                ]
+              }
+            },
+            {
+              "arrow": {
+                "type": "label",
+                "text": ">",
+                "color": [
+                  0.6,
+                  0.6,
+                  0.62
+                ],
+                "layer": 2,
+                "anchor_from": "right_middle",
+                "anchor_to": "right_middle",
+                "offset": [
+                  -10,
+                  -1
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "main_screen_content": {
+    "modifications": [
+      {
+        "array_name": "controls",
+        "operation": "insert_back",
+        "value": [
+          {
+            "rusted_server_form_factory": {
+              "type": "panel",
+              "factory": {
+                "name": "server_form_factory",
+                "control_ids": {
+                  "long_form": "@server_form.rusted_long_form_panel",
+                  "custom_form": "@server_form.rusted_custom_form_panel"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "custom_form": {
+    "modifications": [
+      {
+        "array_name": "bindings",
+        "operation": "insert_back",
+        "value": [
+          {
+            "binding_name": "#title_text"
+          },
+          {
+            "binding_type": "view",
+            "source_property_name": "((#title_text - 'rusted:') = #title_text)",
+            "target_property_name": "#visible"
+          }
+        ]
+      }
+    ]
+  },
+  "rusted_custom_form_panel": {
+    "type": "panel",
+    "bindings": [
+      {
+        "binding_name": "#title_text"
+      }
+    ],
+    "controls": [
+      {
+        "dim": {
+          "type": "image",
+          "texture": "textures/ui/Black",
+          "size": [
+            "100%",
+            "100%"
+          ],
+          "layer": 1,
+          "bindings": [
+            {
+              "binding_type": "view",
+              "source_control_name": "rusted_custom_form_panel",
+              "source_property_name": "(not ((#title_text - 'rusted:') = #title_text))",
+              "target_property_name": "#visible"
+            }
+          ],
+          "alpha": 0.55
+        }
+      },
+      {
+        "rusted_custom@server_form.rusted_custom_window": {
+          "bindings": [
+            {
+              "binding_type": "view",
+              "source_control_name": "rusted_custom_form_panel",
+              "source_property_name": "(not ((#title_text - 'rusted:') = #title_text))",
+              "target_property_name": "#visible"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "rusted_custom_window": {
+    "type": "stack_panel",
+    "orientation": "vertical",
+    "size": [
+      300,
+      "100%c"
+    ],
+    "anchor_from": "center",
+    "anchor_to": "center",
+    "layer": 2,
+    "controls": [
+      {
+        "header@server_form.rusted_header": {}
+      },
+      {
+        "accent": {
+          "type": "image",
+          "texture": "textures/ui/rusted/accent",
+          "size": [
+            "100%",
+            2
+          ]
+        }
+      },
+      {
+        "body_panel": {
+          "type": "image",
+          "texture": "textures/ui/rusted/panel",
+          "size": [
+            "100%",
+            "100%c + 12px"
+          ],
+          "controls": [
+            {
+              "content": {
+                "type": "stack_panel",
+                "orientation": "vertical",
+                "layer": 1,
+                "anchor_from": "top_middle",
+                "anchor_to": "top_middle",
+                "offset": [
+                  0,
+                  6
+                ],
+                "size": [
+                  "100% - 16px",
+                  "100%c"
+                ],
+                "controls": [
+                  {
+                    "generated_form@server_form.generated_contents": {}
+                  },
+                  {
+                    "gap": {
+                      "type": "panel",
+                      "size": [
+                        "100%",
+                        6
+                      ]
+                    }
+                  },
+                  {
+                    "save@server_form.rusted_submit": {}
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "rusted_submit": {
+    "type": "button",
+    "size": [
+      "100%",
+      26
+    ],
+    "default_control": "default",
+    "hover_control": "hover",
+    "pressed_control": "pressed",
+    "button_mappings": [
+      {
+        "from_button_id": "button.menu_select",
+        "to_button_id": "button.submit_custom_form",
+        "mapping_type": "pressed"
+      },
+      {
+        "from_button_id": "button.menu_ok",
+        "to_button_id": "button.submit_custom_form",
+        "mapping_type": "focused"
+      }
+    ],
+    "bindings": [
+      {
+        "binding_name": "#submit_button_visible",
+        "binding_name_override": "#visible"
+      }
+    ],
+    "controls": [
+      {
+        "default": {
+          "type": "image",
+          "texture": "textures/ui/rusted/primary"
+        }
+      },
+      {
+        "hover": {
+          "type": "image",
+          "texture": "textures/ui/rusted/primary_hover"
+        }
+      },
+      {
+        "pressed": {
+          "type": "image",
+          "texture": "textures/ui/rusted/primary_pressed"
+        }
+      },
+      {
+        "label": {
+          "type": "label",
+          "text": "Save",
+          "color": [
+            1,
+            1,
+            1
+          ],
+          "shadow": true,
+          "layer": 2,
+          "offset": [
+            0,
+            -1
+          ]
+        }
+      }
+    ]
+  },
+  "rusted_grid_window": {
+    "type": "stack_panel",
+    "orientation": "vertical",
+    "size": [
+      360,
+      "100%c"
+    ],
+    "anchor_from": "center",
+    "anchor_to": "center",
+    "layer": 2,
+    "controls": [
+      {
+        "header@server_form.rusted_header": {}
+      },
+      {
+        "accent": {
+          "type": "image",
+          "texture": "textures/ui/rusted/accent",
+          "size": [
+            "100%",
+            2
+          ]
+        }
+      },
+      {
+        "body_panel": {
+          "type": "image",
+          "texture": "textures/ui/rusted/panel",
+          "size": [
+            "100%",
+            "100%c + 8px"
+          ],
+          "controls": [
+            {
+              "cards@server_form.rusted_card_grid": {
+                "layer": 1,
+                "anchor_from": "top_middle",
+                "anchor_to": "top_middle",
+                "offset": [
+                  0,
+                  4
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "rusted_card_grid": {
+    "type": "grid",
+    "size": [
+      "100% - 8px",
+      "default"
+    ],
+    "grid_item_template": "server_form.rusted_card",
+    "grid_rescaling_type": "horizontal",
+    "grid_dimensions": [
+      3,
+      1
+    ],
+    "collection_name": "form_buttons",
+    "bindings": [
+      {
+        "binding_name": "#form_button_length",
+        "binding_name_override": "#maximum_grid_items"
+      }
+    ]
+  },
+  "rusted_card": {
+    "type": "panel",
+    "size": [
+      "33.3%",
+      72
+    ],
+    "controls": [
+      {
+        "button": {
+          "type": "button",
+          "size": [
+            "100% - 4px",
+            "100% - 4px"
+          ],
+          "default_control": "default",
+          "hover_control": "hover",
+          "pressed_control": "pressed",
+          "button_mappings": [
+            {
+              "from_button_id": "button.menu_select",
+              "to_button_id": "button.form_button_click",
+              "mapping_type": "pressed"
+            },
+            {
+              "from_button_id": "button.menu_ok",
+              "to_button_id": "button.form_button_click",
+              "mapping_type": "focused"
+            }
+          ],
+          "bindings": [
+            {
+              "binding_type": "collection_details",
+              "binding_collection_name": "form_buttons"
+            }
+          ],
+          "controls": [
+            {
+              "default": {
+                "type": "image",
+                "texture": "textures/ui/rusted/button"
+              }
+            },
+            {
+              "hover": {
+                "type": "image",
+                "texture": "textures/ui/rusted/button_hover"
+              }
+            },
+            {
+              "pressed": {
+                "type": "image",
+                "texture": "textures/ui/rusted/button_pressed"
+              }
+            },
+            {
+              "icon": {
+                "type": "image",
+                "size": [
+                  28,
+                  28
+                ],
+                "layer": 2,
+                "anchor_from": "top_middle",
+                "anchor_to": "top_middle",
+                "offset": [
+                  0,
+                  7
+                ],
+                "bindings": [
+                  {
+                    "binding_name": "#form_button_texture",
+                    "binding_name_override": "#texture",
+                    "binding_type": "collection",
+                    "binding_collection_name": "form_buttons"
+                  }
+                ]
+              }
+            },
+            {
+              "label": {
+                "type": "label",
+                "text": "#form_button_text",
+                "color": [
+                  1,
+                  1,
+                  1
+                ],
+                "shadow": true,
+                "layer": 2,
+                "size": [
+                  "100% - 6px",
+                  "default"
+                ],
+                "text_alignment": "center",
+                "anchor_from": "bottom_middle",
+                "anchor_to": "bottom_middle",
+                "offset": [
+                  0,
+                  -5
+                ],
+                "bindings": [
+                  {
+                    "binding_name": "#form_button_text",
+                    "binding_type": "collection",
+                    "binding_collection_name": "form_buttons"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -330,7 +330,7 @@ impl Session {
         }
         if let Some(me) = self.server.get(self.id) {
             for st in thrown.drain(..) {
-                self.server.plugins.item_drop(&self.server, &me, items::name_of(st.item.id).unwrap_or(""), st.count);
+                let _ = self.server.plugins.item_drop(&self.server, &me, items::name_of(st.item.id).unwrap_or(""), st.count);
                 let (at, vel) = throw_from(&me);
                 self.server.entities.drop_item_vel(&self.server, st.item, st.count, at, vel);
             }

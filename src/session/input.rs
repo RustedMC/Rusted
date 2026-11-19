@@ -9,7 +9,6 @@ type AuthInput = <Protocol as ProtoVersionPackets>::PlayerAuthInputPacket;
 impl Session {
     pub(super) async fn on_chunk_radius(&mut self, r: &ChunkRadius) -> Flow {
         self.chunks.radius = r.chunk_radius.clamp(2, config::get().view_distance);
-        println!("{}: view distance {} chunks", self.name, self.chunks.radius);
         let _ = self.conn.send(&[Protocol::ChunkRadiusUpdatedPacket(Box::new(
             ChunkRadiusUpdatedPacket { chunk_radius: self.chunks.radius },
         ))]).await;

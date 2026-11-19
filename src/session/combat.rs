@@ -63,9 +63,12 @@ impl Session {
     }
 
     pub(super) async fn on_attack(&mut self, t: &Transaction) {
-        // Attack (action 1) on a mob.
+        // Attack (action 1) on a mob or a player.
         let InventoryTransactionData::ItemUseOnEntity(e) = &t.data else { return };
         let target = e.actor_runtime_id as i64;
+        if target != self.id && self.server.get(target).is_some() {
+            return self.hit_player(target).await;
+        }
         if !self.server.mobs.contains(target) && self.server.get(target).is_none() {
             if let Some(me) = self.server.get(self.id) {
                 self.server.plugins.entity_click(&self.server, &me, target, true);
@@ -95,4 +98,52 @@ impl Session {
             }
         }
     }
+
+    /// PvP: the hit goes to the victim's session as mob-style damage named after us, so armor,
+    /// shields, totems, death messages and plugins (`on_player_damage` sees our name) all apply.
+    async fn hit_player(&mut self, target: i64) {
+        if !crate::config::get().pvp || matches!(self.mode, GameType::Spectator) {
+            return;
+        }
+        let (Some(me), Some(them)) = (self.server.get(self.id), self.server.get(target)) else { return };
+        // Vanilla gives a victim half a second between hits.
+        {
+            let mut last = PVP_HITS.lock();
+            let last = last.get_or_insert_with(std::collections::HashMap::new);
+            if last.get(&target).is_some_and(|t| t.elapsed().as_millis() < 500) {
+                return;
+            }
+            last.insert(target, std::time::Instant::now());
+        }
+        let held = self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id));
+        let data = self.inv.held(self.selected_slot as usize).map(|s| s.item.user_data_buffer.clone()).unwrap_or_default();
+        let dmg = self.effects.melee(mobs::attack_damage(held) + enchant::melee_bonus(&data, false, false));
+        let (dx, dz) = (them.pos.0 - me.pos.0, them.pos.2 - me.pos.2);
+        let len = (dx * dx + dz * dz).sqrt().max(0.01);
+        let push = 0.4 + 0.5 * enchant::level(&data, enchant::KNOCKBACK) as f32;
+        let knock = (dx / len * push, 0.36, dz / len * push);
+        let _ = self.server.events.send(crate::players::Event::Damage { to: target, damage: crate::health::Damage::Mob(dmg, intern(&me.name)), knock });
+        // shortcut: fire aspect doesn't set players alight yet; add it with player burning.
+        let uses = attack_wear(held);
+        wear(&mut self.conn, &self.server, self.id, &mut self.inv, self.selected_slot as usize, uses, &self.mode).await;
+        if survival_like(&self.mode) {
+            self.food.exhaust(0.1);
+        }
+    }
+}
+
+/// Last time each player was hit by another player.
+static PVP_HITS: parking_lot::Mutex<Option<std::collections::HashMap<i64, std::time::Instant>>> = parking_lot::Mutex::new(None);
+
+/// Damage causes are `&'static str`; player names are kept once each (one per name ever seen
+/// attacking, so it stays small).
+fn intern(name: &str) -> &'static str {
+    static NAMES: parking_lot::Mutex<Vec<&'static str>> = parking_lot::Mutex::new(Vec::new());
+    let mut names = NAMES.lock();
+    if let Some(n) = names.iter().find(|n| **n == name) {
+        return n;
+    }
+    let n: &'static str = Box::leak(name.to_string().into_boxed_str());
+    names.push(n);
+    n
 }

@@ -51,6 +51,30 @@ pub enum Event {
     Give { to: i64, item: Box<crate::inventory::Stack> },
     /// a plugin menu for `to` was opened or changed (see `ui::menu`)
     Menu { to: i64 },
+    /// take items from a player, then hand what was taken to the plugin (see `Server::take_held`)
+    Take { to: i64, what: TakeWhat, then: Taken },
+}
+
+#[derive(Clone, Debug)]
+pub enum TakeWhat {
+    /// up to this many from the selected hotbar slot
+    Held(i8),
+    /// exactly this many of an item id from anywhere in the inventory, or nothing
+    Item(String, u32),
+}
+
+/// What was taken: one stack of the item (for its name, enchantments...) and the total count.
+pub type TakeResult = Option<(crate::inventory::Stack, u32)>;
+type TakeFn = Box<dyn FnOnce(&Server, TakeResult) + Send>;
+
+/// Runs once in the player's session after the items are taken.
+#[derive(Clone)]
+pub struct Taken(pub Arc<Mutex<Option<TakeFn>>>);
+
+impl std::fmt::Debug for Taken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Taken")
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -82,6 +106,8 @@ pub static EQUIPMENT: Mutex<Option<HashMap<i64, Equipment>>> = Mutex::new(None);
 pub struct Equipment {
     pub held: Option<crate::inventory::Stack>,
     pub armor: [Option<crate::inventory::Stack>; 4],
+    /// the 36 main slots (hotbar first), for /invsee
+    pub inventory: Vec<Option<crate::inventory::Stack>>,
 }
 
 /// What player `id` is holding and wearing, as of the last second.
@@ -264,6 +290,19 @@ impl Server {
     /// so this reaches everything a player can be made to do.
     pub fn run_as(&self, id: i64, command: &str) {
         let _ = self.events.send(Event::RunAs { to: id, line: command.trim_start_matches('/').to_string(), reply_to: 0 });
+    }
+
+    /// Takes up to `count` of whatever `id` is holding, then calls `then` with it (None if their
+    /// hand was empty). The session does the taking, so it can't race with the player.
+    pub fn take_held(&self, id: i64, count: i8, then: impl FnOnce(&Server, TakeResult) + Send + 'static) {
+        let then = Taken(Arc::new(Mutex::new(Some(Box::new(then)))));
+        let _ = self.events.send(Event::Take { to: id, what: TakeWhat::Held(count), then });
+    }
+
+    /// Takes exactly `count` of item `name` from `id`'s inventory, or nothing if they have fewer.
+    pub fn take_item(&self, id: i64, name: &str, count: u32, then: impl FnOnce(&Server, TakeResult) + Send + 'static) {
+        let then = Taken(Arc::new(Mutex::new(Some(Box::new(then)))));
+        let _ = self.events.send(Event::Take { to: id, what: TakeWhat::Item(name.to_string(), count), then });
     }
 
     /// Gives `item` (from `plugin::item`) to a player; what doesn't fit drops at their feet.

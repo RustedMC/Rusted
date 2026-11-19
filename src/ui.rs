@@ -489,6 +489,38 @@ pub fn boss_bar(server: &Server, to: i64, text: &str, percent: f32, color: u8) {
     }
 }
 
+/// Shows a sidebar named `objective` to `to`: a title and up to 15 lines, top to bottom.
+/// Call again to update it (it replaces the old lines).
+pub fn sidebar(server: &Server, to: i64, objective: &str, title: &str, lines: Vec<String>) {
+    use bedrock::protocol::v2168::packets::{ScorePacketEntry, SetScorePacket};
+    use bedrock::protocol::v662::enums::ObjectiveSortOrder;
+    use bedrock::protocol::v662::types::ScoreboardId;
+    let send = |packet: Protocol| {
+        let _ = server.events.send(Event::Packet { to, packet: Box::new(packet) });
+    };
+    send(Protocol::SetDisplayObjectivePacket(Box::new(bedrock::protocol::v662::packets::SetDisplayObjectivePacket {
+        display_slot_name: "sidebar".into(),
+        objective_name: objective.into(),
+        objective_display_name: title.into(),
+        criteria_name: "dummy".into(),
+        sort_order: ObjectiveSortOrder::Descending,
+    })));
+    // Highest score shows first; each line needs a different text, so blanks get § padding.
+    let count = lines.len().min(15) as i32;
+    let entries = lines.into_iter().take(15).enumerate().map(|(i, mut text)| {
+        if text.trim().is_empty() {
+            text = "§r".repeat(i + 1);
+        }
+        ScorePacketEntry::ChangeFakePlayer { scoreboard_id: ScoreboardId { id: 9000 + i as i64 }, objective_name: objective.into(), score_value: count - i as i32, fake_player_name: text }
+    }).collect();
+    send(Protocol::SetScorePacket(Box::new(SetScorePacket { score_info: entries })));
+}
+
+pub fn remove_sidebar(server: &Server, to: i64, objective: &str) {
+    let packet = Protocol::RemoveObjectivePacket(Box::new(bedrock::protocol::v662::packets::RemoveObjectivePacket { objective_name: objective.into() }));
+    let _ = server.events.send(Event::Packet { to, packet: Box::new(packet) });
+}
+
 pub fn remove_boss_bar(server: &Server, to: i64) {
     use bedrock::protocol::v2193::packets::{BossEventPacket, BossEventUpdateType};
     use bedrock::protocol::v662::types::ActorUniqueID;

@@ -52,7 +52,7 @@ pub(crate) fn available_commands(plugins: &plugin::Plugins) -> Protocol {
 
     let rules = vanilla::game_rules();
     let rules_of = |want: fn(&Type) -> bool| rules.iter().filter(|r| want(&r.rule_type)).map(|r| r.rule_name.clone()).collect();
-    let enums: Vec<(&str, Vec<String>)> = vec![
+    let mut enums: Vec<(String, Vec<String>)> = vec![
         ("BoolGameRule", rules_of(|t| matches!(t, Type::Bool(_)))),
         ("IntGameRule", rules_of(|t| matches!(t, Type::Int(_)))),
         ("Boolean", vec!["true".into(), "false".into()]),
@@ -63,15 +63,32 @@ pub(crate) fn available_commands(plugins: &plugin::Plugins) -> Protocol {
         ("Weather", ["clear", "rain", "thunder"].map(String::from).to_vec()),
         ("Difficulty", ["peaceful", "easy", "normal", "hard"].map(String::from).to_vec()),
         ("WhitelistAction", ["add", "remove", "on", "off", "list"].map(String::from).to_vec()),
-    ];
+    ]
+    .into_iter()
+    .map(|(n, v)| (n.to_string(), v))
+    .collect();
+    // Plugin commands with usage lines get real overloads; their subcommand words become enums.
+    let plugin_forms: Vec<(&str, &str, Vec<Vec<(String, Param, bool)>>)> = plugins
+        .commands()
+        .into_iter()
+        .map(|(name, description)| {
+            let forms = plugins.usage(name).iter().map(|line| parse_usage(name, line, &mut enums)).collect();
+            (name, description, forms)
+        })
+        .collect();
+    // Vanilla commands without a hand-built tree below, as usage lines.
+    let vanilla_forms: Vec<(&str, &str, Vec<Vec<(String, Param, bool)>>)> = VANILLA_USAGE
+        .iter()
+        .map(|(name, of, lines)| (*name, *of, lines.iter().map(|l| parse_usage(name, l, &mut enums)).collect()))
+        .collect();
     // An enum argument: valid flag | enum flag | index into enum_data.
-    let e = |name: &str| ARG_VALID | ARG_ENUM | enums.iter().position(|(n, _)| *n == name).unwrap() as u32;
+    let e = |name: &str| ARG_VALID | ARG_ENUM | enums.iter().position(|(n, _)| n == name).unwrap() as u32;
 
     let mut enum_values: Vec<String> = Vec::new();
     let enum_data = enums
         .iter()
         .map(|(name, values)| EnumDataEntry {
-            name: (*name).into(),
+            name: name.clone(),
             values: values
                 .iter()
                 .map(|v| match enum_values.iter().position(|x| x == v) {
@@ -136,15 +153,33 @@ pub(crate) fn available_commands(plugins: &plugin::Plugins) -> Protocol {
         command("list", desc("list"), &[&[]]),
         command("help", desc("help"), &[&[("command", STRING, true)], &[("page", INT, true)]]),
     ];
-    for (n, d) in commands::HELP.iter().filter(|(n, _)| !special.contains(n)) {
+    let listed: Vec<&str> = VANILLA_USAGE.iter().map(|(n, _, _)| *n).collect();
+    for (n, d) in commands::HELP.iter().filter(|(n, _)| !special.contains(n) && !listed.contains(n)) {
         commands.push(command(n, d, &[&[("args", MESSAGE, true)]]));
     }
-    // Aliases PNX/vanilla also accept.
-    for (alias, of) in [("pl", "plugins"), ("ver", "version"), ("msg", "tell"), ("w", "tell"), ("teleport", "tp"), ("pardon", "unban")] {
-        commands.push(command(alias, desc(of), &[&[("args", MESSAGE, true)]]));
-    }
-    for (name, description) in plugins.commands() {
-        commands.push(command(name, description, &[&[("args", MESSAGE, true)]]));
+    // Aliases PNX/vanilla also accept are in VANILLA_USAGE too.
+    let vanilla_forms: Vec<(&str, &str, Vec<Vec<(String, Param, bool)>>)> = vanilla_forms.into_iter().map(|(n, of, f)| (n, desc(of), f)).collect();
+    for (name, description, forms) in vanilla_forms.iter().chain(&plugin_forms) {
+        if forms.is_empty() {
+            commands.push(command(name, description, &[&[("args", MESSAGE, true)]]));
+            continue;
+        }
+        let resolved: Vec<Vec<(&str, u32, bool)>> = forms
+            .iter()
+            .map(|f| {
+                f.iter()
+                    .map(|(n, t, opt)| {
+                        let ty = match t {
+                            Param::Enum(en) => e(en),
+                            Param::Plain(t) => *t,
+                        };
+                        (n.as_str(), ty, *opt)
+                    })
+                    .collect()
+            })
+            .collect();
+        let slices: Vec<&[(&str, u32, bool)]> = resolved.iter().map(Vec::as_slice).collect();
+        commands.push(command(name, description, &slices));
     }
     Protocol::AvailableCommandsPacket(Box::new(AvailableCommandsPacket {
         enum_values,
@@ -156,6 +191,110 @@ pub(crate) fn available_commands(plugins: &plugin::Plugins) -> Protocol {
         soft_enums: vec![],
         constraints: vec![],
     }))
+}
+
+/// (command, the HELP entry its description comes from, usage lines) for vanilla commands
+/// and aliases that have no hand-built tree.
+const VANILLA_USAGE: &[(&str, &str, &[&str])] = &[
+    ("titleraw", "titleraw", &["<player> title|subtitle|actionbar <json...>", "<player> clear|reset"]),
+    ("tellraw", "tellraw", &["<player> <json...>"]),
+    ("playsound", "playsound", &["<sound> [player] [position]"]),
+    ("stopsound", "stopsound", &["<player> [sound]"]),
+    ("camerashake", "camerashake", &["add <player> [intensity] [seconds] [positional|rotational]", "stop [player]"]),
+    ("transfer", "transfer", &["<player> <address> [port]"]),
+    ("clone", "clone", &["<begin_pos> <end_pos> <destination_pos> [replace|masked] [normal|force|move]"]),
+    ("testfor", "testfor", &["<target>"]),
+    ("testforblock", "testforblock", &["<position> <block>"]),
+    ("toggledownfall", "toggledownfall", &[""]),
+    ("daylock", "daylock", &["[true|false]"]),
+    ("scoreboard", "scoreboard", &[
+        "objectives add <name> dummy [display...]",
+        "objectives remove <name>",
+        "objectives list",
+        "objectives setdisplay sidebar|list|belowname [objective]",
+        "players set|add|remove <player> <objective> <count>",
+        "players list [player]",
+        "players reset <player> [objective]",
+    ]),
+    ("plugins", "plugins", &[""]),
+    ("seed", "seed", &[""]),
+    ("status", "status", &[""]),
+    ("stop", "stop", &[""]),
+    ("version", "version", &[""]),
+    ("pl", "plugins", &[""]),
+    ("ver", "version", &[""]),
+    ("msg", "tell", &["<target> <message...>"]),
+    ("w", "tell", &["<target> <message...>"]),
+    ("teleport", "tp", &["<destination_pos>", "<target>", "<player> <destination_pos>", "<player> <target>"]),
+    ("pardon", "unban", &["<player>"]),
+];
+
+/// A usage-line parameter before enum indexes are known.
+pub(crate) enum Param {
+    Enum(String),
+    Plain(u32),
+}
+
+/// One usage line (`set <name>`, `[a|b] <amount>`) into parameters:
+/// `<x>` required argument, `[x]` optional argument (`[a|b]` optional choice), and a bare
+/// word or `a|b` a subcommand. Subcommand words add an enum `<command>.<first word>`.
+pub(crate) fn parse_usage(cmd: &str, line: &str, enums: &mut Vec<(String, Vec<String>)>) -> Vec<(String, Param, bool)> {
+    line.split_whitespace()
+        .map(|tok| {
+            let optional = tok.starts_with('[');
+            let inner = tok.trim_matches(|c| c == '[' || c == ']' || c == '<' || c == '>');
+            let word = !tok.starts_with('<') && (!optional || inner.contains('|'));
+            if word {
+                let values: Vec<String> = inner.split('|').map(str::to_string).collect();
+                let name = format!("{cmd}.{}", values[0]);
+                let label = values[0].clone();
+                if !enums.iter().any(|(n, _)| *n == name) {
+                    enums.push((name.clone(), values));
+                }
+                return (label, Param::Enum(name), optional);
+            }
+            let arg = inner.trim_end_matches("...");
+            let ty = if inner.ends_with("...") {
+                Param::Plain(MESSAGE)
+            } else if matches!(arg, "player" | "who" | "target") {
+                Param::Plain(TARGET)
+            } else if arg == "position" || arg.ends_with("_pos") {
+                Param::Plain(POSITION)
+            } else if arg == "item" {
+                Param::Enum("Item".into())
+            } else if matches!(arg, "amount" | "n" | "count" | "price" | "each" | "hearts" | "line" | "priority" | "size" | "port" | "number") {
+                Param::Plain(INT)
+            } else {
+                Param::Plain(STRING)
+            };
+            (arg.to_string(), ty, optional)
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod usage_tests {
+    use super::*;
+
+    #[test]
+    fn usage_lines() {
+        let mut enums = vec![];
+        let p = parse_usage("home", "set <name>", &mut enums);
+        assert!(matches!(&p[0], (l, Param::Enum(e), false) if l == "set" && e == "home.set"));
+        assert!(matches!(&p[1], (l, Param::Plain(STRING), false) if l == "name"));
+        let p = parse_usage("home", "[name]", &mut enums);
+        assert!(matches!(&p[0], (_, Param::Plain(STRING), true)));
+        let p = parse_usage("eco", "give|take|set <player> <amount>", &mut enums);
+        assert!(matches!(&p[0], (_, Param::Enum(e), false) if e == "eco.give"));
+        assert!(matches!(&p[1], (_, Param::Plain(TARGET), false)));
+        assert!(matches!(&p[2], (_, Param::Plain(INT), false)));
+        let p = parse_usage("clone", "<begin_pos>", &mut enums);
+        assert!(matches!(&p[0], (_, Param::Plain(POSITION), false)));
+        assert!(parse_usage("seed", "", &mut enums).is_empty(), "no-argument form");
+        let p = parse_usage("tc", "<message...>", &mut enums);
+        assert!(matches!(&p[0], (_, Param::Plain(MESSAGE), false)));
+        assert_eq!(enums.iter().find(|(n, _)| n == "eco.give").unwrap().1, vec!["give", "take", "set"]);
+    }
 }
 
 // Param types as PNX sends them on 1.26.

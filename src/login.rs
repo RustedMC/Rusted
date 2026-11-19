@@ -74,7 +74,6 @@ pub(crate) async fn login(
 }
 
 pub(crate) async fn handle_login(unknown_conn: Connection<Unknown>, server: players::Server) {
-    let time_start = Instant::now();
 
     let mut conn = unknown_conn.into_ver::<Protocol>();
     let login = match login(&mut conn).await {
@@ -85,7 +84,7 @@ pub(crate) async fn handle_login(unknown_conn: Connection<Unknown>, server: play
             return;
         }
     };
-    println!("Login: {}", login.authentication.identity().display_name);
+    println!("{} logging in from {}", login.authentication.identity().display_name, conn.get_socket_addr().ip());
     let id = players::next_id();
     let display_name = login.authentication.identity().display_name.clone();
     let lists = commands::lists();
@@ -209,7 +208,6 @@ pub(crate) async fn handle_login(unknown_conn: Connection<Unknown>, server: play
             }
         }
     }
-    println!("{display_name}: resource packs done ({} offered)", packs.len());
 
     // 1.26 world clock; PNX sends it before StartGame. Clock id copied from PNX's join.
     conn.send(&[clock_packet(server.time())]).await.unwrap();
@@ -221,7 +219,6 @@ pub(crate) async fn handle_login(unknown_conn: Connection<Unknown>, server: play
     }))])
     .await
     .unwrap();
-    println!("VoxelShapes");
 
     // 1.26.50+ clients need this before StartGame or they fail with "Missing structure data".
     conn.send(&[Protocol::JigsawStructureDataPacket(Box::new(JigsawStructureDataPacket {
@@ -229,7 +226,6 @@ pub(crate) async fn handle_login(unknown_conn: Connection<Unknown>, server: play
     }))])
     .await
     .unwrap();
-    println!("JigsawStructureData");
 
     // Entity definitions: the player's physics and inventory come from "minecraft:player".
     conn.send(&[Protocol::AvailableActorIdentifiersPacket(Box::new(AvailableActorIdentifiersPacket {
@@ -237,12 +233,10 @@ pub(crate) async fn handle_login(unknown_conn: Connection<Unknown>, server: play
     }))])
     .await
     .unwrap();
-    println!("AvailableActorIdentifiers");
 
     conn.send(&[Protocol::StartGamePacket(Box::new(start_game_packet(id, &display_name, saved_pos, server.time(), commands::world_spawn(&server), server.world.seed(), start_mode.clone())))])
         .await
         .unwrap();
-    println!("StartGame");
 
     // Item definitions must follow StartGame; without them the client has no items at all.
     conn.send(&[
@@ -251,7 +245,6 @@ pub(crate) async fn handle_login(unknown_conn: Connection<Unknown>, server: play
     ])
     .await
     .unwrap();
-    println!("ItemRegistry + CreativeContent");
 
     // Recipes, biome colors, game rules, camera presets, trims: same bytes as vanilla.
     for batch in vanilla::batches() {
@@ -278,9 +271,7 @@ pub(crate) async fn handle_login(unknown_conn: Connection<Unknown>, server: play
     }))])
     .await
     .unwrap();
-    println!("PlayStatusPacket (PlayerSpawn)");
 
-    println!("Finished request in {:?}", time_start.elapsed());
     let identity = login.authentication.identity();
     let me = players::PlayerInfo {
         id,

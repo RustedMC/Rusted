@@ -213,8 +213,7 @@ impl Session {
             }
             Protocol::SetLocalPlayerAsInitializedPacket(_) => {
                 // Physics flags (gravity, collision), attributes, abilities, inventory.
-                let r = self.conn.send(&spawn::after_load(self.id, &self.name, self.inv.all_packets())).await;
-                println!("{}: client loaded; sent player state: {r:?}", self.name);
+                let _ = self.conn.send(&spawn::after_load(self.id, &self.name, self.inv.all_packets())).await;
             }
             Protocol::InteractPacket(i) if matches!(i.action, InteractAction::OpenInventory) => self.on_open_inventory().await,
             Protocol::InteractPacket(i) if matches!(i.action, InteractAction::StopRiding) => self.get_off(),
@@ -252,11 +251,7 @@ impl Session {
             Protocol::PlayerActionPacket(a) if self.hp.dead && matches!(a.action, PlayerActionType::Respawn) => return self.on_respawn().await,
             Protocol::PlayerActionPacket(a) => self.on_player_action(&a).await,
             other => {
-                // debug: log packets we don't handle yet
-                let d = format!("{other:?}");
-                if !d.starts_with("ServerBoundDiagnostics") && !d.starts_with("Animate") {
-                    println!("PACKET {}", &d[..d.len().min(300)]);
-                }
+                let _ = other;
             }
         }
         GO

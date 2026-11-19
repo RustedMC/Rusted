@@ -76,6 +76,14 @@ pub trait Plugin: Send + Sync {
         vec![]
     }
 
+    /// How a command is typed, one line per form, for autocomplete: plain words are
+    /// subcommands (`a|b` offers both), `<x>` is required, `[x]` optional, `<x...>` takes the
+    /// rest of the line. `<player>` suggests players, `<item>` items, `<amount>` and other
+    /// counts expect a number. E.g. `&["set <name>", "delete <name>", "list", "[name]"]`.
+    fn usage(&self, _command: &str) -> &'static [&'static str] {
+        &[]
+    }
+
     /// Permission a player needs to run one of this plugin's commands. `None` = anyone.
     fn command_permission(&self, _command: &str) -> Option<&'static str> {
         None
@@ -137,8 +145,12 @@ pub trait Plugin: Send + Sync {
         true
     }
 
-    /// Player threw `count` of `item` out of their inventory.
-    fn on_item_drop(&self, _server: &Server, _player: &PlayerInfo, _item: &str, _count: i8) {}
+    /// Player threw `count` of `item` out of their inventory. Return false to keep it in their
+    /// hand (only a Q drop from the hotbar can be stopped; drops in a screen go through
+    /// `on_inventory_action` first).
+    fn on_item_drop(&self, _server: &Server, _player: &PlayerInfo, _item: &str, _count: i8) -> bool {
+        true
+    }
 
     /// Player hitting `mob` (e.g. "minecraft:cow") for `damage`. Return false to cancel the hit
     /// (PNX EntityDamageByEntityEvent).
@@ -306,7 +318,27 @@ pub trait Plugin: Send + Sync {
 
 /// Every loaded plugin. Add yours here.
 pub fn all() -> Vec<Box<dyn Plugin>> {
-    vec![Box::new(crate::demo::Demo), Box::new(crate::lobby::Lobby)]
+    vec![
+        Box::new(crate::demo::Demo),
+        Box::new(crate::lobby::Lobby),
+        Box::new(crate::npcs::Npcs),
+        Box::new(crate::worldedit::WorldEdit),
+        Box::new(crate::worldguard::WorldGuard),
+        Box::new(crate::economy::Economy),
+        Box::new(crate::essentials::Essentials),
+        Box::new(crate::ranks::Ranks),
+        Box::new(crate::kits::Kits),
+        Box::new(crate::market::Market),
+        Box::new(crate::shops::Shops),
+        Box::new(crate::holograms::Holograms),
+        Box::new(crate::stats::Stats),
+        Box::new(crate::teams::Teams),
+        Box::new(crate::scoreboard::Scoreboard),
+        Box::new(crate::menus::Menus),
+        Box::new(crate::lifesteal::Lifesteal),
+        Box::new(crate::spawners::Spawners),
+        Box::new(crate::quests::Quests),
+    ]
 }
 
 /// Registered plugins, plus helpers to run an event through all of them.
@@ -440,8 +472,8 @@ impl Plugins {
         self.cancellable(|pl| pl.on_gamemode_change(s, p, mode))
     }
 
-    pub fn item_drop(&self, s: &Server, p: &PlayerInfo, item: &str, count: i8) {
-        self.each(|pl| pl.on_item_drop(s, p, item, count));
+    pub fn item_drop(&self, s: &Server, p: &PlayerInfo, item: &str, count: i8) -> bool {
+        self.cancellable(|pl| pl.on_item_drop(s, p, item, count))
     }
 
     pub fn entity_click(&self, s: &Server, p: &PlayerInfo, entity: i64, attack: bool) {
@@ -586,6 +618,11 @@ impl Plugins {
         self.list.iter().flat_map(|pl| pl.commands()).collect()
     }
 
+    /// Usage lines of whichever plugin owns `name`.
+    pub fn usage(&self, name: &str) -> &'static [&'static str] {
+        self.list.iter().find(|pl| pl.commands().iter().any(|(n, _)| *n == name)).map_or(&[], |pl| pl.usage(name))
+    }
+
     /// First plugin that owns `name` handles it, if the player has its permission.
     pub fn command(&self, s: &Server, p: &PlayerInfo, name: &str, args: &[&str]) -> Option<String> {
         let owner = self.list.iter().find(|pl| pl.commands().iter().any(|(n, _)| *n == name))?;
@@ -600,7 +637,7 @@ impl Plugins {
     /// Does `player` have `node`? `permissions.txt` wins, then the plugin's default for it.
     /// Nodes nobody declared are ops-only.
     pub fn allowed(&self, player: &str, node: &str) -> bool {
-        if let Some(set) = permissions().get(player, node) {
+        if let Some(set) = permissions().get(player, node).or_else(|| crate::ranks::allowed(player, node)) {
             return set;
         }
         match self.defaults.iter().find(|(n, _)| *n == node).map_or(Access::Ops, |(_, a)| *a) {
@@ -769,6 +806,12 @@ impl Config {
 
     /// This plugin's saved data for one player, in plugins/<name>/players/<player>.txt. Keyed by
     /// Xbox id when there is one, so it survives name changes. Call `save()` after changing it.
+    /// Another file in the plugin's folder, e.g. `Config::data("warps", "warps")` is
+    /// plugins/warps/warps.txt.
+    pub fn data(plugin: &str, file: &str) -> Config {
+        Config::at(std::path::Path::new("plugins").join(safe_name(plugin)).join(format!("{}.txt", safe_name(file))))
+    }
+
     pub fn player(plugin: &str, player: &PlayerInfo) -> Config {
         let who = if player.xuid.is_empty() { player.name.to_lowercase() } else { player.xuid.clone() };
         Config::at(std::path::Path::new("plugins").join(safe_name(plugin)).join("players").join(format!("{}.txt", safe_name(&who))))
@@ -804,6 +847,15 @@ impl Config {
             Some(v) => v.1 = value.to_string(),
             None => self.values.push((key.to_string(), value.to_string())),
         }
+    }
+
+    pub fn remove(&mut self, key: &str) {
+        self.values.retain(|(k, _)| k != key);
+    }
+
+    /// Every (key, value), in file order.
+    pub fn entries(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.values.iter().map(|(k, v)| (k.as_str(), v.as_str()))
     }
 
     pub fn save(&self) -> std::io::Result<()> {

@@ -193,12 +193,14 @@ impl Session {
             && let Some(me) = self.server.get(self.id)
         {
             let n = thrown.min(st.count);
-            for _ in 0..n {
-                self.inv.use_one(slot);
+            // Cancelled: the slot packet below puts the item back in the client's hand.
+            if self.server.plugins.item_drop(&self.server, &me, items::name_of(st.item.id).unwrap_or(""), n) {
+                for _ in 0..n {
+                    self.inv.use_one(slot);
+                }
+                let (at, vel) = throw_from(&me);
+                self.server.entities.drop_item_vel(&self.server, st.item, n, at, vel);
             }
-            self.server.plugins.item_drop(&self.server, &me, items::name_of(st.item.id).unwrap_or(""), n);
-            let (at, vel) = throw_from(&me);
-            self.server.entities.drop_item_vel(&self.server, st.item, n, at, vel);
             let item = self.inv.held(slot).map_or_else(spawn::air, inventory::Stack::to_network);
             let _ = self.conn.send(&[Protocol::InventorySlotPacket(Box::new(InventorySlotPacket {
                 container_id: 0, slot: slot as u32, container_name_data: None, storage_item: None, item,

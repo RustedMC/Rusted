@@ -28,7 +28,7 @@ pub(crate) async fn set_game_mode(conn: &mut dims::DimConn, id: i64, mode: &Game
 pub(crate) async fn give_effect(conn: &mut dims::DimConn, server: &players::Server, id: i64, name: &str, hp: &mut health::Health, food: &mut hunger::Hunger, fx: &mut effects::Effects, inv: &mut inventory::Inventory, e: i32, x: effects::Effect, mode: &GameType) {
     match e {
         effects::INSTANT_HEALTH => {
-            hp.health = (hp.health + (4 << x.amplifier.min(5)) as f32).min(health::MAX_HEALTH);
+            hp.health = (hp.health + (4 << x.amplifier.min(5)) as f32).min(hp.max);
             let _ = conn.send(&[spawn::health_packet(id, hp.health)]).await;
         }
         effects::INSTANT_DAMAGE => hurt(conn, server, id, name, hp, health::Damage::Magic((6 << x.amplifier.min(5)) as f32), inv, fx, mode).await,

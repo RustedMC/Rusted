@@ -8,7 +8,14 @@ impl Session {
         self.regen_ticks += 1;
         {
             let armor = std::array::from_fn(|i| self.inv.held(inventory::ARMOR + i).cloned());
-            let eq = players::Equipment { held: self.inv.held(self.selected_slot as usize).cloned(), armor };
+            let max = health::max_of(self.id);
+            if max != self.hp.max {
+                self.hp.max = max;
+                self.hp.health = self.hp.health.min(max);
+                let _ = self.conn.send(&[spawn::health_packet(self.id, self.hp.health)]).await;
+            }
+            let inventory = (0..inventory::MAIN).map(|i| self.inv.held(i).cloned()).collect();
+            let eq = players::Equipment { held: self.inv.held(self.selected_slot as usize).cloned(), armor, inventory };
             players::EQUIPMENT.lock().get_or_insert_with(Default::default).insert(self.id, eq);
         }
         self.idle += 1;
@@ -102,8 +109,8 @@ impl Session {
         }
         if !self.hp.dead && !self.effects.active.is_empty() {
             let t = self.effects.second();
-            if t.heal > 0.0 && self.hp.health < health::MAX_HEALTH {
-                self.hp.health = (self.hp.health + t.heal).min(health::MAX_HEALTH);
+            if t.heal > 0.0 && self.hp.health < self.hp.max {
+                self.hp.health = (self.hp.health + t.heal).min(self.hp.max);
                 let _ = self.conn.send(&[spawn::health_packet(self.id, self.hp.health)]).await;
             }
             if t.poison > 0.0 && self.hp.health > 1.0 && survival_like(&self.mode) {
@@ -194,6 +201,25 @@ impl Session {
                 let left = self.inv.add(item.item.clone(), item.count);
                 if left > 0 && let Some(me) = self.server.get(self.id) {
                     self.server.entities.drop_item(&self.server, item.item, left, (me.pos.0, me.pos.1 - 1.0, me.pos.2));
+                }
+                vec![self.inv.content_packet()]
+            }
+            Ok(Event::Take { to, what, then }) if to == self.id => {
+                let got = match what {
+                    players::TakeWhat::Held(n) => {
+                        let slot = self.selected_slot as usize;
+                        self.inv.held(slot).cloned().map(|st| {
+                            let n = n.clamp(1, st.count);
+                            for _ in 0..n {
+                                self.inv.use_one(slot);
+                            }
+                            (st, n as u32)
+                        })
+                    }
+                    players::TakeWhat::Item(name, n) => self.inv.take_count(&name, n),
+                };
+                if let Some(f) = then.0.lock().take() {
+                    f(&self.server, got);
                 }
                 vec![self.inv.content_packet()]
             }
