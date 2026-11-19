@@ -365,7 +365,7 @@ pub(crate) fn chat_packet(from: String, message: String) -> Protocol {
 }
 
 pub(crate) fn player_list_add(p: &players::PlayerInfo) -> Protocol {
-    Protocol::PlayerListPacket(Box::new(PlayerListPacket {
+    persona_fix(PlayerListPacket {
         entries: vec![PlayerListEntry::Add(AddPlayerListEntry {
             uuid: p.uuid,
             target_actor_id: ActorUniqueID(p.id),
@@ -380,7 +380,74 @@ pub(crate) fn player_list_add(p: &players::PlayerInfo) -> Protocol {
             is_sub_client: false,
             color: players::white(),
         })],
-    }))
+    })
+}
+
+/// bedrock-rs writes a persona piece's type as a 4-byte number for 1.26, but the game reads
+/// it as its name ("skeleton", "hair", ...) and drops anyone who gets the number. So skins with
+/// pieces are encoded here and each piece's number swapped for its name, found by the unique
+/// piece id written just before it.
+// shortcut: patches the encoded bytes; drop it once bedrock-rs encodes PersonaPieceType as a string.
+fn persona_fix(pk: PlayerListPacket<Protocol>) -> Protocol {
+    use bedrock::protocol::{Packet, ProtoCodec, UnknownPacket};
+    let pieces: Vec<(String, String)> = pk.entries.iter().flat_map(|e| match e {
+        PlayerListEntry::Add(a) => a.serialized_skin.persona_pieces.iter().map(|p| (p.piece_id.clone(), snake(&format!("{:?}", p.piece_type)))).collect(),
+        _ => vec![],
+    }).collect();
+    if pieces.is_empty() {
+        return Protocol::PlayerListPacket(Box::new(pk));
+    }
+    let mut buf = Vec::new();
+    if ProtoCodec::serialize(&pk, &mut buf).is_err() {
+        return Protocol::PlayerListPacket(Box::new(pk));
+    }
+    let mut from = 0;
+    for (id, name) in pieces {
+        let mut needle = varint(id.len());
+        needle.extend_from_slice(id.as_bytes());
+        let Some(at) = buf[from..].windows(needle.len()).position(|w| w == needle.as_slice()).map(|i| from + i + needle.len()) else { continue };
+        let mut text = varint(name.len());
+        text.extend_from_slice(name.as_bytes());
+        buf.splice(at..at + 4, text.iter().copied());
+        from = at + text.len();
+    }
+    Protocol::Unknown(Box::new(UnknownPacket { id: <PlayerListPacket<Protocol> as Packet>::ID, buf: buf.into() }))
+}
+
+fn varint(mut n: usize) -> Vec<u8> {
+    let mut out = Vec::new();
+    loop {
+        let b = (n & 0x7f) as u8;
+        n >>= 7;
+        if n == 0 {
+            out.push(b);
+            return out;
+        }
+        out.push(b | 0x80);
+    }
+}
+
+/// "FacialHair" -> "facial_hair"
+fn snake(s: &str) -> String {
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if c.is_uppercase() && i > 0 {
+            out.push('_');
+        }
+        out.extend(c.to_lowercase());
+    }
+    out
+}
+
+#[cfg(test)]
+mod persona_tests {
+    #[test]
+    fn names_and_varints() {
+        assert_eq!(super::snake("FacialHair"), "facial_hair");
+        assert_eq!(super::snake("Skeleton"), "skeleton");
+        assert_eq!(super::varint(5), vec![5]);
+        assert_eq!(super::varint(300), vec![0xac, 0x02]);
+    }
 }
 
 pub(crate) fn add_player(p: &players::PlayerInfo) -> Protocol {
