@@ -439,8 +439,6 @@ fn snake(s: &str) -> String {
     out
 }
 
-}
-
 pub(crate) fn add_player(p: &players::PlayerInfo) -> Protocol {
     Protocol::AddPlayerPacket(Box::new(AddPlayerPacket {
         uuid: p.uuid,
@@ -501,3 +499,4 @@ mod persona_tests {
         assert_eq!(super::varint(5), vec![5]);
         assert_eq!(super::varint(300), vec![0xac, 0x02]);
     }
+}
