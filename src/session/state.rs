@@ -56,6 +56,8 @@ pub(crate) struct Session {
     pub last_pos: Option<(f32, f32, f32)>,
     /// Seconds since this player last moved or looked around (for player-idle-timeout).
     pub idle: u64,
+    /// The last item use plugins were asked about: when, which item, and their answer.
+    pub last_item_use: Option<(Instant, i16, bool)>,
     // Input ticks spent standing in a nether portal, and when the last trip ended.
     pub portal_ticks: u32,
     pub portal_done: Instant,
@@ -157,6 +159,7 @@ impl Session {
             drawing: None,
             last_pos: None,
             idle: 0,
+            last_item_use: None,
             portal_ticks: 0,
             portal_done: Instant::now(),
             riding: None,

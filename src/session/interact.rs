@@ -7,6 +7,23 @@ use players::Event;
 type PlayerAction = <Protocol as ProtoVersionPackets>::PlayerActionPacket;
 
 impl Session {
+    /// Asks plugins about an item use, once per click. One right-click on a block arrives as
+    /// several "use on block" packets (and more while held), so repeats of the same item within
+    /// a quarter second reuse the first answer instead of firing the event again.
+    fn item_use_allowed(&mut self, me: &players::PlayerInfo, st: &inventory::Stack) -> bool {
+        let now = Instant::now();
+        if let Some((at, item, allowed)) = &mut self.last_item_use
+            && now.duration_since(*at) < std::time::Duration::from_millis(250)
+            && *item == st.item.id
+        {
+            *at = now; // still holding the button: the window keeps going
+            return *allowed;
+        }
+        let allowed = self.server.plugins.item_use(&self.server, me, st);
+        self.last_item_use = Some((now, st.item.id, allowed));
+        allowed
+    }
+
     pub(super) async fn on_item_use(&mut self, t: Box<Transaction>) {
         // Creative placing: the client tells us the block it's holding.
         if let InventoryTransactionData::ItemUse(u) = &t.data
@@ -30,7 +47,7 @@ impl Session {
             && matches!(u.action_type, 0 | 1)
             && let Some(st) = self.inv.held(self.selected_slot as usize).cloned()
             && let Some(me) = self.server.get(self.id)
-            && !self.server.plugins.item_use(&self.server, &me, &st)
+            && !self.item_use_allowed(&me, &st)
         {
             if u.action_type == 0 {
                 let p = &u.block_position;
