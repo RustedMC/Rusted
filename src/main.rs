@@ -22,6 +22,8 @@ mod fishing;
 mod rockets;
 mod sculk;
 mod connect;
+mod rcon;
+mod backup;
 mod lectern;
 mod loot;
 mod minecart;
@@ -409,6 +411,27 @@ async fn main() {
                     Err(e) => println!("final save failed: {e}"),
                 }
                 std::process::exit(0);
+            }
+        });
+    }
+    rcon::start(server.clone());
+    // World backups every backup-interval minutes (the 10 s autosave keeps the files current).
+    if config::get().backup_interval > 0
+        && let Some(level_dir) = world_path.parent().map(std::path::Path::to_path_buf)
+    {
+        let minutes = config::get().backup_interval;
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(minutes * 60));
+            tick.tick().await; // not right at startup
+            loop {
+                tick.tick().await;
+                let dir = level_dir.clone();
+                let keep = config::get().backup_keep;
+                match tokio::task::spawn_blocking(move || backup::run(&dir, std::path::Path::new("backups"), keep)).await {
+                    Ok(Ok(to)) => println!("Backed up the world to {}", to.display()),
+                    Ok(Err(e)) => println!("World backup failed: {e}"),
+                    Err(_) => {}
+                }
             }
         });
     }

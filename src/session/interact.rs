@@ -463,7 +463,7 @@ impl Session {
             .map(|(o, b)| (o, if blocks::has_state(b, "persistent_bit") { blocks::with(b, &[("persistent_bit", blocks::State::Bool(true))]) } else { b }))
             .collect();
         // All parts (both door halves, both bed halves) need free space.
-        let fits = spawn::can_build(&self.mode) && !parts.is_empty() && parts.iter().all(|((ox, oy, oz), b)| {
+        let fits = spawn::can_build(&self.mode) && !commands::spawn_protected(&self.server, &self.name, (x, y, z)) && !parts.is_empty() && parts.iter().all(|((ox, oy, oz), b)| {
             let (bx, by, bz) = (x + ox, y + oy, z + oz);
             // Torches, flowers, rails and other pass-through blocks can go where a player stands.
             replaceable(self.server.world.get(bx, by, bz)) && !(is_solid(*b) && self.server.occupied(bx, by, bz))
@@ -519,6 +519,7 @@ impl Session {
     /// plugin checks; puts it back on their screen if it may not break.
     pub(super) async fn destroy_block(&mut self, p: (i32, i32, i32)) {
         if spawn::can_build(&self.mode)
+            && !commands::spawn_protected(&self.server, &self.name, p)
             && self.server.world.get(p.0, p.1, p.2) != world::AIR
             && self.server.get(self.id).is_some_and(|me| self.server.plugins.block_break(&self.server, &me, p, self.server.world.get(p.0, p.1, p.2)))
         {

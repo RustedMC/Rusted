@@ -393,6 +393,17 @@ pub fn set_spawn(player: Option<&str>, pos: (f32, f32, f32)) {
     }
 }
 
+/// Whether `pos` is inside spawn protection for `player` (vanilla: a square of
+/// spawn-protection blocks around the world spawn; operators can always build).
+pub fn spawn_protected(server: &Server, player: &str, pos: (i32, i32, i32)) -> bool {
+    let r = crate::config::get().spawn_protection;
+    if r <= 0 || is_op(player) || crate::dims::of(pos.1) != crate::dims::OVERWORLD {
+        return false;
+    }
+    let s = world_spawn(server);
+    (pos.0 - s.0.floor() as i32).abs() <= r && (pos.2 - s.2.floor() as i32).abs() <= r
+}
+
 pub fn world_spawn(server: &Server) -> (f32, f32, f32) {
     spawns().lock().get("*").copied().unwrap_or_else(|| server.world.spawn())
 }

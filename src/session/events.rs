@@ -6,6 +6,11 @@ use players::Event;
 impl Session {
     pub async fn every_second(&mut self) {
         self.regen_ticks += 1;
+        self.idle += 1;
+        let limit = config::get().player_idle_timeout * 60;
+        if limit > 0 && self.idle >= limit && !commands::is_op(&self.name) {
+            self.server.kick(self.id, "You were idle for too long");
+        }
         // An elytra wears 1 durability per second of gliding (vanilla).
         if self.gliding && survival_like(&self.mode) {
             wear(&mut self.conn, &self.server, self.id, &mut self.inv, inventory::ARMOR + 1, 1, &self.mode).await;

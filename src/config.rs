@@ -20,6 +20,20 @@ pub struct Config {
     pub difficulty: String,
     pub view_distance: i32,
     pub white_list: bool,
+    /// Blocks around the world spawn only operators can change (0 = off).
+    pub spawn_protection: i32,
+    /// Minutes between world backups into backups/ (0 = off), and how many to keep.
+    pub backup_interval: u64,
+    pub backup_keep: usize,
+    /// Kick players who haven't moved for this many minutes (0 = never).
+    pub player_idle_timeout: u64,
+    /// `{player}` is replaced with the name. Empty = no message.
+    pub join_message: String,
+    pub leave_message: String,
+    /// Remote console (the Source RCON protocol hosting panels use).
+    pub enable_rcon: bool,
+    pub rcon_port: u16,
+    pub rcon_password: String,
 }
 
 const DEFAULTS: &str = "\
@@ -42,6 +56,20 @@ difficulty=normal
 # this. 16 suits most servers; raise it on a strong machine.
 view-distance=16
 white-list=false
+# Radius around the world spawn where only operators can build (vanilla: 16). 0 turns it off.
+spawn-protection=16
+# Copy the world into backups/ every this many minutes (0 = never), keeping the newest few.
+backup-interval=60
+backup-keep=5
+# Kick players who stand still for this many minutes. 0 = never.
+player-idle-timeout=0
+# Chat messages when players join and leave. {player} is their name; leave empty for none.
+join-message=§e{player} joined the game
+leave-message=§e{player} left the game
+# Remote console for hosting panels and tools like mcrcon. Set a password before turning it on.
+enable-rcon=false
+rcon.port=25575
+rcon.password=
 ";
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
@@ -60,10 +88,35 @@ fn parse(text: &str) -> HashMap<String, String> {
 }
 
 pub fn load(path: &std::path::Path) -> Config {
-    let text = std::fs::read_to_string(path).unwrap_or_else(|_| {
+    let mut text = std::fs::read_to_string(path).unwrap_or_else(|_| {
         let _ = std::fs::write(path, DEFAULTS);
         DEFAULTS.to_string()
     });
+    // Settings added in newer versions get written into an older file, with their comments,
+    // so owners can see and change them.
+    let have = parse(&text);
+    let mut added = String::new();
+    let mut comment = String::new();
+    for line in DEFAULTS.lines().skip(1) {
+        if line.starts_with('#') {
+            comment.push_str(line);
+            comment.push('\n');
+        } else if let Some((k, _)) = line.split_once('=') {
+            if !have.contains_key(k.trim()) {
+                added.push_str(&comment);
+                added.push_str(line);
+                added.push('\n');
+            }
+            comment.clear();
+        }
+    }
+    if !added.is_empty() && !cfg!(test) {
+        if !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push_str(&format!("\n# Added by Rusted {}\n{added}", env!("CARGO_PKG_VERSION")));
+        let _ = std::fs::write(path, &text);
+    }
     from_map(parse(DEFAULTS), parse(&text))
 }
 
@@ -86,6 +139,15 @@ fn from_map(defaults: HashMap<String, String>, mut m: HashMap<String, String>) -
         difficulty: s("difficulty").to_lowercase(),
         view_distance: s("view-distance").parse().unwrap_or(16).clamp(2, 96),
         white_list: s("white-list") == "true",
+        spawn_protection: s("spawn-protection").parse().unwrap_or(16).max(0),
+        backup_interval: s("backup-interval").parse().unwrap_or(60),
+        backup_keep: s("backup-keep").parse().unwrap_or(5).max(1),
+        player_idle_timeout: s("player-idle-timeout").parse().unwrap_or(0),
+        join_message: s("join-message"),
+        leave_message: s("leave-message"),
+        enable_rcon: s("enable-rcon") == "true",
+        rcon_port: s("rcon.port").parse().unwrap_or(25575),
+        rcon_password: s("rcon.password"),
     }
 }
 

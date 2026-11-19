@@ -23,6 +23,9 @@ impl Session {
     }
 
     pub(super) async fn on_input(&mut self, input: &AuthInput) -> Flow {
+        if input.move_vector.0.abs() + input.move_vector.1.abs() > 0.01 || self.server.get(self.id).is_some_and(|me| me.rot != input.player_rotation) {
+            self.idle = 0;
+        }
         if let Some(actions) = &input.player_block_actions {
             self.on_block_actions(actions).await;
         }

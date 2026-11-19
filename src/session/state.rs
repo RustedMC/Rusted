@@ -54,6 +54,8 @@ pub(crate) struct Session {
     // When the player started drawing a bow or raising a trident.
     pub drawing: Option<Instant>,
     pub last_pos: Option<(f32, f32, f32)>,
+    /// Seconds since this player last moved or looked around (for player-idle-timeout).
+    pub idle: u64,
     // Input ticks spent standing in a nether portal, and when the last trip ended.
     pub portal_ticks: u32,
     pub portal_done: Instant,
@@ -111,10 +113,10 @@ impl Session {
         server.mobs.owner_joined(mobs::owner_key(&name), id);
         server.plugins.join(&server, &me_info);
         println!("{name} joined");
-        let _ = server.events.send(Event::Chat {
-            from: String::new(),
-            message: format!("§e{name} joined the game"),
-        });
+        let joined = config::get().join_message.replace("{player}", &name);
+        if !joined.is_empty() {
+            let _ = server.events.send(Event::Chat { from: String::new(), message: joined });
+        }
         let xp = xp::Xp::from_text(&std::fs::read_to_string(player_path(&name).with_extension("xp")).unwrap_or_default());
         let _ = conn.send(&[xp.packet(id)]).await;
         Some(Session {
@@ -154,6 +156,7 @@ impl Session {
             last_pearl: Instant::now() - std::time::Duration::from_secs(5),
             drawing: None,
             last_pos: None,
+            idle: 0,
             portal_ticks: 0,
             portal_done: Instant::now(),
             riding: None,
@@ -274,9 +277,9 @@ impl Session {
         self.server.mobs.set_targetable(self.id, false);
         self.server.mobs.owner_left(self.id, mobs::owner_key(&self.name));
         println!("{name} left");
-        let _ = self.server.events.send(Event::Chat {
-            from: String::new(),
-            message: format!("§e{name} left the game"),
-        });
+        let left = config::get().leave_message.replace("{player}", name);
+        if !left.is_empty() {
+            let _ = self.server.events.send(Event::Chat { from: String::new(), message: left });
+        }
     }
 }
