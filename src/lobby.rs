@@ -284,7 +284,7 @@ fn lobby_items(server: &Server, p: &PlayerInfo) {
         plugin::item(&item).map(|i| i.name(&name).lore(&[&lore]).tag("lobby", key).build())
     };
     for (key, item, name, lore) in [
-        ("selector", "minecraft:compass", "§b§lServer Selector", "§7Right-click to pick a server"),
+        ("selector", "minecraft:emerald", "§b§lServer Selector", "§7Right-click to pick a server"),
         ("play", "minecraft:nether_star", "§a§lPlay", "§7Right-click to jump into a game"),
         ("settings", "minecraft:comparator", "§e§lSettings", "§7Right-click to change your settings"),
     ] {

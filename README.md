@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/banner.png" alt="Rusted" width="100%">
-</p>
-
 <h3 align="center">Vanilla Bedrock. Rust speed. One small download.</h3>
 
 <p align="center">
