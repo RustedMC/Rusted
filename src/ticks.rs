@@ -58,6 +58,12 @@ pub(crate) fn random_ticks(server: &players::Server, rng: &mut u64) {
 }
 
 pub(crate) fn redstone_tick(server: &players::Server, plates: &mut HashMap<(i32, i32, i32), Instant>) {
+    let started = Instant::now();
+    game_tick(server, plates);
+    crate::perf::tick(server, started.elapsed());
+}
+
+fn game_tick(server: &players::Server, plates: &mut HashMap<(i32, i32, i32), Instant>) {
     // Plates stay pressed while something is on them, then 1 s more (vanilla 20 ticks).
     // Stone plates feel players and mobs; wooden ones also items; weighted ones count
     // (gold: 1 a thing, iron: 1 per 10), as in PNX BlockPressurePlateBase.

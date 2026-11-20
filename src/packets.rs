@@ -251,6 +251,7 @@ const VANILLA_USAGE: &[(&str, &str, &[&str])] = &[
         "players reset <player> [objective]",
     ]),
     ("plugins", "plugins", &[""]),
+    ("perf", "perf", &["", "parts"]),
     ("seed", "seed", &[""]),
     ("status", "status", &[""]),
     ("stop", "stop", &[""]),

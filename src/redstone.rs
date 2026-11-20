@@ -808,6 +808,24 @@ pub fn daylight(server: &crate::players::Server) {
     }
 }
 
+/// Blocks `evaluate` does something with, looked up in a set built once (every changed block
+/// checks ~125 neighbours, so this has to be cheap).
+fn relevant(b: i32) -> bool {
+    static SET: std::sync::OnceLock<HashSet<i32>> = std::sync::OnceLock::new();
+    SET.get_or_init(|| {
+        crate::blocks::ids().iter().copied().filter(|&b| {
+            let n = name(b);
+            matches!(n, "redstone_wire" | "redstone_torch" | "unlit_redstone_torch" | "redstone_lamp" | "lit_redstone_lamp" | "piston" | "sticky_piston" | "hopper" | "tnt" | "noteblock" | "dispenser" | "dropper" | "crafter" | "wooden_door")
+                || n.contains("repeater")
+                || n.contains("comparator")
+                || n.starts_with("daylight_detector")
+                || n.ends_with("_door")
+                || n.ends_with("trapdoor")
+                || n.ends_with("fence_gate")
+        }).collect()
+    }).contains(&b)
+}
+
 /// One redstone tick. Reads `w`, returns what to change. `fill` gives a container's
 /// comparator reading (0-15), None if there isn't one.
 pub fn tick(w: &World, fill: &dyn Fn(Pos) -> Option<u8>) -> Step {
@@ -870,7 +888,9 @@ pub fn tick(w: &World, fill: &dyn Fn(Pos) -> Option<u8>) -> Step {
         }
     }
 
-    let dirty: Vec<Pos> = std::mem::take(&mut *DIRTY.lock());
+    let mut dirty: Vec<Pos> = std::mem::take(&mut *DIRTY.lock());
+    dirty.sort_unstable();
+    dirty.dedup();
     let mut area: HashSet<Pos> = HashSet::new();
     for &p in &dirty {
         // observers watching this block fire
@@ -893,7 +913,10 @@ pub fn tick(w: &World, fill: &dyn Fn(Pos) -> Option<u8>) -> Step {
     let mut area: Vec<Pos> = area.into_iter().collect();
     area.sort_unstable();
     for p in area {
-        evaluate(w, e, p, &mut wired, &mut step, fill);
+        // Most changes (flowing water, chunk edits) are nowhere near redstone: skip quickly.
+        if relevant(w.get(p.0, p.1, p.2)) {
+            evaluate(w, e, p, &mut wired, &mut step, fill);
+        }
     }
     // two changes to one block in a tick, last one wins
     let mut seen = HashSet::new();

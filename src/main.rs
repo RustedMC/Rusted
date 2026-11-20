@@ -1,6 +1,7 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)] // game code passes a lot of state around
 
 mod blocks;
+mod perf;
 mod login;
 mod chunks;
 mod ticks;
@@ -173,6 +174,7 @@ const BANNER: &str = r"
 
 #[tokio::main]
 async fn main() {
+    perf::install();
     // Quiet by default like other servers; set RUST_LOG=debug to see everything.
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,raknet=warn,rtc=warn,rtc_sctp=warn,rtc_dtls=warn,rtc_ice=warn,webrtc=warn".into())).init();
     let started = std::time::Instant::now();
@@ -273,6 +275,7 @@ async fn main() {
             let mut weather = commands::WeatherCycle::default();
             for turn in 0u64..=u64::MAX {
                 tick.tick().await;
+                perf::beat("world");
                 if game_rule_on(&server, "doWeatherCycle", true) {
                     let now = *commands::WEATHER.lock();
                     let mut r = rng;
@@ -287,7 +290,7 @@ async fn main() {
                         commands::set_weather(&server, w);
                     }
                 }
-                for ((x, y, z), b) in server.fluids.tick(&server.world, turn % 6 == 0) {
+                for ((x, y, z), b) in perf::time("liquids", || server.fluids.tick(&server.world, turn % 6 == 0)) {
                     // A torch, flower or rail the water washed away drops as an item.
                     let old = server.world.get(x, y, z);
                     if old != world::AIR && !fluids::is_fluid(old) && fluids::is_fluid(b) {
@@ -318,15 +321,15 @@ async fn main() {
                     let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(clock_packet(t)) });
                     let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(time_packet(t)) });
                 }
-                random_ticks(&server, &mut rng);
+                perf::time("random ticks", || random_ticks(&server, &mut rng));
                 if turn % 6 == 0 {
-                    fire_ticks(&server, &mut rng);
+                    perf::time("fire", || fire_ticks(&server, &mut rng));
                 }
                 if *commands::WEATHER.lock() == commands::Weather::Thunder {
                     lightning(&server, &mut rng);
                 }
                 if turn % 2 == 0 {
-                    hopper_ticks(&server);
+                    perf::time("hoppers", || hopper_ticks(&server));
                 }
                 if turn % 4 == 0 {
                     endfight::tick(&server);
@@ -353,14 +356,17 @@ async fn main() {
         let server = server.clone();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(std::time::Duration::from_millis(50));
-            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            // Burst catches up late ticks so it averages 20 a second. With Delay, Windows' ~15.6 ms
+            // timer made every late tick push the rest back, and the server ran at ~17 TPS.
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Burst);
             let mut plates: HashMap<(i32, i32, i32), Instant> = HashMap::new();
             loop {
                 tick.tick().await;
+                perf::beat("game tick");
                 let s = server.clone();
                 let mut p = std::mem::take(&mut plates);
                 let back = tokio::task::spawn_blocking(move || {
-                    redstone_tick(&s, &mut p);
+                    perf::time("redstone and plates", || redstone_tick(&s, &mut p));
                     p
                 })
                 .await;
@@ -380,16 +386,17 @@ async fn main() {
                 tick.tick().await;
                 let s = server.clone();
                 // Mob physics reads the world (may generate chunks): keep it off the async threads.
+                perf::beat("mobs");
                 let _ = tokio::task::spawn_blocking(move || {
-                    s.mobs.tick(&s);
+                    perf::time("mobs", || s.mobs.tick(&s));
                     s.mobs.spawn_chest_carts(&s);
                     fishing::tick(&s);
                     rockets::tick(&s);
                     sculk::tick(&s);
                     beacon::tick(&s);
-                    s.entities.tick(&s);
+                    perf::time("items and orbs", || s.entities.tick(&s));
                     if turn % 20 == 0 {
-                        s.mobs.spawn_near_players(&s);
+                        perf::time("mob spawning", || s.mobs.spawn_near_players(&s));
                     }
                 })
                 .await;
@@ -406,7 +413,8 @@ async fn main() {
             let mut tick = tokio::time::interval(std::time::Duration::from_secs(10));
             loop {
                 tick.tick().await;
-                if let Err(e) = world.save_if_dirty(&path) {
+                perf::beat("autosave");
+                if let Err(e) = perf::time("world save", || world.save_if_dirty(&path)) {
                     println!("autosave failed: {e}");
                 }
                 if let Err(e) = chests.save_if_dirty(&chests_path) {

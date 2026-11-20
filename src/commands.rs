@@ -340,13 +340,14 @@ pub fn difficulty_packet(d: u32) -> crate::Protocol {
 pub const OP_ONLY: &[&str] = &[
     "kick", "op", "deop", "ban", "unban", "pardon", "whitelist", "say", "weather", "difficulty", "gamemode", "gm",
     "tp", "teleport", "give", "summon", "effect", "enchant", "xp", "title", "titleraw", "tellraw", "playsound", "stopsound", "camerashake",
-    "transfer", "damage", "setblock", "fill", "clone", "testfor", "testforblock", "toggledownfall", "daylock", "alwaysday", "scoreboard", "time", "gamerule", "kill", "clear", "spawnpoint", "setworldspawn", "stop", "status",
+    "transfer", "damage", "setblock", "fill", "clone", "testfor", "testforblock", "toggledownfall", "daylock", "alwaysday", "scoreboard", "time", "gamerule", "kill", "clear", "spawnpoint", "setworldspawn", "stop", "status", "perf",
 ];
 
 /// (name, description) for everything we advertise and show in /help.
 pub const HELP: &[(&str, &str)] = &[
     ("ban", "Bans a player"),
     ("clear", "Clears items from your inventory"),
+    ("perf", "Shows TPS, MSPT and RAM in a boss bar"),
     ("deop", "Revokes operator status"),
     ("difficulty", "Sets the difficulty level"),
     ("effect", "Add or remove status effects"),
@@ -557,6 +558,12 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
             None => "§cUse /difficulty peaceful|easy|normal|hard".into(),
         },
         ["seed"] => format!("Seed: {}", server.world.seed() as i64),
+        ["perf", "parts"] => crate::perf::parts_text(),
+        ["perf"] => match server.find_by_name(sender) {
+            Some(id) if crate::perf::toggle(server, id) => "Server stats bar on. /perf again to hide it.".into(),
+            Some(_) => "Server stats bar off.".into(),
+            None => "Only players can see the stats bar; use /status here.".into(),
+        },
         ["plugins" | "pl"] => {
             let names = server.plugins.summaries();
             format!("Plugins ({}): {}", names.len(), names.iter().map(|n| format!("§a{n}§f")).collect::<Vec<_>>().join(", "))

@@ -1334,8 +1334,20 @@ impl Mobs {
         self.tick_detectors(server);
         let mut out = Vec::new();
         let ids: Vec<i64> = self.mobs.lock().keys().copied().collect();
+        let players: Vec<(f32, f32)> = server.all().iter().map(|p| (p.pos.0, p.pos.2)).collect();
         for id in ids {
             let Some(mut m) = self.mobs.lock().get(&id).cloned() else { continue };
+            // Like vanilla's simulation distance: mobs nobody is near don't think or move (and
+            // don't pathfind into chunks nobody needs). Tests run without players, so not there.
+            let near = players.iter().any(|p| (p.0 - m.pos.0).powi(2) + (p.1 - m.pos.2).powi(2) < SIMULATION * SIMULATION);
+            if !near && m.dying == 0 && !cfg!(test) {
+                // Still despawn like vanilla (hostiles, water mobs and bats past 128 blocks).
+                if (m.kind.hostile() || m.kind.aquatic() || m.kind == Kind::Bat) && self.despawn(server, &m) {
+                    self.mobs.lock().remove(&id);
+                    out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
+                }
+                continue;
+            }
             if m.dying > 0 {
                 m.dying -= 1;
                 if m.dying == 0 {
@@ -2945,6 +2957,9 @@ impl Mobs {
 /// Java's monster cap (Bedrock's is lower and per-area; 70 server-wide keeps nights busy
 /// without crowding).
 const HOSTILE_CAP: usize = 70;
+/// Blocks from the nearest player beyond which mobs pause (Bedrock's default simulation
+/// distance is 4 chunks; a bit more so mobs at the edge of view still move).
+const SIMULATION: f32 = 96.0;
 /// PNX MeleeAttackExecutor: a hit every 30 game ticks.
 const MELEE_COOLDOWN: u32 = 3 * TPS / 2;
 /// PNX BowShootExecutor: 20 ticks drawing plus 30 cooling down.
