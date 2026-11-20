@@ -14,6 +14,9 @@ pub enum State {
 pub struct Entry {
     pub name: String,
     pub states: Vec<(String, State)>,
+    /// The palette compound (name, states, version), for block entities that carry a block
+    /// (a piston's moving blocks).
+    pub nbt: nbtx::Value,
 }
 
 struct Registry {
@@ -61,7 +64,11 @@ fn registry() -> &'static Registry {
             let i = reg.entries.len();
             reg.by_id.insert(*id, i);
             reg.by_name.entry(name.clone()).or_default().push(i);
-            reg.entries.push(Entry { name, states });
+            let nbt = match &b {
+                nbtx::Value::Compound(m) => nbtx::Value::Compound(m.iter().filter(|(k, _)| matches!(k.as_slice(), b"name" | b"states" | b"version")).map(|(k, v)| (k.clone(), v.clone())).collect()),
+                _ => nbtx::Value::Int(0),
+            };
+            reg.entries.push(Entry { name, states, nbt });
             reg.ids.push(*id);
         }
         reg

@@ -37,6 +37,8 @@ enum Job {
     Repeater(bool),
     /// dispenser/dropper/crafter fires (vanilla waits 4 game ticks)
     Dispense,
+    /// a piston's move advances half a block (it takes 2 game ticks)
+    Piston,
     /// observer pulse on, then off
     ObserverOn,
     ObserverOff,
@@ -50,6 +52,34 @@ struct Engine {
     /// Last powered state of edge-triggered stuff (doors, TNT, note blocks).
     last: HashMap<Pos, bool>,
     comparators: HashMap<Pos, u8>,
+    /// pistons mid-move
+    moving: HashMap<Pos, Move>,
+}
+
+/// A piston move in progress (PNX BlockEntityPistonArm): blocks sit as moving_block at their
+/// destinations until it's done.
+#[derive(Clone)]
+struct Move {
+    extending: bool,
+    sticky: bool,
+    /// (destination, the real block to put there when done)
+    to: Vec<(Pos, i32)>,
+    /// where the blocks started, for the arm's AttachedBlocks
+    from: Vec<Pos>,
+    dir: Pos,
+    progress: f32,
+}
+
+/// What the client needs to draw a piston arm.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Arm {
+    pub at: Pos,
+    pub sticky: bool,
+    /// 0 retracted, 1 extending, 2 extended, 3 retracting
+    pub state: i8,
+    pub progress: f32,
+    pub last: f32,
+    pub attached: Vec<Pos>,
 }
 
 static ENGINE: Mutex<Option<Engine>> = Mutex::new(None);
@@ -283,8 +313,14 @@ pub struct Step {
     pub dispense: Vec<Pos>,
     pub notes: Vec<Pos>,
     pub sounds: Vec<(Pos, &'static str)>,
-    /// (piston, extended, sticky) for the block entity data
-    pub pistons: Vec<(Pos, bool, bool)>,
+    /// piston arm block entity updates
+    pub pistons: Vec<Arm>,
+    /// moving_block block entities: (where, data)
+    pub moving_blocks: Vec<(Pos, HashMap<String, nbtx::Value>)>,
+    /// blocks a piston crushed: (where, what), to drop as items
+    pub broken: Vec<(Pos, i32)>,
+    /// mobs and items in these cells get pushed half a block this way
+    pub shove: Vec<(Pos, Pos)>,
     /// containers a piston moved: (from, to), so their contents follow
     pub moves: Vec<(Pos, Pos)>,
 }
@@ -566,8 +602,9 @@ impl Calc<'_> {
     }
 }
 
-/// Moves blocks for a piston (PNX BlockPistonBase.doMove). Returns false if it can't extend.
-fn piston(w: &World, p: Pos, b: i32, extend: bool, step: &mut Step) -> bool {
+/// Starts a piston move (PNX BlockPistonBase.doMove): crushed blocks go, moved blocks become
+/// moving_block at their destinations, the arm starts its 2-tick slide. None if it can't extend.
+fn piston(w: &World, p: Pos, b: i32, extend: bool, step: &mut Step) -> Option<Move> {
     let face = piston_face(b);
     let sticky = name(b) == "sticky_piston";
     let head = add(p, face);
@@ -575,13 +612,15 @@ fn piston(w: &World, p: Pos, b: i32, extend: bool, step: &mut Step) -> bool {
     let mut calc = Calc { w, piston: p, dir, extending: extend, arm: (!extend).then_some(head), to_move: vec![], to_destroy: vec![] };
     let can = calc.can_move(sticky, face);
     if !can && extend {
-        return false;
+        return None;
     }
     if !extend {
         step.blocks.push((head, AIR));
     }
+    let mut mv = Move { extending: extend, sticky, to: vec![], from: vec![], dir, progress: if extend { 0.0 } else { 1.0 } };
     if can && (sticky || extend) {
         for &q in &calc.to_destroy {
+            step.broken.push((q, w.get(q.0, q.1, q.2)));
             step.blocks.push((q, AIR));
         }
         // Clear every old spot first, then fill the new ones, so chains overlap correctly.
@@ -589,9 +628,14 @@ fn piston(w: &World, p: Pos, b: i32, extend: bool, step: &mut Step) -> bool {
         for &(q, _) in &moved {
             step.blocks.push((q, AIR));
         }
+        let moving = any_state("minecraft:moving_block").unwrap_or(AIR);
         for &(q, x) in &moved {
             let to = add(q, dir);
-            step.blocks.push((to, x));
+            step.blocks.push((to, moving));
+            step.moving_blocks.push((to, moving_block_data(to, p, x, extend)));
+            step.shove.push((to, dir));
+            mv.to.push((to, x));
+            mv.from.push(q);
             if crate::containers::kind(x).is_some() {
                 step.moves.push((q, to));
             }
@@ -602,12 +646,30 @@ fn piston(w: &World, p: Pos, b: i32, extend: bool, step: &mut Step) -> bool {
             .map(|a| with(a, &[("facing_direction", State::Int(int(b, "facing_direction")))]))
             .unwrap_or(AIR);
         step.blocks.push((head, arm));
+        step.shove.push((head, dir));
         step.sounds.push((p, "piston.out"));
     } else {
         step.sounds.push((p, "piston.in"));
     }
-    step.pistons.push((p, extend, sticky));
-    true
+    step.pistons.push(Arm { at: p, sticky, state: if extend { 1 } else { 3 }, progress: mv.progress, last: mv.progress, attached: mv.from.clone() });
+    Some(mv)
+}
+
+/// The MovingBlock block entity a pushed block rides in (PNX BlockEntityMovingBlock).
+fn moving_block_data(at: Pos, piston: Pos, block: i32, expanding: bool) -> HashMap<String, nbtx::Value> {
+    let nbt = entry(block).map_or(nbtx::Value::Int(0), |e| e.nbt.clone());
+    let mut t = HashMap::new();
+    t.insert("id".into(), nbtx::Value::String("MovingBlock".into()));
+    t.insert("x".into(), nbtx::Value::Int(at.0));
+    t.insert("y".into(), nbtx::Value::Int(at.1));
+    t.insert("z".into(), nbtx::Value::Int(at.2));
+    t.insert("isMovable".into(), nbtx::Value::Byte(1));
+    t.insert("expanding".into(), nbtx::Value::Byte(expanding as i8));
+    t.insert("pistonPosX".into(), nbtx::Value::Int(piston.0));
+    t.insert("pistonPosY".into(), nbtx::Value::Int(piston.1));
+    t.insert("pistonPosZ".into(), nbtx::Value::Int(piston.2));
+    t.insert("movingBlock".into(), nbt);
+    t
 }
 
 fn evaluate(w: &World, e: &mut Engine, p: Pos, wired: &mut HashSet<Pos>, step: &mut Step, fill: &dyn Fn(Pos) -> Option<u8>) {
@@ -652,8 +714,11 @@ fn evaluate(w: &World, e: &mut Engine, p: Pos, wired: &mut HashSet<Pos>, step: &
             let on = received(w, p, &e.comparators, Some(front)) > 0;
             // Extended = its arm is in front (not a memory flag, so restarts keep it).
             let ext = name(w.get(front.0, front.1, front.2)).contains("piston_arm");
-            if on != ext {
-                piston(w, p, b, on, step);
+            if on != ext && !e.moving.contains_key(&p)
+                && let Some(mv) = piston(w, p, b, on, step)
+            {
+                e.moving.insert(p, mv);
+                sched(e, p, Job::Piston, 1);
             }
         }
         "hopper" => {
@@ -774,6 +839,28 @@ pub fn tick(w: &World, fill: &dyn Fn(Pos) -> Option<u8>) -> Step {
                 }
             }
             Job::Dispense => step.dispense.push(p),
+            Job::Piston => {
+                let Some(mut mv) = e.moving.remove(&p) else { continue };
+                let last = mv.progress;
+                mv.progress = if mv.extending { (mv.progress + 0.5).min(1.0) } else { (mv.progress - 0.5).max(0.0) };
+                let done = if mv.extending { mv.progress >= 1.0 } else { mv.progress <= 0.0 };
+                for &(to, _) in &mv.to {
+                    step.shove.push((to, mv.dir));
+                }
+                if done {
+                    // The moving blocks become the real blocks.
+                    for &(to, x) in &mv.to {
+                        if name(w.get(to.0, to.1, to.2)) == "moving_block" {
+                            step.blocks.push((to, x));
+                        }
+                    }
+                    step.pistons.push(Arm { at: p, sticky: mv.sticky, state: if mv.extending { 2 } else { 0 }, progress: mv.progress, last, attached: vec![] });
+                } else {
+                    step.pistons.push(Arm { at: p, sticky: mv.sticky, state: if mv.extending { 1 } else { 3 }, progress: mv.progress, last, attached: mv.from.clone() });
+                    e.moving.insert(p, mv);
+                    sched(e, p, Job::Piston, 1);
+                }
+            }
             Job::ObserverOn if name(b) == "observer" => {
                 step.blocks.push((p, with(b, &[("powered_bit", State::Bool(true))])));
                 sched(e, p, Job::ObserverOff, 2);
@@ -816,21 +903,25 @@ pub fn tick(w: &World, fill: &dyn Fn(Pos) -> Option<u8>) -> Step {
     step
 }
 
-/// Piston arm as block entity data so the client draws it right.
-pub fn piston_data(p: Pos, extended: bool, sticky: bool) -> std::collections::HashMap<String, nbtx::Value> {
-    let progress = if extended { 1.0 } else { 0.0 };
-    let state = if extended { 2 } else { 0 };
-    let mut t = std::collections::HashMap::new();
+/// Piston arm as block entity data so the client draws it (PNX BlockEntityPistonArm).
+pub fn piston_data(arm: &Arm) -> HashMap<String, nbtx::Value> {
+    let blocks = |list: &[Pos]| {
+        let ints: Vec<i32> = list.iter().flat_map(|p| [p.0, p.1, p.2]).collect();
+        nbtx::Value::List(nbtx::ValueList::Int(ints))
+    };
+    let mut t = HashMap::new();
     t.insert("id".into(), nbtx::Value::String("PistonArm".into()));
-    t.insert("x".into(), nbtx::Value::Int(p.0));
-    t.insert("y".into(), nbtx::Value::Int(p.1));
-    t.insert("z".into(), nbtx::Value::Int(p.2));
-    t.insert("isMovable".into(), nbtx::Value::Byte(1));
-    t.insert("Progress".into(), nbtx::Value::Float(progress));
-    t.insert("LastProgress".into(), nbtx::Value::Float(progress));
-    t.insert("State".into(), nbtx::Value::Byte(state));
-    t.insert("NewState".into(), nbtx::Value::Byte(state));
-    t.insert("Sticky".into(), nbtx::Value::Byte(sticky as i8));
+    t.insert("x".into(), nbtx::Value::Int(arm.at.0));
+    t.insert("y".into(), nbtx::Value::Int(arm.at.1));
+    t.insert("z".into(), nbtx::Value::Int(arm.at.2));
+    t.insert("isMovable".into(), nbtx::Value::Byte((arm.state == 0) as i8));
+    t.insert("Progress".into(), nbtx::Value::Float(arm.progress));
+    t.insert("LastProgress".into(), nbtx::Value::Float(arm.last));
+    t.insert("State".into(), nbtx::Value::Byte(arm.state));
+    t.insert("NewState".into(), nbtx::Value::Byte(arm.state));
+    t.insert("Sticky".into(), nbtx::Value::Byte(arm.sticky as i8));
+    t.insert("AttachedBlocks".into(), blocks(&arm.attached));
+    t.insert("BreakBlocks".into(), blocks(&[]));
     t
 }
 
@@ -989,11 +1080,13 @@ mod tests {
         w.set(29, y, 0, block("redstone_block"));
         mark((29, y, 0));
         run(&w, 2);
+        assert_eq!(name(w.get(32, y, 0)), "moving_block", "mid-slide it's a moving block");
+        run(&w, 2);
         assert_eq!(name(w.get(32, y, 0)), "stone", "pushed one block");
         assert!(name(w.get(31, y, 0)).contains("piston_arm"));
         w.set(29, y, 0, AIR);
         mark((29, y, 0));
-        run(&w, 2);
+        run(&w, 4);
         assert_eq!(name(w.get(31, y, 0)), "stone", "sticky pulled it back");
     }
 
@@ -1014,7 +1107,7 @@ mod tests {
         w.set(69, y, 0, block("redstone_block"));
         mark((69, y, 0));
         let mut moves = vec![];
-        for _ in 0..2 {
+        for _ in 0..4 {
             let s = tick(&w, &|_| None);
             moves.extend(s.moves.iter().copied());
             for (q, b) in s.blocks {

@@ -134,12 +134,29 @@ pub(crate) fn redstone_tick(server: &players::Server, plates: &mut HashMap<(i32,
         let packet = if s.starts_with("piston.") { crate::packets::level_sound(s, at, -1) } else { play_sound(s, at) };
         let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(packet) });
     }
-    for (p, ext, sticky) in step.pistons {
-        let data = Protocol::BlockActorDataPacket(Box::new(bedrock::protocol::v662::packets::BlockActorDataPacket {
-            block_position: NetworkBlockPosition { x: p.0, y: p.1, z: p.2 },
-            actor_data_tags: redstone::piston_data(p, ext, sticky),
-        }));
-        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(data) });
+    let actor_data = |p: (i32, i32, i32), tags| Protocol::BlockActorDataPacket(Box::new(bedrock::protocol::v662::packets::BlockActorDataPacket {
+        block_position: NetworkBlockPosition { x: p.0, y: p.1, z: p.2 },
+        actor_data_tags: tags,
+    }));
+    for (p, data) in step.moving_blocks {
+        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(actor_data(p, data)) });
+    }
+    for arm in &step.pistons {
+        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(actor_data(arm.at, redstone::piston_data(arm))) });
+    }
+    // Crushed blocks drop like they were broken.
+    for (p, b) in step.broken {
+        if game_rule_on(server, "doTileDrops", true) {
+            for (item, n) in drops::drops(b, p, None) {
+                server.entities.drop_item(server, item, n, (p.0 as f32 + 0.5, p.1 as f32 + 0.25, p.2 as f32 + 0.5));
+            }
+        }
+        let fx = Protocol::LevelEventPacket(Box::new(bedrock::protocol::v662::packets::LevelEventPacket { event_id: 2001, position: (p.0 as f32 + 0.5, p.1 as f32 + 0.5, p.2 as f32 + 0.5), data: b }));
+        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(fx) });
+    }
+    // Mobs and items in moving blocks' way ride along (players' clients move themselves).
+    for (cell, dir) in step.shove {
+        server.mobs.shove(cell, (dir.0 as f32 * 0.5, dir.1 as f32 * 0.5, dir.2 as f32 * 0.5));
     }
 }
 

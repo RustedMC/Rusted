@@ -1124,6 +1124,20 @@ impl Mobs {
         ids.len()
     }
 
+    /// Moves mobs standing in (or on top of) block `cell` by `by`, for pistons (PNX
+    /// BlockEntityPistonArm.moveCollidedEntities). Never pushes down.
+    pub fn shove(&self, cell: (i32, i32, i32), by: (f32, f32, f32)) {
+        if by.1 < 0.0 {
+            return;
+        }
+        for m in self.mobs.lock().values_mut() {
+            let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+            if feet == cell || feet == (cell.0, cell.1 + 1, cell.2) {
+                m.pos = (m.pos.0 + by.0, m.pos.1 + by.1 * 2.0, m.pos.2 + by.2);
+            }
+        }
+    }
+
     /// Moves every living mob (or one kind) to `to`, for /tp @e. Returns how many moved.
     pub fn teleport_all(&self, kind: Option<&str>, to: (f32, f32, f32)) -> usize {
         let mut n = 0;
