@@ -395,6 +395,9 @@ pub struct Mob {
     saddled: bool,
     /// A player fed or bred it (or it was born from breeding): saved across restarts.
     kept: bool,
+    /// Ticks into drawing a bow / charging a crossbow (0 = not drawing), and who at.
+    draw: u32,
+    aim: i64,
     /// Horses: chance out of 100 to accept a rider, goes up with feeding and each buck.
     temper: u32,
     /// Ticks until an untamed horse decides whether to keep its rider.
@@ -580,6 +583,22 @@ fn data_of(m: &Mob) -> Vec<DataItem<Protocol>> {
         | (m.kind.horse_like() as i64) << 45;
     if let Some(DataItem { data_item_type: T::Int64(f), .. }) = d.first_mut() {
         *f |= bits;
+    }
+    if m.draw > 0 {
+        // PNX Bow/CrossBowShootExecutor: TARGET = who it aims at; bows set
+        // FACING_TARGET_TO_RANGE_ATTACK (87), crossbows USING_ITEM (4), then CHARGED (27)
+        // once loaded, with CHARGE_AMOUNT growing.
+        let crossbow = m.kind == Kind::Pillager;
+        if crossbow {
+            let charged = m.draw >= CROSSBOW_CHARGED;
+            if let Some(DataItem { data_item_type: T::Int64(f), .. }) = d.first_mut() {
+                *f |= 1 << 4 | (charged as i64) << 27;
+            }
+            d.push(DataItem { data_item_id: ChargeAmount, data_item_type: T::Byte((m.draw * 4).min(127) as i8) });
+        } else {
+            d.push(DataItem { data_item_id: Reserved092, data_item_type: T::Int64(crate::spawn::FLAGS_EXTENDED | 1 << (87 - 64)) });
+        }
+        d.push(DataItem { data_item_id: Target, data_item_type: T::Int64(m.aim) });
     }
     if m.kind == Kind::Boat {
         d.push(DataItem { data_item_id: Variant, data_item_type: T::Int(m.color as i32) });
@@ -844,7 +863,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: kind.max_health(), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: if baby { GROW } else { 0 }, baby: if baby { GROW } else { 0 },
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, kept: false, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
+            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, kept: false, draw: 0, aim: 0, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
         };
         let size = [1u8, 2, 4][(self.rand() % 3) as usize];
         if kind.spec().splits {
@@ -872,7 +891,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: (size as f32).powi(2), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: 0,
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, kept: false, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
+            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, kept: false, draw: 0, aim: 0, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
         };
         broadcast(server, add_packet(&m));
         if let Some(p) = held_packet(&m) {
@@ -1724,9 +1743,36 @@ impl Mobs {
                 } else if d2 < 36.0 {
                     m.path.clear();
                 }
-                if d2 < 15.0 * 15.0 && m.attack_cd == 0 {
-                    m.attack_cd = BOW_COOLDOWN;
-                    self.shoot(server, m, (p.pos.0, p.pos.1 - 0.4, p.pos.2), out);
+                // Draw, then shoot (PNX: skeleton 20 gt draw, pillager 80 gt charge with
+                // loading sounds, 30 gt cooldown, 15 block range).
+                let crossbow = m.kind == Kind::Pillager;
+                if d2 >= 15.0 * 15.0 {
+                    if m.draw > 0 {
+                        m.draw = 0;
+                        out.push(data_packet(m));
+                    }
+                } else if m.draw == 0 && m.attack_cd == 0 {
+                    m.draw = 1;
+                    m.aim = p.id;
+                    out.push(data_packet(m));
+                    if crossbow {
+                        out.push(sound("crossbow.loading.start", m.pos));
+                    }
+                } else if m.draw > 0 {
+                    m.draw += 1;
+                    if crossbow && m.draw == CROSSBOW_CHARGED / 2 {
+                        out.push(sound("crossbow.loading.middle", m.pos));
+                    }
+                    if crossbow && m.draw == CROSSBOW_CHARGED {
+                        out.push(sound("crossbow.loading.end", m.pos));
+                        out.push(data_packet(m));
+                    }
+                    if m.draw > if crossbow { CROSSBOW_DRAW } else { BOW_DRAW } {
+                        self.shoot(server, m, (p.pos.0, p.pos.1 - 0.4, p.pos.2), out);
+                        m.draw = 0;
+                        m.attack_cd = BOW_COOLDOWN;
+                        out.push(data_packet(m));
+                    }
                 }
             }
             Kind::Creeper => {
@@ -2769,7 +2815,6 @@ impl Mobs {
                 if w.block_light(x, y, z) > 0 {
                     continue;
                 }
-                let roll = self.rand() % 100;
                 let biome = w.biome_at(x, y, z);
                 use crate::overworld::biome::id as b;
                 if biome == Some(b::MUSHROOM_ISLAND) || biome == Some(b::DEEP_DARK) {
@@ -2783,19 +2828,21 @@ impl Mobs {
                 let snowy = w.is_snowy(x, z);
                 let swamp = matches!(biome, Some(b::SWAMPLAND | b::MANGROVE_SWAMP));
                 let sub = self.rand() % 100;
-                let kind = match roll {
-                    0..38 if desert && sub < 80 => Kind::Husk,
-                    0..38 if sub < 5 => Kind::ZombieVillager,
-                    0..38 => Kind::Zombie,
-                    38..66 if snowy && sub < 80 => Kind::Stray,
-                    38..66 if swamp && sub < 50 => Kind::Bogged,
-                    38..66 => Kind::Skeleton,
-                    66..84 => Kind::Creeper,
-                    84..93 => Kind::Spider,
-                    93..95 => Kind::Witch,
-                    95..98 if swamp || y < 40 => Kind::Slime,
-                    95..98 => Kind::Zombie,
-                    _ => Kind::Enderman,
+                // Vanilla monster weights: zombie 95 + zombie villager 5, skeleton 100, creeper
+                // 100, spider 100, enderman 10, witch 5 (slimes come from swamps and slime
+                // chunks, here 1 in 5 tries where they can).
+                let kind = match self.rand() % 415 {
+                    _ if (swamp || y < 40) && sub < 20 => Kind::Slime,
+                    0..95 if desert && sub < 80 => Kind::Husk,
+                    0..95 => Kind::Zombie,
+                    95..100 => Kind::ZombieVillager,
+                    100..200 if snowy && sub < 80 => Kind::Stray,
+                    100..200 if swamp && sub < 50 => Kind::Bogged,
+                    100..200 => Kind::Skeleton,
+                    200..300 => Kind::Creeper,
+                    300..400 => Kind::Spider,
+                    400..410 => Kind::Enderman,
+                    _ => Kind::Witch,
                 };
                 if kind == Kind::Enderman || kind == Kind::Spider {
                     // Big mobs need room.
@@ -2881,11 +2928,18 @@ impl Mobs {
     }
 }
 
-const HOSTILE_CAP: usize = 120;
+/// Java's monster cap (Bedrock's is lower and per-area; 70 server-wide keeps nights busy
+/// without crowding).
+const HOSTILE_CAP: usize = 70;
 /// PNX MeleeAttackExecutor: a hit every 30 game ticks.
 const MELEE_COOLDOWN: u32 = 3 * TPS / 2;
 /// PNX BowShootExecutor: 20 ticks drawing plus 30 cooling down.
-const BOW_COOLDOWN: u32 = 5 * TPS / 2;
+/// PNX BowShootExecutor: 30 game ticks between shots, a 20-tick draw; pillagers charge their
+/// crossbow for 80 ticks, loaded (CHARGED) at 60. In our 10 Hz ticks.
+const BOW_COOLDOWN: u32 = 15;
+const BOW_DRAW: u32 = 10;
+const CROSSBOW_DRAW: u32 = 40;
+const CROSSBOW_CHARGED: u32 = 30;
 // PNX EntityArrow: 0.05 a game tick. Velocities here are per 10 Hz tick (two game ticks of
 // travel), so the speed lost each tick is 2 x 2 x 0.05.
 const ARROW_GRAVITY: f32 = 0.2;
@@ -3181,7 +3235,7 @@ impl Mobs {
                         id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health, on_ground: false, target: None, panic: 0, dying: 0,
                         sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: baby.parse().unwrap_or(0),
                         aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner, sitting: *sitting == "1",
-                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false, rider: None, saddled, kept, temper, buck: 0, push: None, home, brain: Default::default(),
+                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false, rider: None, saddled, kept, draw: 0, aim: 0, temper, buck: 0, push: None, home, brain: Default::default(),
                     });
                     if let Some(site) = job.and_then(|j| j.site) {
                         crate::villagers::claim(site, id);

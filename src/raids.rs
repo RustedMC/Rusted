@@ -125,7 +125,9 @@ pub fn tick(server: &Server, roll: u32) {
 
 /// Vanilla patrols: from day 5, every so often, 24-48 blocks from a player.
 fn patrols(server: &Server, roll: u32) {
-    if server.time() / 24_000 < 5 || !roll.is_multiple_of(1200) || *crate::commands::DIFFICULTY.lock() == 0 {
+    // Vanilla: an attempt every 10-20 minutes (here ~20 on average), and only 1 in 5 attempts
+    // makes a patrol.
+    if server.time() / 24_000 < 5 || !roll.is_multiple_of(1200) || !(roll / 1200).is_multiple_of(5) || *crate::commands::DIFFICULTY.lock() == 0 {
         return;
     }
     let Some(p) = server.all().into_iter().find(|p| crate::dims::of_f(p.pos.1) == crate::dims::OVERWORLD) else { return };
