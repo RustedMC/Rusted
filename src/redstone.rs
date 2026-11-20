@@ -31,8 +31,12 @@ pub fn mark(p: Pos) {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Job {
-    /// recheck a repeater/torch/comparator
+    /// recheck a torch/comparator
     Diode,
+    /// a repeater turns on (true) or off, decided when its input changed
+    Repeater(bool),
+    /// dispenser/dropper/crafter fires (vanilla waits 4 game ticks)
+    Dispense,
     /// observer pulse on, then off
     ObserverOn,
     ObserverOff,
@@ -46,7 +50,6 @@ struct Engine {
     /// Last powered state of edge-triggered stuff (doors, TNT, note blocks).
     last: HashMap<Pos, bool>,
     comparators: HashMap<Pos, u8>,
-    extended: HashSet<Pos>,
 }
 
 static ENGINE: Mutex<Option<Engine>> = Mutex::new(None);
@@ -70,8 +73,9 @@ fn text(b: i32, key: &str) -> &'static str {
     }
 }
 
+/// A full block that conducts power (not dust, not a component, not glass or leaves).
 fn solid(b: i32) -> bool {
-    crate::overworld::feature::blocks::is_solid(b) && !is_component(b)
+    crate::connect::conductor(b) && !is_component(b)
 }
 
 fn is_component(b: i32) -> bool {
@@ -148,9 +152,20 @@ fn emits(w: &World, src: Pos, to: Pos, comparators: &HashMap<Pos, u8>) -> (u8, b
             }
         }
         "redstone_wire" => {
-            // TODO: dust powers the block under it and every side, vanilla only does the sides it points at
+            // Vanilla: the block under it, and the sides its shape points at (a lone cross
+            // points everywhere).
             let s = int(b, "redstone_signal").clamp(0, 15) as u8;
-            if dir == DIRS[1] { (0, false) } else { (s, false) }
+            let side = match (dir.0, dir.1, dir.2) {
+                (0, -1, 0) => return (s, false),
+                (0, 0, -1) => "redstone_north",
+                (0, 0, 1) => "redstone_south",
+                (1, 0, 0) => "redstone_east",
+                (-1, 0, 0) => "redstone_west",
+                _ => return (0, false),
+            };
+            // Worked out from the neighbours, since saved dust may not carry its shape.
+            let shaped = crate::connect::shape(&|x, y, z| w.get(x, y, z), src).unwrap_or(b);
+            if text(shaped, side) == "none" { (0, false) } else { (s, false) }
         }
         "powered_repeater" if dir == diode_out(b) => (15, true),
         "powered_comparator" | "unpowered_comparator" if dir == diode_out(b) => {
@@ -246,7 +261,10 @@ fn solve_wire(w: &World, wires: &[Pos], c: &HashMap<Pos, u8>) -> HashMap<Pos, u8
         for &(dx, _, dz) in &DIRS[2..] {
             for dy in [-1, 0, 1] {
                 let n = (p.0 + dx, p.1 + dy, p.2 + dz);
-                if set.contains(&n) && power[&n] < v - 1 {
+                // Up a step needs open air over this dust, down one needs the side block open,
+                // the same cut rule `network` uses.
+                let cut = (dy == 1 && solid(w.get(p.0, p.1 + 1, p.2))) || (dy == -1 && solid(w.get(p.0 + dx, p.1, p.2 + dz)));
+                if !cut && set.contains(&n) && power[&n] < v - 1 {
                     power.insert(n, v - 1);
                     q.push_back(n);
                 }
@@ -267,6 +285,8 @@ pub struct Step {
     pub sounds: Vec<(Pos, &'static str)>,
     /// (piston, extended, sticky) for the block entity data
     pub pistons: Vec<(Pos, bool, bool)>,
+    /// containers a piston moved: (from, to), so their contents follow
+    pub moves: Vec<(Pos, Pos)>,
 }
 
 fn sched(e: &mut Engine, p: Pos, job: Job, delay: u64) {
@@ -320,6 +340,12 @@ fn diode_target(w: &World, p: Pos, b: i32, c: &mut HashMap<Pos, u8>, fill: &dyn 
             let mut input = if name(bb) == "redstone_wire" { int(bb, "redstone_signal") as u8 } else if solid(bb) { weak_in(w, back, c) } else { emits(w, back, p, c).0 };
             if let Some(fill) = fill(back) {
                 input = input.max(fill);
+            } else if solid(bb) && input < 15 {
+                // A comparator reads a container through one solid block.
+                let behind = add(back, neg(diode_out(b)));
+                if let Some(fill) = fill(behind) {
+                    input = input.max(fill);
+                }
             }
             let out = diode_out(b);
             let sides = [(out.2, 0, -out.0), (-out.2, 0, out.0)];
@@ -332,6 +358,7 @@ fn diode_target(w: &World, p: Pos, b: i32, c: &mut HashMap<Pos, u8>, fill: &dyn 
                         "redstone_wire" => int(qb, "redstone_signal") as u8,
                         "redstone_block" => 15,
                         "powered_repeater" if diode_out(qb) == neg(s) => 15,
+                        "powered_comparator" | "unpowered_comparator" if diode_out(qb) == neg(s) => c.get(&q).copied().unwrap_or(0),
                         _ => 0,
                     }
                 })
@@ -351,13 +378,17 @@ fn diode_target(w: &World, p: Pos, b: i32, c: &mut HashMap<Pos, u8>, fill: &dyn 
     }
 }
 
-fn immovable(b: i32) -> bool {
+fn immovable(w: &World, at: Pos, b: i32) -> bool {
     let n = name(b);
-    matches!(n, "obsidian" | "crying_obsidian" | "bedrock" | "barrier" | "end_portal_frame" | "enchanting_table" | "respawn_anchor" | "reinforced_deepslate" | "beacon")
+    matches!(n, "obsidian" | "crying_obsidian" | "bedrock" | "barrier" | "end_portal_frame" | "enchanting_table" | "respawn_anchor" | "reinforced_deepslate" | "beacon" | "moving_block")
         || n.contains("piston_arm")
-        || crate::containers::kind(b).is_some()
         || n.ends_with("_sign")
         || n == "jukebox"
+        // An extended piston stays put.
+        || ((n == "piston" || n == "sticky_piston") && {
+            let f = add(at, piston_face(b));
+            name(w.get(f.0, f.1, f.2)).contains("piston_arm")
+        })
 }
 
 /// Pistons break these instead of pushing them (plants, torches, water...).
@@ -368,48 +399,212 @@ fn breaks(b: i32) -> bool {
         || matches!(n, "wheat" | "carrots" | "potatoes" | "beetroot" | "reeds" | "fern" | "tall_grass" | "short_grass")
 }
 
-/// Piston block moving (PNX BlocksCalculator). Pushes up to 12, sticky pulls one back.
+/// Slime and honey drag the blocks touching them along.
+fn sticky_block(b: i32) -> bool {
+    matches!(name(b), "slime" | "honey_block")
+}
+
+/// Whether slime/honey can drag this block (glazed terracotta can't be).
+fn sticks(b: i32) -> bool {
+    !name(b).ends_with("glazed_terracotta")
+}
+
+/// Which blocks a piston moves and breaks, ported from PNX BlockPistonBase.BlocksCalculator
+/// (vanilla's algorithm): the main line, then side branches off slime and honey, 12 blocks max.
+struct Calc<'a> {
+    w: &'a World,
+    piston: Pos,
+    dir: Pos,
+    extending: bool,
+    arm: Option<Pos>,
+    to_move: Vec<Pos>,
+    to_destroy: Vec<Pos>,
+}
+
+const PUSH_LIMIT: usize = 12;
+
+impl Calc<'_> {
+    fn get(&self, p: Pos) -> i32 {
+        self.w.get(p.0, p.1, p.2)
+    }
+
+    fn can_push(&self, p: Pos, destroy: bool) -> bool {
+        let b = self.get(p);
+        let (min, max) = (-64, 319);
+        if p.1 < min || p.1 > max || (self.dir == DIRS[0] && p.1 == min) || (self.dir == DIRS[1] && p.1 == max) || immovable(self.w, p, b) {
+            return false;
+        }
+        if breaks(b) {
+            return destroy || sticks(b);
+        }
+        true
+    }
+
+    fn can_stick(&self, a: Pos, b: Pos) -> bool {
+        let (ga, gb) = (self.get(a), self.get(b));
+        if !sticky_block(ga) || !sticks(gb) {
+            return false;
+        }
+        if sticky_block(gb) { name(ga) == name(gb) } else { true }
+    }
+
+    fn can_move(&mut self, sticky: bool, face: Pos) -> bool {
+        if !sticky && !self.extending {
+            return true;
+        }
+        let start = if self.extending { add(self.piston, face) } else { add(add(self.piston, face), face) };
+        if !self.can_push(start, true) {
+            return false;
+        }
+        let b = self.get(start);
+        if b == AIR {
+            return true;
+        }
+        if breaks(b) {
+            if self.extending || sticks(b) {
+                self.to_destroy.push(start);
+            }
+            return true;
+        }
+        if !self.add_line(start, add(start, self.dir), true) {
+            return false;
+        }
+        self.expand()
+    }
+
+    fn add_line(&mut self, origin: Pos, from: Pos, main: bool) -> bool {
+        let b = self.get(origin);
+        if b == AIR
+            || (!main && !self.can_stick(from, origin))
+            || !self.can_push(origin, false)
+            || origin == self.piston
+            || self.to_move.contains(&origin)
+        {
+            return true;
+        }
+        if self.to_move.len() >= PUSH_LIMIT {
+            return false;
+        }
+        self.to_move.push(origin);
+        // Blocks stuck behind it (against the move) come too.
+        let mut count = 1;
+        let mut stuck = Vec::new();
+        let mut cur = origin;
+        while sticky_block(self.get(cur)) {
+            let old = cur;
+            cur = (origin.0 - self.dir.0 * count, origin.1 - self.dir.1 * count, origin.2 - self.dir.2 * count);
+            if !self.can_stick(old, cur) {
+                break;
+            }
+            let cb = self.get(cur);
+            if cb == AIR || !self.can_push(cur, false) || cur == self.piston {
+                break;
+            }
+            if breaks(cb) && sticks(cb) {
+                self.to_destroy.push(cur);
+                break;
+            }
+            if count as usize + self.to_move.len() > PUSH_LIMIT {
+                return false;
+            }
+            count += 1;
+            stuck.push(cur);
+        }
+        let mut stuck_count = stuck.len();
+        self.to_move.extend(stuck.into_iter().rev());
+        // Then everything in front of it.
+        let mut step = 1;
+        loop {
+            let next = (origin.0 + self.dir.0 * step, origin.1 + self.dir.1 * step, origin.2 + self.dir.2 * step);
+            if let Some(i) = self.to_move.iter().position(|&q| q == next) {
+                self.reorder(stuck_count, i);
+                return self.expand();
+            }
+            let nb = self.get(next);
+            if nb == AIR || Some(next) == self.arm {
+                return true;
+            }
+            if !self.can_push(next, true) || next == self.piston {
+                return false;
+            }
+            if breaks(nb) {
+                self.to_destroy.push(next);
+                return true;
+            }
+            if self.to_move.len() >= PUSH_LIMIT {
+                return false;
+            }
+            self.to_move.push(next);
+            stuck_count += 1;
+            step += 1;
+        }
+    }
+
+    fn expand(&mut self) -> bool {
+        let mut i = 0;
+        while i < self.to_move.len() {
+            let p = self.to_move[i];
+            if sticky_block(self.get(p)) {
+                for d in DIRS {
+                    let same_axis = (d.0 != 0 && self.dir.0 != 0) || (d.1 != 0 && self.dir.1 != 0) || (d.2 != 0 && self.dir.2 != 0);
+                    if !same_axis && !self.add_line(add(p, d), p, false) {
+                        return false;
+                    }
+                }
+            }
+            i += 1;
+        }
+        true
+    }
+
+    fn reorder(&mut self, count: usize, index: usize) {
+        let len = self.to_move.len();
+        let a = self.to_move[..index].to_vec();
+        let b = self.to_move[len - count..].to_vec();
+        let c = self.to_move[index..len - count].to_vec();
+        self.to_move = [a, b, c].concat();
+    }
+}
+
+/// Moves blocks for a piston (PNX BlockPistonBase.doMove). Returns false if it can't extend.
 fn piston(w: &World, p: Pos, b: i32, extend: bool, step: &mut Step) -> bool {
     let face = piston_face(b);
     let sticky = name(b) == "sticky_piston";
     let head = add(p, face);
+    let dir = if extend { face } else { neg(face) };
+    let mut calc = Calc { w, piston: p, dir, extending: extend, arm: (!extend).then_some(head), to_move: vec![], to_destroy: vec![] };
+    let can = calc.can_move(sticky, face);
+    if !can && extend {
+        return false;
+    }
+    if !extend {
+        step.blocks.push((head, AIR));
+    }
+    if can && (sticky || extend) {
+        for &q in &calc.to_destroy {
+            step.blocks.push((q, AIR));
+        }
+        // Clear every old spot first, then fill the new ones, so chains overlap correctly.
+        let moved: Vec<(Pos, i32)> = calc.to_move.iter().map(|&q| (q, w.get(q.0, q.1, q.2))).collect();
+        for &(q, _) in &moved {
+            step.blocks.push((q, AIR));
+        }
+        for &(q, x) in &moved {
+            let to = add(q, dir);
+            step.blocks.push((to, x));
+            if crate::containers::kind(x).is_some() {
+                step.moves.push((q, to));
+            }
+        }
+    }
     if extend {
-        let mut line = Vec::new();
-        let mut at = head;
-        loop {
-            let x = w.get(at.0, at.1, at.2);
-            if x == AIR || breaks(x) {
-                break;
-            }
-            if immovable(x) || line.len() >= 12 || !(-64..320).contains(&at.1) {
-                return false;
-            }
-            line.push((at, x));
-            at = add(at, face);
-        }
-        let end = w.get(at.0, at.1, at.2);
-        if breaks(end) && end != AIR {
-            step.blocks.push((at, AIR));
-        }
-        for &(q, x) in line.iter().rev() {
-            step.blocks.push((add(q, face), x));
-        }
         let arm = any_state(if sticky { "minecraft:sticky_piston_arm_collision" } else { "minecraft:piston_arm_collision" })
             .map(|a| with(a, &[("facing_direction", State::Int(int(b, "facing_direction")))]))
             .unwrap_or(AIR);
         step.blocks.push((head, arm));
-        step.sounds.push((p, "tile.piston.out"));
+        step.sounds.push((p, "piston.out"));
     } else {
-        step.blocks.push((head, AIR));
-        if sticky {
-            let pulled = add(head, face);
-            let x = w.get(pulled.0, pulled.1, pulled.2);
-            if x != AIR && !immovable(x) && !breaks(x) {
-                step.blocks.push((pulled, AIR));
-                step.blocks.push((head, x));
-            }
-        }
-        step.sounds.push((p, "tile.piston.in"));
+        step.sounds.push((p, "piston.in"));
     }
     step.pistons.push((p, extend, sticky));
     true
@@ -433,15 +628,18 @@ fn evaluate(w: &World, e: &mut Engine, p: Pos, wired: &mut HashSet<Pos>, step: &
             }
         }
         "unpowered_repeater" | "powered_repeater" => {
-            if diode_target(w, p, b, &mut e.comparators.clone(), fill).is_some() {
+            if let Some(nb) = diode_target(w, p, b, &mut e.comparators.clone(), fill) {
                 let delay = 2 * (int(b, "repeater_delay") as u64 + 1);
-                sched(e, p, Job::Diode, delay);
+                sched(e, p, Job::Repeater(name(nb) == "powered_repeater"), delay);
             }
         }
         "redstone_torch" | "unlit_redstone_torch" | "unpowered_comparator" | "powered_comparator" => {
             if diode_target(w, p, b, &mut e.comparators.clone(), fill).is_some() {
                 sched(e, p, Job::Diode, 2);
             }
+        }
+        "daylight_detector" | "daylight_detector_inverted" => {
+            detectors().insert(p);
         }
         "redstone_lamp" | "lit_redstone_lamp" => {
             let on = received(w, p, &e.comparators, None) > 0;
@@ -452,13 +650,10 @@ fn evaluate(w: &World, e: &mut Engine, p: Pos, wired: &mut HashSet<Pos>, step: &
         "piston" | "sticky_piston" => {
             let front = add(p, piston_face(b));
             let on = received(w, p, &e.comparators, Some(front)) > 0;
-            let ext = e.extended.contains(&p);
-            if on != ext && piston(w, p, b, on, step) {
-                if on {
-                    e.extended.insert(p);
-                } else {
-                    e.extended.remove(&p);
-                }
+            // Extended = its arm is in front (not a memory flag, so restarts keep it).
+            let ext = name(w.get(front.0, front.1, front.2)).contains("piston_arm");
+            if on != ext {
+                piston(w, p, b, on, step);
             }
         }
         "hopper" => {
@@ -484,7 +679,7 @@ fn evaluate(w: &World, e: &mut Engine, p: Pos, wired: &mut HashSet<Pos>, step: &
             match n {
                 "tnt" if on => step.ignite.push(p),
                 "noteblock" if on => step.notes.push(p),
-                "dispenser" | "dropper" | "crafter" if on => step.dispense.push(p),
+                "dispenser" | "dropper" | "crafter" if on => sched(e, p, Job::Dispense, 4),
                 "tnt" | "noteblock" | "dispenser" | "dropper" | "crafter" => {}
                 _ => {
                     let lower = w.get(key.0, key.1, key.2);
@@ -504,6 +699,47 @@ fn evaluate(w: &World, e: &mut Engine, p: Pos, wired: &mut HashSet<Pos>, step: &
             }
         }
         _ => {}
+    }
+}
+
+/// Daylight detectors seen so far (placed, or touched by a redstone update).
+/// shortcut: forgotten on restart until something next to them changes; scan chunks on load
+/// if that matters.
+static DETECTORS: Mutex<Option<HashSet<Pos>>> = Mutex::new(None);
+
+fn detectors() -> parking_lot::MappedMutexGuard<'static, HashSet<Pos>> {
+    parking_lot::MutexGuard::map(DETECTORS.lock(), |d| d.get_or_insert_with(HashSet::new))
+}
+
+/// Level a daylight detector gives at `time` (0-24000): 15 around noon, 0 at night, and the
+/// inverted one the opposite.
+pub fn daylight_level(time: i32, inverted: bool) -> i32 {
+    let angle = ((time.rem_euclid(24000) as f32 - 6000.0) / 24000.0) * std::f32::consts::TAU;
+    let level = ((angle.cos() * 1.5).clamp(0.0, 1.0) * 15.0).round() as i32;
+    if inverted { 15 - level } else { level }
+}
+
+/// Once a second: daylight detectors follow the time of day.
+pub fn daylight(server: &crate::players::Server) {
+    static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    if N.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 20 != 0 {
+        return;
+    }
+    let time = server.time();
+    let list: Vec<Pos> = DETECTORS.lock().get_or_insert_with(HashSet::new).iter().copied().collect();
+    for p in list {
+        let b = server.world.get(p.0, p.1, p.2);
+        let n = name(b);
+        if !n.starts_with("daylight_detector") {
+            if let Some(d) = DETECTORS.lock().as_mut() {
+                d.remove(&p);
+            }
+            continue;
+        }
+        let level = daylight_level(time, n == "daylight_detector_inverted");
+        if int(b, "redstone_signal") != level {
+            server.set_block_quiet(0, p.0, p.1, p.2, with(b, &[("redstone_signal", State::Int(level))]));
+        }
     }
 }
 
@@ -531,6 +767,13 @@ pub fn tick(w: &World, fill: &dyn Fn(Pos) -> Option<u8>) -> Step {
                     step.blocks.push((p, nb));
                 }
             }
+            Job::Repeater(on) if name(b).contains("repeater") && !locked(w, p, b, &e.comparators) => {
+                let is = name(b) == "powered_repeater";
+                if on != is {
+                    step.blocks.push((p, rename(b, if on { "powered_repeater" } else { "unpowered_repeater" })));
+                }
+            }
+            Job::Dispense => step.dispense.push(p),
             Job::ObserverOn if name(b) == "observer" => {
                 step.blocks.push((p, with(b, &[("powered_bit", State::Bool(true))])));
                 sched(e, p, Job::ObserverOff, 2);
@@ -610,6 +853,36 @@ mod tests {
                 mark(p);
             }
         }
+    }
+
+    #[test]
+    fn daylight_follows_the_sun() {
+        assert_eq!(daylight_level(6000, false), 15, "noon");
+        assert_eq!(daylight_level(18000, false), 0, "midnight");
+        assert_eq!(daylight_level(18000, true), 15, "inverted at midnight");
+    }
+
+    #[test]
+    fn dust_only_powers_where_it_points() {
+        let _serial = SERIAL.lock();
+        crate::blocks::init();
+        let y = -60;
+        let w = World::default();
+        // An east-west dust line with a redstone block at its west end; a lamp beside it
+        // (north of the middle dust) must stay off, a lamp at its east end must light.
+        let wire = |east: &str, west: &str| with(block("redstone_wire"), &[("redstone_east", State::Str(east.into())), ("redstone_west", State::Str(west.into())), ("redstone_north", State::Str("none".into())), ("redstone_south", State::Str("none".into()))]);
+        w.set(60, y, 60, block("redstone_block"));
+        for x in 61..=63 {
+            w.set(x, y, 60, wire("side", "side"));
+            mark((x, y, 60));
+        }
+        w.set(62, y, 59, block("redstone_lamp"));
+        w.set(64, y, 60, block("redstone_lamp"));
+        mark((62, y, 59));
+        mark((64, y, 60));
+        run(&w, 4);
+        assert_eq!(name(w.get(64, y, 60)), "lit_redstone_lamp", "dust points into this lamp");
+        assert_eq!(name(w.get(62, y, 59)), "redstone_lamp", "dust only runs past this one");
     }
 
     #[test]
@@ -722,5 +995,54 @@ mod tests {
         mark((29, y, 0));
         run(&w, 2);
         assert_eq!(name(w.get(31, y, 0)), "stone", "sticky pulled it back");
+    }
+
+    #[test]
+    fn slime_drags_blocks_and_chests_move() {
+        let _serial = SERIAL.lock();
+        crate::blocks::init();
+        let w = World::default();
+        let y = -40; // in the air: slime would also grab the ground under it
+        // Piston at x=70 pushing east into slime; stone sits north of the slime, a glazed
+        // terracotta south of it (doesn't stick), a chest in front of the slime.
+        let p = with(block("piston"), &[("facing_direction", State::Int(4))]);
+        w.set(70, y, 0, p);
+        w.set(71, y, 0, block("slime"));
+        w.set(71, y, -1, block("stone"));
+        w.set(71, y, 1, block("white_glazed_terracotta"));
+        w.set(72, y, 0, block("chest"));
+        w.set(69, y, 0, block("redstone_block"));
+        mark((69, y, 0));
+        let mut moves = vec![];
+        for _ in 0..2 {
+            let s = tick(&w, &|_| None);
+            moves.extend(s.moves.iter().copied());
+            for (q, b) in s.blocks {
+                w.set(q.0, q.1, q.2, b);
+                mark(q);
+            }
+        }
+        assert_eq!(name(w.get(72, y, 0)), "slime", "slime pushed");
+        assert_eq!(name(w.get(72, y, -1)), "stone", "stone stuck to the slime came along");
+        assert_eq!(name(w.get(71, y, 1)), "white_glazed_terracotta", "glazed terracotta stays");
+        assert_eq!(name(w.get(73, y, 0)), "chest", "chests can be pushed");
+        assert_eq!(moves, vec![((72, y, 0), (73, y, 0))], "the chest's contents follow it");
+    }
+
+    #[test]
+    fn push_limit_is_twelve() {
+        let _serial = SERIAL.lock();
+        crate::blocks::init();
+        let w = World::default();
+        let y = -60;
+        let p = with(block("piston"), &[("facing_direction", State::Int(4))]);
+        w.set(100, y, 0, p);
+        for x in 101..=113 {
+            w.set(x, y, 0, block("stone")); // 13 blocks
+        }
+        w.set(99, y, 0, block("redstone_block"));
+        mark((99, y, 0));
+        run(&w, 2);
+        assert_eq!(name(w.get(101, y, 0)), "stone", "13 is too many, nothing moved");
     }
 }

@@ -120,7 +120,8 @@ pub fn replaceable(b: i32) -> bool {
 pub fn is_solid(b: i32) -> bool {
     !replaceable(b) && !is_leaves(b) && {
         let n = short(b);
-        !(n.contains("sapling") || n.contains("torch") || n.contains("sign") || n.contains("button") || n.contains("rail") || n.contains("carpet") || n.contains("pressure_plate") || n == "ladder" || n == "cactus" || n == "reeds" || n == "sugar_cane" || n == "kelp" || n == "bamboo" || n == "sweet_berry_bush" || n == "cocoa" || n.ends_with("coral") || n.ends_with("coral_fan") || n == "sea_pickle" || n == "waterlily" || n == "lily_pad")
+        !(n.contains("sapling") || n.contains("torch") || n.contains("sign") || n.contains("button") || n.contains("rail") || n.contains("carpet") || n.contains("pressure_plate") || n == "ladder" || n == "cactus" || n == "reeds" || n == "sugar_cane" || n == "kelp" || n == "bamboo" || n == "sweet_berry_bush" || n == "cocoa" || n.ends_with("coral") || n.ends_with("coral_fan") || n == "sea_pickle" || n == "waterlily" || n == "lily_pad"
+            || n == "redstone_wire" || n == "lever" || n.contains("repeater") || n.contains("comparator") || n == "tripwire" || n == "trip_wire" || n == "end_rod" || n == "lightning_rod" || n == "flower_pot")
     }
 }
 

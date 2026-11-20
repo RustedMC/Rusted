@@ -40,6 +40,50 @@ const GROUND_FRICTION: f32 = 0.6;
 #[derive(Default)]
 pub struct Entities {
     items: Mutex<HashMap<i64, ItemEntity>>,
+    orbs: Mutex<HashMap<i64, Orb>>,
+}
+
+/// An experience orb (PNX EntityXpOrb): falls, drifts to the nearest player within 8 blocks.
+#[derive(Clone)]
+pub struct Orb {
+    pub id: i64,
+    pub pos: (f32, f32, f32),
+    pub vel: (f32, f32, f32),
+    pub value: i32,
+    pub born: Instant,
+}
+
+/// Vanilla orb sizes, biggest first (EntityXpOrb.splitIntoOrbSizes).
+const ORB_SIZES: [i32; 11] = [2477, 1237, 617, 307, 149, 73, 37, 17, 7, 3, 1];
+
+/// Splits `points` into orbs the vanilla way.
+pub fn orb_values(mut points: i32) -> Vec<i32> {
+    let mut out = vec![];
+    while points > 0 {
+        let v = *ORB_SIZES.iter().find(|&&s| s <= points).unwrap_or(&1);
+        out.push(v);
+        points -= v;
+    }
+    out
+}
+
+fn orb_packet(o: &Orb) -> Protocol {
+    use bedrock::protocol::v662::types::PropertySyncData;
+    Protocol::AddActorPacket(Box::new(bedrock::protocol::v2225::packets::AddActorPacket {
+        target_actor_id: ActorUniqueID(o.id),
+        target_runtime_id: ActorRuntimeID(o.id as u64),
+        actor_type: "minecraft:xp_orb".into(),
+        position: o.pos,
+        velocity: o.vel,
+        rotation: (0.0, 0.0),
+        y_head_rotation: 0.0,
+        y_body_rotation: 0.0,
+        attributes: vec![],
+        actor_data: vec![],
+        synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
+        actor_links: vec![],
+        passenger_of_block_data: None,
+    }))
 }
 
 fn same(a: &NetworkItemStackDescriptorV2, b: &NetworkItemStackDescriptorV2) -> bool {
@@ -142,6 +186,7 @@ impl Entities {
 
     /// Gravity, drag, landing, floating in water.
     pub fn tick(&self, server: &Server) {
+        self.tick_orbs(server);
         let w = &server.world;
         let mut moved = Vec::new();
         {
@@ -224,7 +269,96 @@ impl Entities {
 
     /// For a player who just joined.
     pub fn spawn_packets(&self) -> Vec<Protocol> {
-        self.items.lock().values().map(add_packet).collect()
+        let mut out: Vec<Protocol> = self.items.lock().values().map(add_packet).collect();
+        out.extend(self.orbs.lock().values().map(orb_packet));
+        out
+    }
+
+    /// Drops `points` of experience as orbs at `pos`, scattered a little.
+    pub fn drop_xp(&self, server: &Server, pos: (f32, f32, f32), points: i32) {
+        for (i, value) in orb_values(points).into_iter().enumerate() {
+            let a = i as f32 * 2.4;
+            let o = Orb {
+                id: crate::players::next_id(),
+                pos: (pos.0, pos.1 + 0.5, pos.2),
+                vel: (a.cos() * 0.1, 0.2, a.sin() * 0.1),
+                value,
+                born: Instant::now(),
+            };
+            broadcast(server, orb_packet(&o));
+            self.orbs.lock().insert(o.id, o);
+        }
+    }
+
+    /// Orbs: gravity, then pulled toward the nearest player within 8 blocks (vanilla
+    /// EntityXpOrb.onUpdate), picked up on touch.
+    fn tick_orbs(&self, server: &Server) {
+        let w = &server.world;
+        let players = server.all();
+        let mut picked: Vec<(i64, i64, i32)> = vec![];
+        let mut moved = vec![];
+        {
+            let mut orbs = self.orbs.lock();
+            for o in orbs.values_mut() {
+                for _ in 0..2 {
+                    o.vel.1 -= 0.03;
+                    // Nearest player's middle, within 8 blocks.
+                    let near = players
+                        .iter()
+                        .map(|p| (p, (p.pos.0, p.pos.1 - 0.8, p.pos.2)))
+                        .map(|(p, c)| (p, c, dist2(o.pos, c).sqrt()))
+                        .filter(|(_, _, d)| *d < 8.0)
+                        .min_by(|a, b| a.2.total_cmp(&b.2));
+                    if let Some((p, c, d)) = near {
+                        if d < 1.0 {
+                            picked.push((o.id, p.id, o.value));
+                            break;
+                        }
+                        let f = 1.0 - d / 8.0;
+                        let pull = f * f * 0.1;
+                        o.vel.0 += (c.0 - o.pos.0) / d * pull;
+                        o.vel.1 += (c.1 - o.pos.1) / d * pull;
+                        o.vel.2 += (c.2 - o.pos.2) / d * pull;
+                    }
+                    let n = (o.pos.0 + o.vel.0, o.pos.1 + o.vel.1, o.pos.2 + o.vel.2);
+                    if o.vel.1 < 0.0 && !passable(w.get(n.0.floor() as i32, n.1.floor() as i32, n.2.floor() as i32)) {
+                        o.pos = (n.0, n.1.floor() + 1.0, n.2);
+                        o.vel.1 = 0.0;
+                        o.vel.0 *= 0.6;
+                        o.vel.2 *= 0.6;
+                    } else {
+                        o.pos = n;
+                    }
+                    o.vel.0 *= 0.98;
+                    o.vel.1 *= 0.98;
+                    o.vel.2 *= 0.98;
+                }
+                moved.push((o.id, o.pos));
+            }
+            for (id, _, _) in &picked {
+                orbs.remove(id);
+            }
+            let old: Vec<i64> = orbs.values().filter(|o| o.born.elapsed() >= DESPAWN || o.pos.1 < -80.0).map(|o| o.id).collect();
+            for id in old {
+                orbs.remove(&id);
+                broadcast(server, remove_packet(id));
+            }
+        }
+        for (id, pos) in moved {
+            if picked.iter().any(|(o, _, _)| *o == id) {
+                continue;
+            }
+            broadcast(server, Protocol::MoveActorAbsolutePacket(Box::new(bedrock::protocol::v662::packets::MoveActorAbsolutePacket {
+                move_data: bedrock::protocol::v662::types::MoveActorAbsoluteData { actor_runtime_id: ActorRuntimeID(id as u64), header: 0, position: pos, rotation_x: 0, rotation_y: 0, rotation_y_head: 0 },
+            })));
+        }
+        for (orb, player, value) in picked {
+            broadcast(server, remove_packet(orb));
+            let _ = server.events.send(Event::Xp { to: player, points: value });
+            if let Some(p) = server.get(player) {
+                broadcast(server, crate::packets::play_sound("random.orb", p.pos));
+            }
+        }
     }
 
     /// True if the inventory changed.
@@ -314,6 +448,14 @@ impl Entities {
     pub fn count(&self) -> usize {
         self.items.lock().len()
     }
+}
+
+#[cfg(test)]
+#[test]
+fn orbs_split_like_vanilla() {
+    assert_eq!(orb_values(5), vec![3, 1, 1]);
+    assert_eq!(orb_values(20), vec![17, 3]);
+    assert_eq!(orb_values(0), Vec::<i32>::new());
 }
 
 fn dist2(a: (f32, f32, f32), b: (f32, f32, f32)) -> f32 {

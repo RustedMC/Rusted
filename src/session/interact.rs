@@ -358,25 +358,38 @@ impl Session {
         {
             match action {
                 physics::Interaction::Toggle(changes) => {
-                    // 1003: door/trapdoor/gate sound; levers click.
-                    let lever = blocks::entry(self.server.world.get(p.x, p.y, p.z)).is_some_and(|e| e.name == "minecraft:lever");
-                    let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(level_event(if lever { 1000 } else { 1003 }, (p.x, p.y, p.z))) });
+                    // Levers: power.on/off; repeaters and comparators: silent; doors,
+                    // trapdoors and gates: 1003.
+                    let clicked = self.server.world.get(p.x, p.y, p.z);
+                    let n = blocks::entry(clicked).map_or("", |e| e.name.as_str());
+                    let at = (p.x as f32 + 0.5, p.y as f32 + 0.5, p.z as f32 + 0.5);
+                    if n == "minecraft:lever" {
+                        let on = changes.iter().any(|(_, b)| matches!(blocks::state(*b, "open_bit"), Some(blocks::State::Bool(true))));
+                        let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(level_sound(if on { "power.on" } else { "power.off" }, at, clicked)) });
+                    } else if !n.contains("repeater") && !n.contains("comparator") {
+                        let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(level_event(1003, (p.x, p.y, p.z))) });
+                    }
                     for ((bx, by, bz), b) in changes {
                         self.server.set_block_quiet(self.id, bx, by, bz, b);
                     }
                 }
                 physics::Interaction::Press { pressed, released } => {
-                    // 1000: click.
-                    let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(level_event(1000, (p.x, p.y, p.z))) });
+                    let clicked = self.server.world.get(p.x, p.y, p.z);
+                    let at = (p.x as f32 + 0.5, p.y as f32 + 0.5, p.z as f32 + 0.5);
+                    let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(level_sound("power.on", at, clicked)) });
                     for ((bx, by, bz), b) in pressed {
                         self.server.set_block_quiet(self.id, bx, by, bz, b);
                     }
                     let (server, id) = (self.server.clone(), self.id);
+                    // Vanilla: stone and polished blackstone buttons 20 game ticks, wooden 30.
+                    let stone = blocks::entry(self.server.world.get(p.x, p.y, p.z)).is_some_and(|e| e.name.contains("stone_button"));
+                    let hold = std::time::Duration::from_millis(if stone { 1000 } else { 1500 });
                     tokio::spawn(async move {
-                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        tokio::time::sleep(hold).await;
                         for ((bx, by, bz), b) in released {
                             server.set_block_quiet(id, bx, by, bz, b);
                         }
+                        let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(level_sound("power.off", at, clicked)) });
                     });
                 }
             }
@@ -400,44 +413,50 @@ impl Session {
         }
         commands::set_spawn(Some(&self.name), (p.x as f32 + 0.5, p.y as f32 + 1.0 + 1.62, p.z as f32 + 0.5));
         let t = self.server.time().rem_euclid(24_000);
-        let msg = if (12_542..23_460).contains(&t) {
-            // Sleeping: once everyone online has lain down, skip to morning.
-            let mut sleepers = sleepers().lock();
-            sleepers.insert(self.id, Instant::now());
-            sleepers.retain(|_, at| at.elapsed() < std::time::Duration::from_secs(8));
-            let all = self.server.all();
-            if all.iter().all(|p| sleepers.contains_key(&p.id)) {
-                sleepers.clear();
-                let morning = self.server.time() - t + 24_000;
-                self.server.set_time(morning);
-                let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(clock_packet(morning)) });
-                let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(time_packet(morning)) });
-                *commands::WEATHER.lock() = commands::Weather::Clear;
-                for w in commands::weather_packets(commands::Weather::Clear) {
-                    let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(w) });
-                }
-                self.server.broadcast("Good morning!");
-                "Respawn point set".to_string()
-            } else {
-                format!("Respawn point set. Sleeping: {}/{} players", sleepers.len(), all.len())
-            }
-        } else {
-            "Respawn point set. You can only sleep at night".to_string()
-        };
-        let _ = self.conn.send(&[chat_packet(String::new(), msg)]).await;
+        let storm = matches!(*commands::WEATHER.lock(), commands::Weather::Thunder);
+        if !(12_542..23_460).contains(&t) && !storm {
+            let _ = self.conn.send(&[chat_packet(String::new(), "You can only sleep at night or during thunderstorms".into())]).await;
+            return;
+        }
+        // Lie down: sleeping flag and bed position for everyone, feet on the bed.
+        let bed = (p.x, p.y, p.z);
+        blockops::sleepers().lock().insert(self.id, Instant::now());
+        let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(blockops::sleep_packet(self.id, Some(bed))) });
+        self.server.teleport(self.id, (p.x as f32 + 0.5, p.y as f32 + 0.5625, p.z as f32 + 0.5));
+        let (online, asleep) = (self.server.all().len(), blockops::sleepers().lock().len());
+        self.server.actionbar(self.id, &format!("{asleep}/{online} players sleeping"));
+        // Vanilla waits 100 ticks (5 s) of sleep before skipping the night.
+        let server = self.server.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(5100)).await;
+            blockops::check_sleep(&server);
+        });
     }
 
     async fn place_held(&mut self, u: &ItemUse) {
         let p = &u.block_position;
         let (dx, dy, dz) = placement::face_offset(u.block_face);
-        // Buckets: empty one picks up a source, full one places it.
         let held = items::name_of(u.held_item.id).unwrap_or("");
+        // Spawn eggs: the mob appears on the clicked face (vanilla ItemSpawnEgg).
+        if let Some(kind) = held.strip_suffix("_spawn_egg").and_then(mobs::Kind::from_name) {
+            if !matches!(self.mode, GameType::Spectator) && !commands::spawn_protected(&self.server, &self.name, (p.x, p.y, p.z)) {
+                let at = (p.x as f32 + dx as f32 + 0.5, (p.y + dy) as f32, p.z as f32 + dz as f32 + 0.5);
+                self.server.mobs.spawn(&self.server, kind, at);
+                if survival_like(&self.mode) {
+                    self.inv.use_one(self.selected_slot as usize);
+                    let _ = self.conn.send(&[self.inv.content_packet()]).await;
+                }
+            }
+            return;
+        }
+        // Buckets: empty one picks up a source, full one places it.
         if spawn::can_build(&self.mode) && matches!(held, "minecraft:water_bucket" | "minecraft:lava_bucket" | "minecraft:bucket") {
             let target = (p.x + dx, p.y + dy, p.z + dz);
             if held == "minecraft:bucket" {
                 let clicked = self.server.world.get(p.x, p.y, p.z);
                 if clicked == fluids::Kind::Water.source() || clicked == fluids::Kind::Lava.source() {
-                    self.server.set_block(self.id, p.x, p.y, p.z, world::AIR);
+                    // Only the bucket sound, no break particles or block sound.
+                    self.server.set_block_quiet(self.id, p.x, p.y, p.z, world::AIR);
                     let full = if clicked == fluids::Kind::Water.source() { "minecraft:water_bucket" } else { "minecraft:lava_bucket" };
                     let s = if full == "minecraft:water_bucket" { "bucket.fill_water" } else { "bucket.fill_lava" };
                     let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(play_sound(s, (p.x as f32 + 0.5, p.y as f32 + 0.5, p.z as f32 + 0.5))) });
@@ -450,7 +469,7 @@ impl Session {
                     return;
                 }
                 let kind = if held == "minecraft:water_bucket" { fluids::Kind::Water } else { fluids::Kind::Lava };
-                self.server.set_block(self.id, target.0, target.1, target.2, kind.source());
+                self.server.set_block_quiet(self.id, target.0, target.1, target.2, kind.source());
                 let s = if held == "minecraft:water_bucket" { "bucket.empty_water" } else { "bucket.empty_lava" };
                 let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(play_sound(s, (target.0 as f32 + 0.5, target.1 as f32 + 0.5, target.2 as f32 + 0.5))) });
                 swap_bucket(&mut self.conn, &mut self.inv, self.selected_slot, &self.mode, "minecraft:bucket").await;
@@ -484,6 +503,20 @@ impl Session {
             let (bx, by, bz) = (x + ox, y + oy, z + oz);
             // Torches, flowers, rails and other pass-through blocks can go where a player stands.
             replaceable(self.server.world.get(bx, by, bz)) && !(is_solid(*b) && self.server.occupied(bx, by, bz))
+        }) && parts.iter().all(|((ox, oy, oz), b)| {
+            // Blocks that hang on something (dust, torches, plants, rails, carpets, buttons...)
+            // need a full block there, and can't go into water or lava. Lily pads need water.
+            let (bx, by, bz) = (x + ox, y + oy, z + oz);
+            let Some((sx, sy, sz)) = physics::support_of(*b) else { return true };
+            let short = blocks::entry(*b).map_or("", |e| e.name.trim_start_matches("minecraft:"));
+            let under = self.server.world.get(bx + sx, by + sy, bz + sz);
+            let liquid = |q: i32| blocks::entry(q).is_some_and(|e| e.name.ends_with("water") || e.name.ends_with("lava"));
+            if short == "waterlily" || short == "lily_pad" {
+                return liquid(under);
+            }
+            // Another part of this block (the lower half of a door) holds it up.
+            let own_part = parts.iter().any(|((px, py, pz), _)| (x + px, y + py, z + pz) == (bx + sx, by + sy, bz + sz));
+            !liquid(self.server.world.get(bx, by, bz)) && (own_part || crate::overworld::feature::blocks::is_full(under))
         }) && self.server.get(self.id).is_some_and(|me| {
             parts.iter().all(|((ox, oy, oz), b)| self.server.plugins.block_place(&self.server, &me, (x + ox, y + oy, z + oz), *b))
         });
@@ -525,6 +558,9 @@ impl Session {
     }
 
     pub(super) async fn on_player_action(&mut self, a: &PlayerAction) {
+        if let PlayerActionType::StopSleeping = a.action {
+            blockops::wake(&self.server, self.id);
+        }
         // Creative breaks instantly; survival reports the finished break as a prediction.
         if let PlayerActionType::CreativeDestroyBlock | PlayerActionType::PredictDestroyBlock = a.action {
             let p = &a.block_position;

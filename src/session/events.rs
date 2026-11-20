@@ -180,6 +180,9 @@ impl Session {
             Ok(Event::Damage { to, damage, knock }) if to == self.id => {
                 if survival_like(&self.mode) && !self.hp.dead {
                     hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, damage, &mut self.inv, &self.effects, &self.mode).await;
+                    // Each netherite armour piece resists 10% of knockback (PNX knockBack).
+                    let resist = (0..4).filter(|i| self.inv.held(inventory::ARMOR + i).and_then(|s| items::name_of(s.item.id)).is_some_and(|n| n.contains("netherite"))).count() as f32 * 0.1;
+                    let knock = (knock.0 * (1.0 - resist), knock.1 * (1.0 - resist), knock.2 * (1.0 - resist));
                     let motion = Protocol::SetActorMotionPacket(Box::new(bedrock::protocol::v662::packets::SetActorMotionPacket {
                         target_runtime_id: ActorRuntimeID(self.id as u64),
                         motion: knock,

@@ -393,6 +393,8 @@ pub struct Mob {
     /// Player riding it.
     pub rider: Option<i64>,
     saddled: bool,
+    /// A player fed or bred it (or it was born from breeding): saved across restarts.
+    kept: bool,
     /// Horses: chance out of 100 to accept a rider, goes up with feeding and each buck.
     temper: u32,
     /// Ticks until an untamed horse decides whether to keep its rider.
@@ -553,6 +555,8 @@ fn animal_for(biome: Option<u16>, ground: i32, roll: u32) -> Option<Kind> {
 const CAP: usize = 300;
 /// Mob gravity per 10 Hz tick (vanilla 0.08 per 20 Hz tick, twice).
 const GRAVITY: f32 = 0.16;
+/// Upward speed of a jump at 10 Hz with GRAVITY: 0.55 + 0.39 + 0.23 + 0.07 = 1.24 blocks.
+const JUMP: f32 = 0.55;
 
 fn broadcast(server: &Server, p: Protocol) {
     let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(p) });
@@ -840,7 +844,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: kind.max_health(), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: if baby { GROW } else { 0 }, baby: if baby { GROW } else { 0 },
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
+            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, kept: false, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
         };
         let size = [1u8, 2, 4][(self.rand() % 3) as usize];
         if kind.spec().splits {
@@ -868,7 +872,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: (size as f32).powi(2), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: 0,
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
+            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, kept: false, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
         };
         broadcast(server, add_packet(&m));
         if let Some(p) = held_packet(&m) {
@@ -995,6 +999,7 @@ impl Mobs {
         }
         if m.kind.food(held) {
             use bedrock::protocol::v975::enums::ActorEvent;
+            m.kept = true;
             if m.baby > 0 {
                 m.baby = m.baby.saturating_sub(m.baby / 10); // feeding babies speeds growth 10%
                 broadcast(server, event(id, ActorEvent::Feed));
@@ -1217,10 +1222,11 @@ impl Mobs {
         m.health -= damage;
         let (dx, dz) = (m.pos.0 - from.0, m.pos.2 - from.2);
         let len = (dx * dx + dz * dz).sqrt().max(0.01);
-        // PNX EntityLiving.knockBack: half the old motion plus 0.4 away and 0.4 up (capped),
-        // Knockback adds 0.5 a level. Horizontal is doubled since mobs tick at 10 Hz, not 20.
-        let base = 0.4 + 0.5 * hit.knockback as f32;
-        m.vel = (m.vel.0 / 2.0 + dx / len * base * 2.0, (m.vel.1 / 2.0 + 0.4).min(0.4), m.vel.2 / 2.0 + dz / len * base * 2.0);
+        // PNX EntityLiving.knockBack: half the old motion plus `base` away and up (up capped at
+        // 0.4). base is EntityDamageByEntityEvent's 0.3, Knockback adds 0.5 a level.
+        // Horizontal is doubled since mobs tick at 10 Hz, not 20.
+        let base = 0.3 + 0.5 * hit.knockback as f32;
+        m.vel = (m.vel.0 / 2.0 + dx / len * base * 2.0, (m.vel.1 / 2.0 + base).min(0.4), m.vel.2 / 2.0 + dz / len * base * 2.0);
         m.hurt_at = Some(std::time::Instant::now());
         m.fire = m.fire.max(hit.fire);
         if !m.kind.hostile() {
@@ -1262,14 +1268,15 @@ impl Mobs {
             if kind == Kind::EnderDragon {
                 crate::endfight::dragon_died(server, attacker);
             }
-            if let Some(p) = attacker && !baby {
+            // XP only for a player kill, as orbs at the body (vanilla), not straight into the bar.
+            if attacker.is_some_and(|a| server.get(a).is_some()) && !baby {
                 let points = match kind {
                     Kind::IronGolem | Kind::Villager | Kind::Boat | Kind::Minecart | Kind::ChestMinecart => 0,
                     k if k.hostile() => 5,
                     _ => 1 + (self.rand() % 3) as i32,
                 };
                 if points > 0 {
-                    let _ = server.events.send(Event::Xp { to: p, points });
+                    server.entities.drop_xp(server, pos, points);
                 }
             }
             if kind == Kind::Boat && let Some(it) = crate::items::item_by_name(&boat_item(slime)) {
@@ -1755,7 +1762,7 @@ impl Mobs {
                         let _ = server.events.send(Event::Damage {
                             to: p.id,
                             damage: crate::health::Damage::Mob(dmg, m.kind.display()),
-                            knock: (dx / len * 0.4, 0.3, dz / len * 0.4),
+                            knock: (dx / len * 0.3, 0.3, dz / len * 0.3), // PNX default knockback 0.3
                         });
                         if let Some((effect, secs)) = m.kind.spec().hit_effect {
                             let _ = server.events.send(Event::Effect { to: p.id, effect, amplifier: 0, ticks: secs * 20 });
@@ -2631,6 +2638,7 @@ impl Mobs {
         let id = self.spawn_with(server, m.kind, at, true);
         if let Some(baby) = self.mobs.lock().get_mut(&id) {
             baby.brain.parent_id = Some(m.id);
+            baby.kept = true;
         }
         use bedrock::protocol::v975::enums::ActorEvent;
         out.push(event(id, ActorEvent::LoveHearts));
@@ -2658,7 +2666,8 @@ impl Mobs {
                 m.vel.1 = 0.2;
             }
         }
-        // Horizontal: blocked by solid blocks at feet/head; step up one block if clear above.
+        // Horizontal: blocked by solid blocks at feet/head; a one-block step is jumped onto
+        // (vanilla jump, about 1.25 blocks), not stepped through.
         let (nx, nz) = (x + m.vel.0, z + m.vel.2);
         let (bx, bz) = (nx.floor() as i32, nz.floor() as i32);
         let fy = y.floor() as i32;
@@ -2669,9 +2678,10 @@ impl Mobs {
             px = nx;
             pz = nz;
         } else if m.on_ground && clear(fy + 1) && walkable(w.get(feet.0, fy + h + 1, feet.2)) {
-            px = nx;
-            pz = nz;
-            py = (fy + 1) as f32;
+            m.vel.1 = JUMP;
+            m.on_ground = false;
+        } else if !m.on_ground && clear(fy + 1) {
+            // Mid-jump: wait to clear the edge, keep heading there.
         } else {
             m.vel.0 = 0.0;
             m.vel.2 = 0.0;
@@ -3105,13 +3115,16 @@ impl Mobs {
 const WATER_CAP: usize = 40;
 
 impl Mobs {
-    /// Saves animals, villagers, golems and pets (not hostiles or fish), plus rolled chunks.
+    /// Saves only mobs players care about: villagers, iron golems, pets, saddled mounts and
+    /// animals a player fed or bred. Wild mobs (and spawn-egg mobs) are left out, and so are
+    /// the "chunk already got its animals" marks, so fresh animals spawn after a restart.
     /// `keys` maps online entity ids to owner keys.
     pub fn save(&self, path: &std::path::Path, keys: &HashMap<i64, i64>) -> std::io::Result<()> {
         use std::fmt::Write;
         let mut out = String::from("# Rusted mobs v1: kind x y z yaw health baby owner sitting color sheared job saddled temper\n");
         for m in self.mobs.lock().values() {
-            if m.dying > 0 || (m.kind.hostile() || m.kind.aquatic()) && m.owner.is_none() {
+            let keep = matches!(m.kind, Kind::Villager | Kind::IronGolem) || m.owner.is_some() || m.saddled || m.kept || m.temper > 0;
+            if m.dying > 0 || !keep {
                 continue;
             }
             let _ = writeln!(
@@ -3124,9 +3137,10 @@ impl Mobs {
                 out.pop();
                 let _ = writeln!(out, " {},{},{}", h.0, h.1, h.2);
             }
-        }
-        for (x, z) in self.rolled.lock().iter() {
-            let _ = writeln!(out, "c {x} {z}");
+            if m.kept {
+                out.pop();
+                out.push_str(" kept\n");
+            }
         }
         let tmp = path.with_extension("tmp");
         std::fs::write(&tmp, out)?;
@@ -3150,6 +3164,7 @@ impl Mobs {
                 ["m", kind, x, y, z, yaw, health, baby, owner, sitting, color, sheared, extra @ ..] => {
                     let job = extra.first().and_then(|t| crate::villagers::Job::from_text(t)).map(Box::new);
                     let saddled = extra.get(1) == Some(&"1");
+                    let kept = extra.contains(&"kept");
                     let temper = extra.get(2).and_then(|t| t.parse().ok()).unwrap_or(0u32).min(100);
                     let home = extra.get(3).and_then(|t| {
                         let v: Vec<i32> = t.split(',').filter_map(|n| n.parse().ok()).collect();
@@ -3166,7 +3181,7 @@ impl Mobs {
                         id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health, on_ground: false, target: None, panic: 0, dying: 0,
                         sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: baby.parse().unwrap_or(0),
                         aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner, sitting: *sitting == "1",
-                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false, rider: None, saddled, temper, buck: 0, push: None, home, brain: Default::default(),
+                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false, rider: None, saddled, kept, temper, buck: 0, push: None, home, brain: Default::default(),
                     });
                     if let Some(site) = job.and_then(|j| j.site) {
                         crate::villagers::claim(site, id);
@@ -3313,6 +3328,29 @@ mod tests {
     static SERIAL: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
     use super::*;
+
+    #[test]
+    fn mobs_jump_onto_a_step_instead_of_teleporting() {
+        let _serial = SERIAL.lock();
+        let server = Server::new(); // flat: stand at y -60
+        let stone = crate::blocks::any_state("minecraft:stone").unwrap();
+        server.world.set(201, -60, 200, stone);
+        let id = server.mobs.spawn(&server, Kind::Zombie, (200.5, -60.0, 200.5));
+        let mut heights = vec![];
+        for _ in 0..12 {
+            let mut mobs = server.mobs.mobs.lock();
+            let m = mobs.get_mut(&id).unwrap();
+            m.vel.0 = 0.2; // walk east into the step
+            m.vel.2 = 0.0;
+            server.mobs.physics(&server, m);
+            heights.push(m.pos.1);
+        }
+        let first_rise = heights.iter().position(|&y| y > -60.0).unwrap();
+        assert!(heights[first_rise] < -59.0, "rises gradually, not straight onto the step: {heights:?}");
+        // It lands on the step (then walks off its far side, since it keeps going east).
+        assert!(heights.iter().any(|&y| (y - -59.0).abs() < 0.01), "landed on the step: {heights:?}");
+        assert!(server.mobs.mobs.lock()[&id].pos.0 > 201.0, "and walked over it");
+    }
 
     #[test]
     fn mobs_fall_wander_and_die_with_drops() {

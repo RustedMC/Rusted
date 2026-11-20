@@ -120,8 +120,9 @@ impl Session {
         let dmg = self.effects.melee(mobs::attack_damage(held) + enchant::melee_bonus(&data, false, false));
         let (dx, dz) = (them.pos.0 - me.pos.0, them.pos.2 - me.pos.2);
         let len = (dx * dx + dz * dz).sqrt().max(0.01);
-        let push = 0.4 + 0.5 * enchant::level(&data, enchant::KNOCKBACK) as f32;
-        let knock = (dx / len * push, 0.36, dz / len * push);
+        // PNX: knockback 0.3, +0.5 a Knockback level; up is the same, capped at 0.4.
+        let push = 0.3 + 0.5 * enchant::level(&data, enchant::KNOCKBACK) as f32;
+        let knock = (dx / len * push, push.min(0.4), dz / len * push);
         let _ = self.server.events.send(crate::players::Event::Damage { to: target, damage: crate::health::Damage::Mob(dmg, intern(&me.name)), knock });
         // shortcut: fire aspect doesn't set players alight yet; add it with player burning.
         let uses = attack_wear(held);

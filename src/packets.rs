@@ -45,6 +45,21 @@ pub(crate) fn enchant_options(offers: &[(u32, tables::Offer)]) -> Protocol {
     Protocol::PlayerEnchantOptionsPacket(Box::new(PlayerEnchantOptionsPacket { options }))
 }
 
+/// A level sound event, Bedrock's current block sounds ("power.on", "piston.out"...). `data`
+/// is the block runtime id for block sounds, -1 otherwise.
+pub(crate) fn level_sound(name: &str, at: (f32, f32, f32), data: i32) -> Protocol {
+    Protocol::LevelSoundEventPacket(Box::new(bedrock::protocol::v1001::packets::LevelSoundEventPacket {
+        event_name: name.into(),
+        position: at,
+        data,
+        actor_identifier: String::new(),
+        is_baby_mob: false,
+        is_global: false,
+        entity_unique_id: u64::MAX,
+        fire_at_position: None,
+    }))
+}
+
 /// Our slash commands plus argument enums, for client autocomplete.
 pub(crate) fn available_commands(plugins: &plugin::Plugins) -> Protocol {
     use bedrock::protocol::v844::types::Type;

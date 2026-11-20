@@ -92,19 +92,32 @@ pub(crate) fn redstone_tick(server: &players::Server, plates: &mut HashMap<(i32,
         }
     }
     plates.retain(|&q, t| {
-        if t.elapsed() < std::time::Duration::from_secs(1) {
+        // Vanilla: weighted plates release after 10 game ticks, the rest after 20.
+        let b = server.world.get(q.0, q.1, q.2);
+        let weighted = blocks::entry(b).is_some_and(|e| e.name.contains("weighted"));
+        if t.elapsed() < std::time::Duration::from_millis(if weighted { 500 } else { 1000 }) {
             return true;
         }
-        let b = server.world.get(q.0, q.1, q.2);
         if blocks::entry(b).is_some_and(|e| e.name.ends_with("pressure_plate")) {
             server.set_block_quiet(0, q.0, q.1, q.2, blocks::with(b, &[("redstone_signal", blocks::State::Int(0))]));
         }
         false
     });
     server.scheduler.tick(server);
+    redstone::daylight(server);
     let step = redstone::tick(&server.world, &|p| server.containers.comparator(&server.world, p));
+    // Pushed containers keep their contents: take them all out first, so a chain of chests
+    // moving one step can't overwrite each other.
+    let carried: Vec<_> = step.moves.iter().map(|&(from, to)| {
+        let slots = server.containers.get(from);
+        server.containers.put(from, vec![]);
+        (to, slots)
+    }).collect();
     for (p, b) in step.blocks {
         server.set_block_quiet(0, p.0, p.1, p.2, b);
+    }
+    for (to, slots) in carried {
+        server.containers.put(to, slots);
     }
     for p in step.dispense {
         dispense(server, p);
@@ -116,7 +129,10 @@ pub(crate) fn redstone_tick(server: &players::Server, plates: &mut HashMap<(i32,
         apply_use(server, 0, p, &useblock::play_note(&server.world, p));
     }
     for (p, s) in step.sounds {
-        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(play_sound(s, (p.0 as f32 + 0.5, p.1 as f32 + 0.5, p.2 as f32 + 0.5))) });
+        let at = (p.0 as f32 + 0.5, p.1 as f32 + 0.5, p.2 as f32 + 0.5);
+        // Pistons use level sound events, like vanilla; doors still use their named sounds.
+        let packet = if s.starts_with("piston.") { crate::packets::level_sound(s, at, -1) } else { play_sound(s, at) };
+        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(packet) });
     }
     for (p, ext, sticky) in step.pistons {
         let data = Protocol::BlockActorDataPacket(Box::new(bedrock::protocol::v662::packets::BlockActorDataPacket {

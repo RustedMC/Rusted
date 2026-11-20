@@ -27,6 +27,12 @@ fn empty_compound() -> nbtx::Value {
     nbtx::Value::Compound(Default::default())
 }
 
+/// Items in the 1.26.60 data that the game doesn't have finished yet.
+fn unreleased(name: &str) -> bool {
+    let n = name.trim_start_matches("minecraft:");
+    ["_wool_slab", "_wool_double_slab", "_wool_stairs", "_concrete_slab", "_concrete_double_slab", "_concrete_stairs"].iter().any(|s| n.ends_with(s))
+}
+
 /// Pulls the block id out of a creative entry's base64 block-state NBT.
 fn block_network_id(b64: Option<&str>) -> i32 {
     let Some(b64) = b64 else { return 0 };
@@ -123,6 +129,9 @@ fn data() -> &'static Data {
             .unwrap()
             .iter()
             .filter_map(|i| Some((instance(i)?, i["group_index"].as_u64()? as u32)))
+            // Wool and concrete slabs/stairs are in the data but not released in the game yet:
+            // the client shows them untextured with raw names, so they stay out of the menu.
+            .filter(|(inst, _)| !ids.iter().any(|(n, &id)| id as i32 == inst.id && unreleased(n)))
             .enumerate()
             .map(|(n, (item_instance, group_id))| CreativeItemData {
                 creative_net_id: n as u32 + 1,
@@ -335,7 +344,48 @@ pub fn creative_item(creative_net_id: u32) -> Option<NetworkItemStackDescriptorV
 
 /// Pick block result as an inventory stack.
 pub fn item_for_block(block: i32) -> Option<NetworkItemStackDescriptorV2> {
-    let c = data().creative.contents.iter().find(|c| c.item_instance.block_runtime_id == block)?;
+    let name = crate::blocks::entry(block).map(|e| e.name.as_str()).unwrap_or("");
+    // Exact state first, then any state of the same block (powered dust, rotated repeaters,
+    // connected fences...), then blocks whose item has a different name.
+    let c = data().creative.contents.iter().find(|c| c.item_instance.block_runtime_id == block).or_else(|| {
+        data().creative.contents.iter().find(|c| c.item_instance.block_runtime_id != 0 && crate::blocks::entry(c.item_instance.block_runtime_id).is_some_and(|e| e.name == name))
+    });
+    let Some(c) = c else {
+        let short = name.trim_start_matches("minecraft:");
+        let item = match short {
+            "redstone_wire" => "redstone",
+            "powered_repeater" | "unpowered_repeater" => "repeater",
+            "powered_comparator" | "unpowered_comparator" => "comparator",
+            "unlit_redstone_torch" => "redstone_torch",
+            "lit_redstone_lamp" => "redstone_lamp",
+            "lit_furnace" => "furnace",
+            "lit_smoker" => "smoker",
+            "lit_blast_furnace" => "blast_furnace",
+            "lit_redstone_ore" => "redstone_ore",
+            "lit_deepslate_redstone_ore" => "deepslate_redstone_ore",
+            "daylight_detector_inverted" => "daylight_detector",
+            "piston_arm_collision" => "piston",
+            "sticky_piston_arm_collision" => "sticky_piston",
+            "tripwire" | "trip_wire" => "string",
+            "wheat" => "wheat_seeds",
+            "carrots" => "carrot",
+            "potatoes" => "potato",
+            "beetroot" => "beetroot_seeds",
+            "reeds" => "sugar_cane",
+            "cocoa" => "cocoa_beans",
+            "standing_sign" | "wall_sign" => "oak_sign",
+            "standing_banner" | "wall_banner" => "banner",
+            "powered_rail" | "golden_rail" => "golden_rail",
+            "wooden_door" => "oak_door",
+            "unlit_torch" => "torch",
+            s if s.ends_with("_wall_sign") => return item_by_name(&format!("minecraft:{}_sign", s.trim_end_matches("_wall_sign"))),
+            s if s.ends_with("_standing_sign") => return item_by_name(&format!("minecraft:{}_sign", s.trim_end_matches("_standing_sign"))),
+            s if s.ends_with("_double_slab") => return item_by_name(&format!("minecraft:{}_slab", s.trim_end_matches("_double_slab"))),
+            s if s.ends_with("_door") || s.ends_with("_bed") || s.ends_with("_cauldron") || s == "cauldron" || s == "cake" => short,
+            _ => return None,
+        };
+        return item_by_name(item);
+    };
     let i = &c.item_instance;
     Some(NetworkItemStackDescriptorV2 {
         id: i.id as i16,
@@ -418,4 +468,5 @@ mod tests {
         assert!(creative.contents.iter().all(|c| (c.group_id as usize) < creative.groups.len()));
     }
 }
+
 

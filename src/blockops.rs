@@ -24,6 +24,65 @@ pub(crate) fn sleepers() -> &'static parking_lot::Mutex<HashMap<i64, Instant>> {
     S.get_or_init(Default::default)
 }
 
+/// A player lying in a bed (or getting up): the sleeping player flag and the bed position,
+/// so everyone sees them lie down (PNX Player.sleepOn / stopSleep).
+pub(crate) fn sleep_packet(id: i64, bed: Option<(i32, i32, i32)>) -> Protocol {
+    use bedrock::protocol::v2168::enums::DataItemType;
+    use bedrock::protocol::v662::types::{ActorRuntimeID, BlockPos, DataItem, PropertySyncData};
+    use bedrock::protocol::v924::enums::ActorDataIDs;
+    let (x, y, z) = bed.unwrap_or((0, 0, 0));
+    Protocol::SetActorDataPacket(Box::new(bedrock::protocol::v662::packets::SetActorDataPacket {
+        target_runtime_id: ActorRuntimeID(id as u64),
+        actor_data: vec![
+            // Player flag bit 1 = sleeping.
+            DataItem { data_item_id: ActorDataIDs::PlayerFlags, data_item_type: DataItemType::Byte(if bed.is_some() { 2 } else { 0 }) },
+            DataItem { data_item_id: ActorDataIDs::BedPosition, data_item_type: DataItemType::Pos(BlockPos { x, y, z }) },
+        ],
+        synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
+        tick: 0,
+    }))
+}
+
+/// Gets a player out of bed.
+pub(crate) fn wake(server: &players::Server, id: i64) {
+    if sleepers().lock().remove(&id).is_some() {
+        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(sleep_packet(id, None)) });
+    }
+}
+
+/// Once enough players have slept 5 s (100 ticks, vanilla), skip to morning
+/// (playersSleepingPercentage, default 100).
+pub(crate) fn check_sleep(server: &players::Server) {
+    use bedrock::protocol::v844::types::Type;
+    let online = server.all();
+    let mut sl = sleepers().lock();
+    sl.retain(|id, _| online.iter().any(|p| p.id == *id));
+    let rested = sl.values().filter(|t| t.elapsed() >= std::time::Duration::from_secs(5)).count();
+    let pct = server.game_rules.lock().iter().find(|r| r.rule_name == "playersSleepingPercentage").and_then(|r| match r.rule_type {
+        Type::Int(v) => Some(v),
+        _ => None,
+    });
+    let pct = pct.unwrap_or(100).clamp(0, 100) as usize;
+    let needed = (online.len() * pct).div_ceil(100).max(1);
+    if rested < needed {
+        return;
+    }
+    let sleeping: Vec<i64> = sl.drain().map(|(id, _)| id).collect();
+    drop(sl);
+    let t = server.time().rem_euclid(24_000);
+    let morning = server.time() - t + 24_000;
+    server.set_time(morning);
+    let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(crate::packets::clock_packet(morning)) });
+    let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(crate::packets::time_packet(morning)) });
+    *commands::WEATHER.lock() = commands::Weather::Clear;
+    for w in commands::weather_packets(commands::Weather::Clear) {
+        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(w) });
+    }
+    for id in sleeping {
+        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(sleep_packet(id, None)) });
+    }
+}
+
 /// Lid/door animation and sound when the first player opens a chest or barrel.
 pub(crate) fn container_opened(server: &players::Server, pos: (i32, i32, i32)) {
     if server.containers.viewers(pos, 1) == 1 {

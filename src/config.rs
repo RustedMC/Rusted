@@ -23,6 +23,7 @@ pub struct Config {
     /// Blocks around the world spawn only operators can change (0 = off).
     pub spawn_protection: i32,
     pub pvp: bool,
+    pub plugins: bool,
     /// Minutes between world backups into backups/ (0 = off), and how many to keep.
     pub backup_interval: u64,
     pub backup_keep: usize,
@@ -63,6 +64,8 @@ white-list=false
 spawn-protection=16
 # Players can hurt each other.
 pvp=true
+# Load the built-in plugins (lobby, economy, ranks, kits...). false = plain vanilla server.
+plugins=true
 # Copy the world into backups/ every this many minutes (0 = never), keeping the newest few.
 backup-interval=60
 backup-keep=5
@@ -149,6 +152,7 @@ fn from_map(defaults: HashMap<String, String>, mut m: HashMap<String, String>) -
         white_list: s("white-list") == "true",
         spawn_protection: s("spawn-protection").parse().unwrap_or(16).max(0),
         pvp: s("pvp") != "false",
+        plugins: s("plugins") != "false",
         backup_interval: s("backup-interval").parse().unwrap_or(60),
         backup_keep: s("backup-keep").parse().unwrap_or(5).max(1),
         player_idle_timeout: s("player-idle-timeout").parse().unwrap_or(0),

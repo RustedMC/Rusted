@@ -294,6 +294,17 @@ async fn main() {
                         for (item, n) in drops::drops(old, (x, y, z), None) {
                             server.entities.drop_item(&server, item, n, (x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5));
                         }
+                        // Break sound and particles, like breaking it by hand.
+                        let fx = Protocol::LevelEventPacket(Box::new(bedrock::protocol::v662::packets::LevelEventPacket { event_id: 2001, position: (x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5), data: old }));
+                        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(fx) });
+                        // The other half of tall grass, large ferns, sunflowers... goes too.
+                        if let Some(blocks::State::Bool(top)) = blocks::state(old, "upper_block_bit") {
+                            let oy = if *top { y - 1 } else { y + 1 };
+                            let other = server.world.get(x, oy, z);
+                            if blocks::entry(other).map(|e| &e.name) == blocks::entry(old).map(|e| &e.name) && !blocks::entry(old).is_some_and(|e| e.name.ends_with("_door")) {
+                                server.set_block_quiet(0, x, oy, z, world::AIR);
+                            }
+                        }
                     }
                     server.set_block_quiet(0, x, y, z, b);
                 }
