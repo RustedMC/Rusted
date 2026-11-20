@@ -63,6 +63,13 @@ pub(crate) fn available_commands(plugins: &plugin::Plugins) -> Protocol {
         ("Weather", ["clear", "rain", "thunder"].map(String::from).to_vec()),
         ("Difficulty", ["peaceful", "easy", "normal", "hard"].map(String::from).to_vec()),
         ("WhitelistAction", ["add", "remove", "on", "off", "list"].map(String::from).to_vec()),
+        ("Effect", crate::effects::NAMES.iter().map(|(n, _)| n.to_string()).chain(["clear".to_string()]).collect()),
+        ("Enchant", crate::enchant::names()),
+        ("EntityType", crate::mobs::Kind::ALL.iter().map(|k| k.identifier().trim_start_matches("minecraft:").to_string()).collect()),
+        ("Block", crate::blocks::names().into_iter().map(|n| n.trim_start_matches("minecraft:").to_string()).collect()),
+        ("TitleType", ["title", "subtitle", "actionbar", "clear", "reset", "times"].map(String::from).to_vec()),
+        ("BlockHandling", ["destroy", "keep", "replace", "hollow", "outline"].map(String::from).to_vec()),
+        ("DamageCause", ["entity_attack", "fall", "fire", "lava", "drowning", "magic", "void", "wither", "starve", "suicide"].map(String::from).to_vec()),
     ]
     .into_iter()
     .map(|(n, v)| (n.to_string(), v))
@@ -129,12 +136,11 @@ pub(crate) fn available_commands(plugins: &plugin::Plugins) -> Protocol {
         command("whitelist", desc("whitelist"), &[&[("action", e("WhitelistAction"), false), ("name", STRING, true)]]),
         command("kill", desc("kill"), &[&[("target", TARGET, true)]]),
         command("effect", desc("effect"), &[
-            &[("player", TARGET, false), ("effect", STRING, false), ("seconds", INT, true), ("amplifier", INT, true), ("hideParticles", e("Boolean"), true)],
-            &[("player", TARGET, false), ("clear", STRING, false)],
+            &[("player", TARGET, false), ("effect", e("Effect"), false), ("seconds", INT, true), ("amplifier", INT, true), ("hideParticles", e("Boolean"), true)],
         ]),
-        command("enchant", desc("enchant"), &[&[("player", TARGET, false), ("enchantmentName", STRING, false), ("level", INT, true)]]),
+        command("enchant", desc("enchant"), &[&[("player", TARGET, false), ("enchantmentName", e("Enchant"), false), ("level", INT, true)]]),
         command("xp", desc("xp"), &[&[("amount", INT, false), ("player", TARGET, true)], &[("amount", STRING, false), ("player", TARGET, true)]]),
-        command("summon", desc("summon"), &[&[("entityType", STRING, false), ("spawnPos", POSITION, true), ("nameTag", STRING, true)]]),
+        command("summon", desc("summon"), &[&[("entityType", e("EntityType"), false), ("spawnPos", POSITION, true), ("nameTag", STRING, true)]]),
         command("tell", desc("tell"), &[&[("target", TARGET, false), ("message", MESSAGE, false)]]),
         command("kick", desc("kick"), &[&[("name", TARGET, false), ("reason", MESSAGE, true)]]),
         command("op", desc("op"), &[&[("player", TARGET, false)]]),
@@ -142,14 +148,14 @@ pub(crate) fn available_commands(plugins: &plugin::Plugins) -> Protocol {
         command("ban", desc("ban"), &[&[("player", STRING, false), ("reason", MESSAGE, true)]]),
         command("unban", desc("unban"), &[&[("player", STRING, false)]]),
         command("clear", desc("clear"), &[&[("player", TARGET, true), ("itemName", e("Item"), true), ("data", INT, true), ("maxCount", INT, true)]]),
-        command("setblock", desc("setblock"), &[&[("position", POSITION, false), ("tileName", STRING, false), ("oldBlockHandling", STRING, true)]]),
-        command("fill", desc("fill"), &[&[("from", POSITION, false), ("to", POSITION, false), ("tileName", STRING, false), ("oldBlockHandling", STRING, true)]]),
+        command("setblock", desc("setblock"), &[&[("position", POSITION, false), ("tileName", e("Block"), false), ("oldBlockHandling", e("BlockHandling"), true)]]),
+        command("fill", desc("fill"), &[&[("from", POSITION, false), ("to", POSITION, false), ("tileName", e("Block"), false), ("oldBlockHandling", e("BlockHandling"), true)]]),
         command("spawnpoint", desc("spawnpoint"), &[&[("player", TARGET, true), ("spawnPos", POSITION, true)]]),
         command("setworldspawn", desc("setworldspawn"), &[&[("spawnPoint", POSITION, true)]]),
         command("say", desc("say"), &[&[("message", MESSAGE, false)]]),
         command("me", desc("me"), &[&[("message", MESSAGE, false)]]),
-        command("damage", desc("damage"), &[&[("target", TARGET, false), ("amount", INT, false), ("cause", STRING, true)]]),
-        command("title", desc("title"), &[&[("player", TARGET, false), ("type", STRING, false), ("titleText", MESSAGE, true)]]),
+        command("damage", desc("damage"), &[&[("target", TARGET, false), ("amount", INT, false), ("cause", e("DamageCause"), true)]]),
+        command("title", desc("title"), &[&[("player", TARGET, false), ("type", e("TitleType"), false), ("titleText", MESSAGE, true)]]),
         command("list", desc("list"), &[&[]]),
         command("help", desc("help"), &[&[("command", STRING, true)], &[("page", INT, true)]]),
     ];
@@ -260,6 +266,8 @@ pub(crate) fn parse_usage(cmd: &str, line: &str, enums: &mut Vec<(String, Vec<St
                 Param::Plain(TARGET)
             } else if arg == "position" || arg.ends_with("_pos") {
                 Param::Plain(POSITION)
+            } else if arg == "block" || arg.ends_with("_block") {
+                Param::Enum("Block".into())
             } else if arg == "item" {
                 Param::Enum("Item".into())
             } else if matches!(arg, "amount" | "n" | "count" | "price" | "each" | "hearts" | "line" | "priority" | "size" | "port" | "number") {

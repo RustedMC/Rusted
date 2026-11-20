@@ -123,6 +123,11 @@ pub fn table_pool(item: &str) -> Vec<(i16, i16)> {
         .collect()
 }
 
+/// Every enchantment name, for command autocomplete.
+pub fn names() -> Vec<String> {
+    ALL.iter().map(|e| e.0.to_string()).collect()
+}
+
 /// Look up by name or id, gives (id, max level).
 pub fn by_name(s: &str) -> Option<(i16, i16)> {
     let s = s.trim_start_matches("minecraft:");

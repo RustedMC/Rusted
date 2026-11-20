@@ -226,7 +226,7 @@ impl Plugin for WorldEdit {
     fn usage(&self, command: &str) -> &'static [&'static str] {
         match command {
             "set" => &["<block>"],
-            "replace" => &["<from> <to>"],
+            "replace" => &["<from_block> <to_block>"],
             "walls" => &["<block>"],
             "outline" => &["<block>"],
             _ => &[],

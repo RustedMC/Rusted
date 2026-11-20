@@ -631,7 +631,23 @@ impl Plugins {
         {
             return Some("§cYou do not have permission to use this command".into());
         }
-        owner.on_command(s, p, name, args)
+        // A selector (@a, @p, @r, @s, @e, @initiator) runs the command once per player it finds.
+        let Some(i) = args.iter().position(|a| a.starts_with('@')) else { return owner.on_command(s, p, name, args) };
+        let ids = match crate::commands::select(s, p.id, args[i]) {
+            Ok(ids) if !ids.is_empty() => ids,
+            Ok(_) => return Some("§cNo targets matched selector".into()),
+            Err(e) => return Some(e),
+        };
+        let mut out: Vec<String> = Vec::new();
+        for who in ids.into_iter().filter_map(|id| s.get(id)) {
+            let mut each = args.to_vec();
+            each[i] = &who.name;
+            if let Some(reply) = owner.on_command(s, p, name, &each).filter(|r| !r.is_empty()) {
+                out.push(reply);
+            }
+        }
+        Some(out.join("
+"))
     }
 
     /// Does `player` have `node`? `permissions.txt` wins, then the plugin's default for it.

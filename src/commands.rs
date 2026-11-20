@@ -210,7 +210,8 @@ pub fn select(server: &crate::players::Server, me: i64, arg: &str) -> Result<Vec
     let dist = |p: &crate::players::PlayerInfo| here.map_or(0.0, |h| (p.pos.0 - h.0).powi(2) + (p.pos.1 - h.1).powi(2) + (p.pos.2 - h.2).powi(2));
     let mut ids: Vec<i64> = match kind {
         "a" | "e" => all.iter().map(|p| p.id).collect(),
-        "s" => all.iter().filter(|p| p.id == me).map(|p| p.id).collect(),
+        // @initiator: whoever clicked the NPC running the command, which is the sender here.
+        "s" | "initiator" => all.iter().filter(|p| p.id == me).map(|p| p.id).collect(),
         "p" => {
             all.sort_by(|a, b| dist(a).total_cmp(&dist(b)));
             all.first().map(|p| vec![p.id]).unwrap_or_default()

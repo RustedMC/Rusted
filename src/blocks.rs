@@ -115,6 +115,13 @@ pub fn rename(b: i32, new: &str) -> i32 {
     }
 }
 
+/// Every block name ("minecraft:stone"...), sorted, for command autocomplete.
+pub fn names() -> Vec<String> {
+    let mut v: Vec<String> = registry().by_name.keys().cloned().collect();
+    v.sort();
+    v
+}
+
 pub fn any_state(name: &str) -> Option<i32> {
     let r = registry();
     r.by_name.get(name).and_then(|v| v.first()).map(|&i| r.ids[i])
