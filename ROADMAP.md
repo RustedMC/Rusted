@@ -1,20 +1,42 @@
 # Roadmap
 
-Rough order of what's next. See [PORTING.md](PORTING.md) for where each part stands today.
+Each release finishes one step below. Patch releases (0.4.1, 0.4.2...) each close one batch;
+a new minor version (0.5.0) starts when a whole group is done; 1.0.0 is the end of this list.
+See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands.
 
-## Next up
-- Firework rockets launched from the ground, with their explosion effects
-- Maps and the cartography table (waiting on a fix in bedrock-rs: its map picture packet is missing the type flags)
+✅ released · 🔨 in progress · ⏳ planned
 
-## After that
-- PNX's mob AI for the rest of the mobs: neutrals, villagers, fish and flyers (passive animals and hostiles are on the new brain in `src/ai.rs`)
-- Sculk sensors and shriekers (repeater locking, detector rails and lectern signals are done; quasi-connectivity is Java-only)
-- `/execute` and the remaining vanilla commands
-- More plugin events (movement, inventory clicks, pickup, projectiles, pre-login), plugins loaded at runtime
-  (custom items, chest menus, item-use events and player control are done)
-- Sky light, NPC dialogs, camera control
+## 0.4: vanilla gameplay
 
-## Before 1.0
-- Benchmarks against PNX on the same machine
-- Replace the block, item and creative data with properly licensed files
-- Long-running tests with real players
+- ✅ **0.4.0** Redstone that connects and powers like vanilla, PNX pistons (slime, honey,
+  containers), block support rules, vanilla sounds, knockback, mobs jumping, XP orbs, spawn
+  eggs, sleeping, plugin suite
+- 🔨 **0.4.1** Skeletons draw and pillagers charge before shooting, vanilla spawn weights and
+  cap, rarer patrols
+- ⏳ **0.4.2** Pistons: sliding animation (moving blocks), drops from crushed blocks, players
+  and mobs pushed; buttons on pistons
+- ⏳ **0.4.3** Missing redstone: tripwire, target block, trapped chest, powered and activator
+  rails, copper bulb, torch burnout
+- ⏳ **0.4.4** Mob spawning: PNX's per-mob Bedrock spawn rules (biome, light, surface or cave,
+  herds)
+- ⏳ **0.4.5** Mob AI: the rest of PNX's behaviours for neutrals, villagers, fish and flyers;
+  arrows and tridents checked against PNX
+
+## 0.5: the world
+
+- ⏳ **0.5.0** Sky light
+- ⏳ **0.5.1** Multiple worlds (Multiverse), with per-world inventories
+- ⏳ **0.5.2** Maps and the cartography table
+- ⏳ **0.5.3** Fireworks launched from the ground, with their effects
+
+## 0.6: servers and plugins
+
+- ⏳ **0.6.0** `/execute` and the remaining vanilla commands
+- ⏳ **0.6.1** Plugins loaded at runtime, more events
+- ⏳ **0.6.2** Camera control, NPC dialogs
+
+## 1.0: stable
+
+- ⏳ Block, item and creative data from properly licensed files
+- ⏳ Long-running tests with real players
+- ⏳ Benchmarks against PNX refreshed for the release
