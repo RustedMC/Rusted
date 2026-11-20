@@ -188,6 +188,14 @@ impl Plugin for WorldEdit {
         NAME
     }
 
+    fn version(&self) -> &str {
+        "0.8.2"
+    }
+
+    fn description(&self) -> &str {
+        "Wand selection, set, replace, walls, copy, paste, undo"
+    }
+
     fn commands(&self) -> Vec<(&'static str, &'static str)> {
         vec![
             ("wand", "WorldEdit: selection wand"),

@@ -117,6 +117,14 @@ impl Plugin for Economy {
         NAME
     }
 
+    fn version(&self) -> &str {
+        "1.3.0"
+    }
+
+    fn description(&self) -> &str {
+        "Coins for every player: /bal, /pay, /baltop, /eco"
+    }
+
     fn commands(&self) -> Vec<(&'static str, &'static str)> {
         vec![
             ("balance", "Shows your balance"),

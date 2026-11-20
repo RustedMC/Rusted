@@ -204,6 +204,14 @@ impl Plugin for Shops {
         NAME
     }
 
+    fn version(&self) -> &str {
+        "1.1.0"
+    }
+
+    fn description(&self) -> &str {
+        "Sign chest shops: buy and sell from player chests"
+    }
+
     fn on_sign_change(&self, server: &Server, player: &PlayerInfo, pos: Pos, front: &mut String, _back: &mut String) -> bool {
         let lines: Vec<String> = front.lines().map(|l| l.trim().to_string()).collect();
         if !lines.first().is_some_and(|l| l.eq_ignore_ascii_case("[shop]")) {

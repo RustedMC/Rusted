@@ -66,6 +66,14 @@ impl Plugin for Lifesteal {
         NAME
     }
 
+    fn version(&self) -> &str {
+        "1.0.1"
+    }
+
+    fn description(&self) -> &str {
+        "Lifesteal: steal hearts on kills, withdraw, revive"
+    }
+
     fn commands(&self) -> Vec<(&'static str, &'static str)> {
         vec![
             ("withdraw", "Turns hearts into Heart items"),

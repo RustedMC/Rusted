@@ -214,6 +214,14 @@ impl Plugin for WorldGuard {
         NAME
     }
 
+    fn version(&self) -> &str {
+        "0.7.1"
+    }
+
+    fn description(&self) -> &str {
+        "Protected regions with flags, members and greetings"
+    }
+
     fn commands(&self) -> Vec<(&'static str, &'static str)> {
         vec![("rg", "Region protection (ops)"), ("region", "Region protection (ops)")]
     }

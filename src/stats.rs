@@ -1,7 +1,7 @@
 //! Player stats and leaderboards: kills, deaths, mob kills, blocks broken, playtime (minutes)
 //! and balance.
 //!
-//! - `/stats [player]`, `/top <stat>` (styled menu)
+//! - `/stats [player]`, `/top <stat>` (a menu)
 //! - Placeholders: `{kills}` `{deaths}` `{mob_kills}` `{blocks}` `{playtime}`, and
 //!   `{top:<stat>:<n>}` / `{topvalue:<stat>:<n>}` for leaderboard holograms, e.g.
 //!   `/holo create topkills §6#1 §f{top:kills:1} §7- §e{topvalue:kills:1}`
@@ -107,6 +107,18 @@ pub fn top_placeholder(name: &str) -> Option<String> {
     })
 }
 
+fn stat_icon(stat: &str) -> String {
+    let icon = match stat {
+        "kills" => "diamond_sword",
+        "deaths" => "bone",
+        "mob_kills" => "iron_sword",
+        "blocks" => "iron_pickaxe",
+        "playtime" => "clock_item",
+        _ => "gold_ingot",
+    };
+    format!("textures/items/{icon}")
+}
+
 fn leaderboard(server: &Server, p: &PlayerInfo, stat: &str, label: &str) {
     let rows = top(stat, 10);
     let medal = |i: usize| match i {
@@ -116,14 +128,15 @@ fn leaderboard(server: &Server, p: &PlayerInfo, stat: &str, label: &str) {
         _ => "§7",
     };
     let form = Form::Simple {
-        title: format!("rusted:Top {label}"),
+        title: format!("Top {label}"),
         content: format!("§7You: §f{}", show(stat, get(&p.name, stat))),
         buttons: rows
             .iter()
             .enumerate()
             .map(|(i, (who, v))| {
                 let rank = if i < 3 { medal(i).to_string() } else { format!("§7#{}", i + 1) };
-                (format!("{rank} §f{who}\n§e{}", show(stat, *v)), None)
+                let icon = ["gold_ingot", "iron_ingot", "copper_ingot"].get(i).unwrap_or(&"paper");
+                (format!("{rank} §f{who}\n§e{}", show(stat, *v)), Some(format!("textures/items/{icon}")))
             })
             .collect(),
     };
@@ -135,6 +148,14 @@ pub struct Stats;
 impl Plugin for Stats {
     fn name(&self) -> &str {
         NAME
+    }
+
+    fn version(&self) -> &str {
+        "1.2.0"
+    }
+
+    fn description(&self) -> &str {
+        "Player stats and leaderboards, with hologram placeholders"
     }
 
     fn commands(&self) -> Vec<(&'static str, &'static str)> {
@@ -214,9 +235,9 @@ impl Plugin for Stats {
             ("top", None) => {
                 // Pick a board from a menu.
                 let form = Form::Simple {
-                    title: "rusted:Leaderboards".into(),
+                    title: "Leaderboards".into(),
                     content: String::new(),
-                    buttons: STATS.iter().map(|(_, l)| (format!("§f{l}\n§7Top 10"), None)).collect(),
+                    buttons: STATS.iter().map(|(s, l)| (format!("§f{l}\n§7Top 10"), Some(stat_icon(s)))).collect(),
                 };
                 ui::show(server, player.id, form, |server, p, answer| {
                     if let crate::ui::Response::Button(i) = answer

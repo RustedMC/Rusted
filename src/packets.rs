@@ -92,7 +92,7 @@ pub(crate) fn available_commands(plugins: &plugin::Plugins) -> Protocol {
     let e = |name: &str| ARG_VALID | ARG_ENUM | enums.iter().position(|(n, _)| n == name).unwrap() as u32;
 
     let mut enum_values: Vec<String> = Vec::new();
-    let enum_data = enums
+    let mut enum_data: Vec<EnumDataEntry> = enums
         .iter()
         .map(|(name, values)| EnumDataEntry {
             name: name.clone(),
@@ -186,6 +186,19 @@ pub(crate) fn available_commands(plugins: &plugin::Plugins) -> Protocol {
             .collect();
         let slices: Vec<&[(&str, u32, bool)]> = resolved.iter().map(Vec::as_slice).collect();
         commands.push(command(name, description, &slices));
+    }
+    // Every command gets a "<name>Aliases" enum holding its own name, as vanilla and Geyser
+    // send; without it the client ignores our definitions of vanilla names like /tp and /give.
+    for c in commands.iter_mut() {
+        let value = match enum_values.iter().position(|v| *v == c.name) {
+            Some(i) => i as u32,
+            None => {
+                enum_values.push(c.name.clone());
+                enum_values.len() as u32 - 1
+            }
+        };
+        c.alias_enum = enum_data.len() as i32;
+        enum_data.push(EnumDataEntry { name: format!("{}Aliases", c.name), values: vec![value] });
     }
     Protocol::AvailableCommandsPacket(Box::new(AvailableCommandsPacket {
         enum_values,
@@ -312,7 +325,7 @@ pub(crate) const ARG_ENUM: u32 = 0x20_0000;
 
 pub(crate) const INT: u32 = ARG_VALID | 1;
 
-pub(crate) const MESSAGE: u32 = ARG_VALID | 68; // rest of the line, as PNX's /tell uses
+pub(crate) const MESSAGE: u32 = ARG_VALID | 67; // rest of the line (68 is MESSAGE_ROOT), per Cloudburst v975
 
 pub(crate) const TARGET: u32 = ARG_VALID | 8; // a player name or @-selector
 
@@ -326,7 +339,9 @@ pub(crate) fn command(name: &str, description: &str, overloads: &[&[(&str, u32, 
     CommandsEntry {
         name: name.into(),
         description: description.into(),
-        flags: 0,
+        // NOT_CHEAT: without it the client hides suggestions for the vanilla command names
+        // (/tp, /give...), as Geyser found too.
+        flags: 0x80,
         permission_level: CommandPermissionLevelString::Any,
         alias_enum: -1,
         chained_sub_command_indices: vec![],

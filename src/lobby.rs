@@ -45,7 +45,7 @@ struct Target {
     icon: String,
     slot: usize,
     lore: String,
-    /// Icon for the styled form: a texture path ("textures/items/diamond") or an https URL.
+    /// Button icon in the form selector: a texture path ("textures/items/diamond") or an https URL.
     image: String,
 }
 
@@ -127,7 +127,7 @@ fn count_text(t: &Target) -> String {
 
 fn open_selector(server: &Server, to: i64) {
     let mut c = config();
-    // "form" is the styled grid from the lobby resource pack (its title starts with "rusted:");
+    // "form" is a button list; "chest" is a chest menu.
     // "chest" works without any pack.
     if get(&mut c, "selector.style", "chest") == "form" {
         let title = get(&mut c, "selector.title", "Servers");
@@ -135,8 +135,8 @@ fn open_selector(server: &Server, to: i64) {
         let _ = c.save();
         let list = servers();
         let form = Form::Simple {
-            title: format!("rusted_grid:{}", icons(&title)),
-            content: icons(&body),
+            title: title.clone(),
+            content: body,
             buttons: list.iter().map(|t| (format!("§f{}
 {}", t.name, count_text(t)), Some(t.image.clone()))).collect(),
         };
@@ -198,11 +198,9 @@ fn open_settings(server: &Server, p: &PlayerInfo) {
     let s = settings(p);
     let mut c = config();
     let title = get(&mut c, "settings.title", "Settings");
-    // "form" uses the lobby pack's styled window; "classic" is the plain game form.
-    let styled = get(&mut c, "settings.style", "form") == "form";
     let _ = c.save();
     let form = Form::Custom {
-        title: if styled { format!("rusted:{title}") } else { title },
+        title,
         elements: vec![
             Element::Toggle { text: "Show other players".into(), default: s.show_players },
             Element::Toggle { text: "Show the sidebar".into(), default: s.sidebar },
@@ -249,21 +247,8 @@ fn fill(text: &str, server: &Server, p: &PlayerInfo) -> String {
     for t in servers() {
         let n = count(&t.ip, t.port).map_or("-".to_string(), |c| c.0.to_string());
         out = out.replace(&format!("{{count:{}}}", t.name), &n);
-        let dot = if count(&t.ip, t.port).is_some() { "{icon:12}" } else { "{icon:21}" };
+        let dot = if count(&t.ip, t.port).is_some() { "§a●" } else { "§c●" };
         out = out.replace(&format!("{{status:{}}}", t.name), dot);
-    }
-    icons(&out)
-}
-
-/// `{icon:N}` becomes glyph U+E100+N from the lobby pack's font (0 player, 1 globe, 2 people,
-/// 3 coin, 4 sword, 5 heart, 6 crown, 7 arrow, 8 gear, 9 controller, 10 trophy, 11 chat, 12 green dot,
-/// 13 clock, 16-19 the RUSTED logo, 20 a divider, 21 red dot).
-fn icons(text: &str) -> String {
-    let mut out = text.to_string();
-    while let Some(start) = out.find("{icon:") {
-        let Some(len) = out[start..].find('}') else { break };
-        let glyph = out[start + 6..start + len].parse::<u32>().ok().and_then(|n| char::from_u32(0xE100 + n.min(255)));
-        out.replace_range(start..=start + len, &glyph.map_or(String::new(), String::from));
     }
     out
 }
@@ -401,7 +386,7 @@ fn lobby_items(server: &Server, p: &PlayerInfo) {
         plugin::item(&item).map(|i| i.name(&name).lore(&[&lore]).tag("lobby", key).build())
     };
     for (key, item, name, lore) in [
-        ("selector", "minecraft:emerald", "§b§lServer Selector", "§7Right-click to pick a server"),
+        ("selector", "minecraft:compass", "§b§lServer Selector", "§7Right-click to pick a server"),
         ("play", "minecraft:nether_star", "§a§lPlay", "§7Right-click to jump into a game"),
         ("settings", "minecraft:comparator", "§e§lSettings", "§7Right-click to change your settings"),
     ] {
@@ -425,7 +410,7 @@ impl Plugin for Lobby {
     }
 
     fn version(&self) -> &str {
-        "1.0.0"
+        "2.4.0"
     }
 
     fn description(&self) -> &str {
@@ -600,12 +585,6 @@ impl Plugin for Lobby {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn icon_placeholders() {
-        assert_eq!(super::icons("{icon:0} a {icon:13}"), "\u{E100} a \u{E10D}");
-        assert_eq!(super::icons("{icon:x} b {icon:"), " b {icon:");
-    }
-
     #[test]
     fn placeholders() {
         crate::blocks::init();

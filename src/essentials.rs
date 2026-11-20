@@ -116,7 +116,7 @@ fn homes_menu(server: &Server, p: &PlayerInfo) {
         .map(|(n, at)| (format!("§f{n}\n§7{:.0} {:.0} {:.0}", at.0, at.1, at.2), Some("textures/items/bed_red".into())))
         .collect();
     buttons.push(("§aSet a new home\n§7Where you stand".into(), Some("textures/ui/color_plus".into())));
-    let form = crate::ui::Form::Simple { title: "rusted_grid:Homes".into(), content: String::new(), buttons };
+    let form = crate::ui::Form::Simple { title: "Homes".into(), content: String::new(), buttons };
     crate::ui::show(server, p.id, form, move |server, p, answer| {
         let crate::ui::Response::Button(i) = answer else { return };
         match list.get(i) {
@@ -128,7 +128,7 @@ fn homes_menu(server: &Server, p: &PlayerInfo) {
 
 fn home_options(server: &Server, p: &PlayerInfo, name: String) {
     let form = crate::ui::Form::Simple {
-        title: format!("rusted:Home {name}"),
+        title: format!("Home {name}"),
         content: String::new(),
         buttons: vec![
             ("§fTeleport\n§7Go there now".into(), Some("textures/items/ender_pearl".into())),
@@ -149,7 +149,7 @@ fn home_options(server: &Server, p: &PlayerInfo, name: String) {
 
 fn new_home_form(server: &Server, p: &PlayerInfo) {
     let form = crate::ui::Form::Custom {
-        title: "rusted:New home".into(),
+        title: "New home".into(),
         elements: vec![crate::ui::Element::Input { text: "Name it".into(), placeholder: "base, farm, mine...".into(), default: "home".into() }],
     };
     crate::ui::show(server, p.id, form, |server, p, answer| {
@@ -258,6 +258,14 @@ pub struct Essentials;
 impl Plugin for Essentials {
     fn name(&self) -> &str {
         NAME
+    }
+
+    fn version(&self) -> &str {
+        "2.1.0"
+    }
+
+    fn description(&self) -> &str {
+        "Homes with a menu, warps, teleport requests, /spawn and /invsee"
     }
 
     fn commands(&self) -> Vec<(&'static str, &'static str)> {

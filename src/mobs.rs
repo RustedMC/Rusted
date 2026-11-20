@@ -1100,6 +1100,17 @@ impl Mobs {
         ids.len()
     }
 
+    /// Moves every living mob (or one kind) to `to`, for /tp @e. Returns how many moved.
+    pub fn teleport_all(&self, kind: Option<&str>, to: (f32, f32, f32)) -> usize {
+        let mut n = 0;
+        for m in self.mobs.lock().values_mut().filter(|m| m.dying == 0 && kind.is_none_or(|k| m.kind.identifier().trim_start_matches("minecraft:") == k || Kind::from_name(k) == Some(m.kind))) {
+            m.pos = to;
+            m.vel = (0.0, 0.0, 0.0);
+            n += 1;
+        }
+        n
+    }
+
     /// Living mobs of one kind: (id, position, health).
     pub fn of_kind(&self, kind: Kind) -> Vec<(i64, (f32, f32, f32), f32)> {
         self.mobs.lock().values().filter(|m| m.kind == kind && m.dying == 0).map(|m| (m.id, m.pos, m.health)).collect()

@@ -1,5 +1,4 @@
-//! Auction House and buy Orders, paid with the economy plugin. Menus use the lobby pack's
-//! styled window (titles start with "rusted:").
+//! Auction House and buy Orders, paid with the economy plugin.
 //!
 //! Auction House:
 //! - `/ah` browse and buy, `/ah sell <price> [count]` lists what you're holding,
@@ -66,9 +65,16 @@ fn item_id(st: &Stack) -> String {
     crate::items::name_of(st.item.id).unwrap_or("minecraft:air").to_string()
 }
 
-/// Best-guess menu icon for an item.
-fn icon(id: &str) -> String {
-    format!("textures/items/{}", id.trim_start_matches("minecraft:"))
+/// Best-guess menu icon: blocks are under textures/blocks, items under textures/items.
+/// shortcut: names that differ from their texture (grass_block...) show blank; add a lookup
+/// table if that matters.
+pub fn icon(id: &str) -> String {
+    let short = id.trim_start_matches("minecraft:");
+    if crate::blocks::any_state(&format!("minecraft:{short}")).is_some() {
+        format!("textures/blocks/{short}")
+    } else {
+        format!("textures/items/{short}")
+    }
 }
 
 fn money(n: i64) -> String {
@@ -159,7 +165,7 @@ fn sell(server: &Server, p: &PlayerInfo, price: i64, count: i8) -> String {
 fn browse(server: &Server, p: &PlayerInfo) {
     let all: Vec<Listing> = listings(&Config::data(NAME, "auctions")).into_iter().filter(|l| !expired(l)).take(40).collect();
     let form = Form::Simple {
-        title: "rusted_grid:Auction House".into(),
+        title: "Auction House".into(),
         content: if all.is_empty() { "§7Nothing for sale yet. Sell with §f/ah sell <price>".into() } else { String::new() },
         buttons: all
             .iter()
@@ -225,7 +231,7 @@ fn buy(server: &Server, p: &PlayerInfo, l: &Listing) -> String {
 fn mine(server: &Server, p: &PlayerInfo) {
     let all: Vec<Listing> = listings(&Config::data(NAME, "auctions")).into_iter().filter(|l| l.seller == p.name).collect();
     let form = Form::Simple {
-        title: "rusted:Your listings".into(),
+        title: "Your listings".into(),
         content: if all.is_empty() { "§7You aren't selling anything.".into() } else { "§7Click a listing to take it back.".into() },
         buttons: all
             .iter()
@@ -319,7 +325,7 @@ fn create_order(p: &PlayerInfo, item: &str, amount: u32, each: i64) -> String {
 fn browse_orders(server: &Server, p: &PlayerInfo) {
     let all: Vec<Order> = orders(&Config::data(NAME, "orders")).into_iter().filter(|o| o.filled < o.amount).take(40).collect();
     let form = Form::Simple {
-        title: "rusted:Orders".into(),
+        title: "Orders".into(),
         content: if all.is_empty() { "§7No orders. Place one with §f/orders create <item> <amount> <price>".into() } else { "§7Click an order to deliver items from your inventory.".into() },
         buttons: all
             .iter()
@@ -409,7 +415,7 @@ fn chunks(n: u32) -> Vec<i8> {
 fn my_orders(server: &Server, p: &PlayerInfo) {
     let all: Vec<Order> = orders(&Config::data(NAME, "orders")).into_iter().filter(|o| o.buyer == p.name).collect();
     let form = Form::Simple {
-        title: "rusted:Your orders".into(),
+        title: "Your orders".into(),
         content: if all.is_empty() { "§7You have no orders.".into() } else { "§7Click to collect. Unfilled orders are cancelled and refunded.".into() },
         buttons: all
             .iter()
@@ -444,6 +450,14 @@ pub struct Market;
 impl Plugin for Market {
     fn name(&self) -> &str {
         NAME
+    }
+
+    fn version(&self) -> &str {
+        "0.9.4"
+    }
+
+    fn description(&self) -> &str {
+        "Auction House and buy orders"
     }
 
     fn commands(&self) -> Vec<(&'static str, &'static str)> {

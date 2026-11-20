@@ -172,7 +172,7 @@ fn open_menu(server: &Server, p: &PlayerInfo, pos: Pos) {
         text.push_str(&format!("\n§8- §f{n}x {}", crate::market::pretty(i)));
     }
     let form = Form::Simple {
-        title: format!("rusted:{} Spawner", pretty(&s.mob)),
+        title: format!("{} Spawner", pretty(&s.mob)),
         content: text,
         buttons: vec![
             ("§fCollect loot\n§7Into your inventory".into(), Some("textures/blocks/chest_front".into())),
@@ -229,6 +229,14 @@ pub struct Spawners;
 impl Plugin for Spawners {
     fn name(&self) -> &str {
         NAME
+    }
+
+    fn version(&self) -> &str {
+        "1.5.0"
+    }
+
+    fn description(&self) -> &str {
+        "Smart spawners: stacking, stored loot and XP, sell menu, silk touch mining"
     }
 
     fn commands(&self) -> Vec<(&'static str, &'static str)> {

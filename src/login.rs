@@ -345,7 +345,9 @@ pub(crate) fn level_settings(time: i32, spawn: (f32, f32, f32), seed: u64, mode:
             y: (spawn.1 - 1.62).floor() as i32,
             z: spawn.2.floor() as i32,
         },
-        achievements_disabled: false,
+        // Cheats on (achievements off): otherwise the client hides suggestions for vanilla
+        // cheat commands like /tp and /give, even for ops.
+        achievements_disabled: true,
         editor_world_type: EditorWorldType::NonEditor,
         is_created_in_editor: false,
         is_exported_from_editor: false,

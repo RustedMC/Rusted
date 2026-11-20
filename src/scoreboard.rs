@@ -45,6 +45,14 @@ impl Plugin for Scoreboard {
         NAME
     }
 
+    fn version(&self) -> &str {
+        "1.0.2"
+    }
+
+    fn description(&self) -> &str {
+        "Sidebar with placeholders for non-lobby servers"
+    }
+
     fn on_server_start(&self, server: &Server) {
         server.scheduler.run_repeating(40, 40, |server| {
             refresh(server);

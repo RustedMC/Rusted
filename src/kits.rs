@@ -1,4 +1,4 @@
-//! Kits: `/kit` opens a menu of kits (styled by the lobby pack), `/kit <name>` claims one.
+//! Kits: `/kit` opens a menu of kits, `/kit <name>` claims one.
 //! Each kit has items, a cooldown and an optional permission (`kits.<name>`, from ranks or
 //! permissions.txt). Also drops a player's head when they're killed (`heads.enabled`).
 //!
@@ -128,7 +128,7 @@ fn claim(server: &Server, p: &PlayerInfo, kit: &Kit) -> String {
 fn open_menu(server: &Server, p: &PlayerInfo) {
     let list = kits();
     let form = Form::Simple {
-        title: "rusted_grid:Kits".into(),
+        title: "Kits".into(),
         content: String::new(),
         buttons: list.iter().map(|k| (format!("§f{}\n{}", capital(&k.name), status(p, k)), Some(k.icon.clone()))).collect(),
     };
@@ -152,6 +152,14 @@ pub struct Kits;
 impl Plugin for Kits {
     fn name(&self) -> &str {
         NAME
+    }
+
+    fn version(&self) -> &str {
+        "1.2.1"
+    }
+
+    fn description(&self) -> &str {
+        "Kit menu with cooldowns and rank-locked kits; player heads on kills"
     }
 
     fn commands(&self) -> Vec<(&'static str, &'static str)> {

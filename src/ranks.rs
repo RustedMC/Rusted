@@ -196,6 +196,14 @@ impl Plugin for Ranks {
         NAME
     }
 
+    fn version(&self) -> &str {
+        "1.4.2"
+    }
+
+    fn description(&self) -> &str {
+        "Rank ladder with prefixes, inheritance, permissions and chat format"
+    }
+
     fn commands(&self) -> Vec<(&'static str, &'static str)> {
         vec![("rank", "Shows ranks; ops manage groups and permissions")]
     }

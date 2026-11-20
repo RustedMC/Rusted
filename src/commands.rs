@@ -244,8 +244,42 @@ fn target_index(cmd: &str, args: &[&str]) -> Option<usize> {
 /// Expands a target selector into one run per player, rewriting the target as `@s`.
 /// Commands without a target just run here.
 pub fn expand(server: &crate::players::Server, me: i64, line: &str) -> Result<Vec<(i64, String)>, String> {
+    // /tp <who> @s, /tp @p: the destination selector means the sender's view, so it's turned
+    // into a name here, before the command is split per player being moved.
+    let resolved;
+    let line = match line.split_whitespace().collect::<Vec<_>>().as_slice() {
+        [cmd @ ("tp" | "teleport"), rest @ ..] if matches!(rest.len(), 1 | 2) && rest.last().is_some_and(|d| d.starts_with('@')) => {
+            let dest = select(server, me, rest.last().unwrap())?.into_iter().next().and_then(|id| server.get(id)).ok_or("§cNo targets matched selector")?;
+            resolved = format!("{cmd} {}{}", if rest.len() == 2 { format!("{} ", rest[0]) } else { String::new() }, dest.name);
+            resolved.as_str()
+        }
+        _ => line,
+    };
     let args: Vec<&str> = line.split_whitespace().collect();
     let Some(&cmd) = args.first() else { return Ok(vec![]) };
+    // /tp @e <player | x y z> moves mobs too
+    if matches!(cmd, "tp" | "teleport") && matches!(args.len(), 3 | 5) && args[1].starts_with("@e") {
+        let ty = args[1].split("type=").nth(1).map(|t| t.split([',', ']']).next().unwrap_or("").trim_start_matches("minecraft:").to_string());
+        let here = server.get(me).map_or((0.0, 0.0, 0.0), |p| (p.pos.0, p.pos.1 - 1.62, p.pos.2));
+        let dest = if args.len() == 3 {
+            server.find_by_name(args[2]).and_then(|id| server.get(id)).map(|p| (p.pos.0, p.pos.1 - 1.62, p.pos.2))
+        } else {
+            let c = |s: &str, base: f32| match s.strip_prefix('~') {
+                Some(r) => r.parse::<f32>().ok().or(r.is_empty().then_some(0.0)).map(|d| base + d),
+                None => s.parse::<f32>().ok(),
+            };
+            match (c(args[2], here.0), c(args[3], here.1), c(args[4], here.2)) {
+                (Some(x), Some(y), Some(z)) => Some((x, y, z)),
+                _ => None,
+            }
+        };
+        if let Some(to) = dest {
+            let moved = server.mobs.teleport_all(ty.as_deref().filter(|t| *t != "player"), to);
+            if ty.as_deref().is_some_and(|t| t != "player") {
+                return Err(format!("Teleported {moved} entities"));
+            }
+        }
+    }
     // /kill @e hits mobs too
     if cmd == "kill" && args.get(1).is_some_and(|a| a.starts_with("@e")) {
         let ty = args[1].split("type=").nth(1).map(|t| t.split([',', ']']).next().unwrap_or("").trim_start_matches("minecraft:").to_string());

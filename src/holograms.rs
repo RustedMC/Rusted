@@ -191,6 +191,14 @@ impl Plugin for Holograms {
         NAME
     }
 
+    fn version(&self) -> &str {
+        "1.0.3"
+    }
+
+    fn description(&self) -> &str {
+        "Floating text with live placeholders"
+    }
+
     fn commands(&self) -> Vec<(&'static str, &'static str)> {
         vec![("holo", "Floating text holograms (ops)")]
     }

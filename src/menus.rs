@@ -1,9 +1,8 @@
 //! Custom menus, like DeluxeMenus: make plugins/menus/<name>.txt and open it with
-//! `/menu <name>` (or from another menu's button). Styled by the lobby pack.
+//! `/menu <name>` (or from another menu's button).
 //!
 //! ```text
 //! title = Server menu
-//! style = grid                           (cards; leave it out for full-width rows)
 //! text = §7Pick something
 //! button.1.text = §fKits\n§7Free stuff
 //! button.1.icon = textures/items/chest_minecart
@@ -38,7 +37,6 @@ fn seed() {
     }
     for (k, v) in [
         ("title", "Server menu"),
-        ("style", "grid"),
         ("text", "§7Everything in one place."),
         ("button.1.text", "§fKits\\n§7Claim your kits"),
         ("button.1.icon", "textures/items/iron_sword"),
@@ -77,10 +75,8 @@ fn open(server: &Server, p: &PlayerInfo, name: &str) -> Result<(), String> {
             }
         })
         .collect();
-    // `style = grid` shows cards; anything else, full-width rows.
-    let flag = if c.get("style") == Some("grid") { "rusted_grid" } else { "rusted" };
     let form = Form::Simple {
-        title: format!("{flag}:{}", crate::placeholders::fill(&title, server, p)),
+        title: crate::placeholders::fill(&title, server, p),
         content: crate::placeholders::fill(&c.get("text").unwrap_or("").replace("\\n", "\n"), server, p),
         buttons: buttons.iter().map(|b| (b.text.clone(), b.icon.clone())).collect(),
     };
@@ -106,6 +102,14 @@ pub struct Menus;
 impl Plugin for Menus {
     fn name(&self) -> &str {
         NAME
+    }
+
+    fn version(&self) -> &str {
+        "1.3.0"
+    }
+
+    fn description(&self) -> &str {
+        "Custom menus from config files, with commands and sub-menus"
     }
 
     fn commands(&self) -> Vec<(&'static str, &'static str)> {

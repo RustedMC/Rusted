@@ -70,10 +70,11 @@ fn menu(server: &Server, p: &PlayerInfo) {
     for m in &list {
         let state = if server.find_by_name(m).is_some() { "§aOnline" } else { "§8Offline" };
         let role = if *m == owner { " §6(owner)" } else { "" };
-        buttons.push((format!("§f{m}{role}\n{state}"), None));
+        let icon = if *m == owner { "gold_helmet" } else if server.find_by_name(m).is_some() { "emerald" } else { "coal" };
+        buttons.push((format!("§f{m}{role}\n{state}"), Some(format!("textures/items/{icon}"))));
     }
     let form = Form::Simple {
-        title: format!("rusted:{}", display(&b, &team)),
+        title: format!("{}", display(&b, &team)),
         content: format!("§7{} members, {online} online. §f/tc <message> §7talks to your team.", list.len()),
         buttons,
     };
@@ -203,6 +204,14 @@ pub struct Teams;
 impl Plugin for Teams {
     fn name(&self) -> &str {
         NAME
+    }
+
+    fn version(&self) -> &str {
+        "1.1.1"
+    }
+
+    fn description(&self) -> &str {
+        "Teams with a menu, invites, team chat, home and no friendly fire"
     }
 
     fn commands(&self) -> Vec<(&'static str, &'static str)> {

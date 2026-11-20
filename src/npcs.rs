@@ -350,6 +350,14 @@ impl Plugin for Npcs {
         "npcs"
     }
 
+    fn version(&self) -> &str {
+        "1.2.0"
+    }
+
+    fn description(&self) -> &str {
+        "Player NPCs with your skin that run commands, talk, open menus or transfer"
+    }
+
     fn commands(&self) -> Vec<(&'static str, &'static str)> {
         vec![("npc", "Makes and edits NPCs (ops)")]
     }

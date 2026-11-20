@@ -1,5 +1,5 @@
 //! Quests: daily and weekly quests picked from a pool, with progress from what players do and
-//! rewards (coins, XP, a command) claimed from `/quests` (styled menu).
+//! rewards (coins, XP, a command) claimed from the `/quests` menu.
 //!
 //! plugins/quests/quests.txt, one quest per id:
 //!   miner.name = Miner
@@ -194,7 +194,7 @@ fn open(server: &Server, p: &PlayerInfo) {
         })
         .collect();
     let form = Form::Simple {
-        title: "rusted:Quests".into(),
+        title: "Quests".into(),
         content: "§7Daily quests reset at midnight (UTC), weekly ones every 7 days.".into(),
         buttons,
     };
@@ -259,6 +259,14 @@ pub struct Quests;
 impl Plugin for Quests {
     fn name(&self) -> &str {
         NAME
+    }
+
+    fn version(&self) -> &str {
+        "1.0.4"
+    }
+
+    fn description(&self) -> &str {
+        "Daily and weekly quests with progress bars and rewards"
     }
 
     fn commands(&self) -> Vec<(&'static str, &'static str)> {
