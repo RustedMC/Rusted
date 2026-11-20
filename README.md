@@ -54,27 +54,12 @@ a promise for a busy server.
 
 ## In game
 
-Every shot below is terrain Rusted generated, in the normal game, with no packs on the server.
+<p align="center">
+  <img alt="A plains village on a hillside" src="assets/screenshots/village.webp" width="49%" />
+  <img alt="Birch forest" src="assets/screenshots/forest.webp" width="49%" />
+</p>
 
-**Villages that make sense.** Houses, farms and paths follow the hillside instead of floating
-over it, and the villagers inside work by day and head home at night.
-
-<img alt="A plains village on a hillside" src="assets/screenshots/village.webp" width="100%" />
-
-**Forests with the details.** Birch forests come with leaf litter, fallen logs and the small
-plants that make them feel lived in.
-
-<img alt="Birch forest" src="assets/screenshots/forest.webp" width="100%" />
-
-**Biomes that blend.** Savanna rolls into forest the way it does in the real game, here as the
-sun goes down.
-
-<img alt="Hills at dusk" src="assets/screenshots/hills-dusk.webp" width="100%" />
-
-**Nights worth staying up for.** Lanterns and windows light the village once it gets dark, and
-the mobs come out.
-
-<img alt="A village at night" src="assets/screenshots/village-night.webp" width="100%" />
+<sub>Terrain Rusted generated, in the normal game, with no packs on the server.</sub>
 
 ## Running in 60 seconds
 
