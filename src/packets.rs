@@ -416,6 +416,16 @@ pub(crate) fn update_block(x: i32, y: i32, z: i32, block: i32) -> Protocol {
     }))
 }
 
+/// A block in the second layer (the water of a waterlogged block).
+pub(crate) fn update_layer(x: i32, y: i32, z: i32, block: i32, layer: u32) -> Protocol {
+    Protocol::UpdateBlockPacket(Box::new(UpdateBlockPacket {
+        block_position: NetworkBlockPosition { x, y, z },
+        block_runtime_id: block as u32,
+        flags: 0b11,
+        layer,
+    }))
+}
+
 pub(crate) fn level_event(event_id: i32, p: (i32, i32, i32)) -> Protocol {
     Protocol::LevelEventPacket(Box::new(LevelEventPacket { event_id, position: (p.0 as f32 + 0.5, p.1 as f32 + 0.5, p.2 as f32 + 0.5), data: 0 }))
 }

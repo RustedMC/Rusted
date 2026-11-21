@@ -461,6 +461,21 @@ impl Session {
         // Buckets: empty one picks up a source, full one places it.
         if spawn::can_build(&self.mode) && matches!(held, "minecraft:water_bucket" | "minecraft:lava_bucket" | "minecraft:bucket") {
             let target = (p.x + dx, p.y + dy, p.z + dz);
+            let clicked = self.server.world.get(p.x, p.y, p.z);
+            let at = (p.x as f32 + 0.5, p.y as f32 + 0.5, p.z as f32 + 0.5);
+            // Waterlogging: water goes into a slab, stair, fence... instead of on top of it.
+            if held == "minecraft:water_bucket" && world::waterloggable(clicked) && !self.server.world.waterlogged(p.x, p.y, p.z) && dims::of(p.y) != dims::NETHER {
+                self.server.set_water(p.x, p.y, p.z, true);
+                let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(play_sound("bucket.empty_water", at)) });
+                swap_bucket(&mut self.conn, &mut self.inv, self.selected_slot, &self.mode, "minecraft:bucket").await;
+                return;
+            }
+            if held == "minecraft:bucket" && self.server.world.waterlogged(p.x, p.y, p.z) {
+                self.server.set_water(p.x, p.y, p.z, false);
+                let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(play_sound("bucket.fill_water", at)) });
+                swap_bucket(&mut self.conn, &mut self.inv, self.selected_slot, &self.mode, "minecraft:water_bucket").await;
+                return;
+            }
             if held == "minecraft:bucket" {
                 let clicked = self.server.world.get(p.x, p.y, p.z);
                 if clicked == fluids::Kind::Water.source() || clicked == fluids::Kind::Lava.source() {
@@ -539,6 +554,14 @@ impl Session {
             let placed_chest = parts.iter().find(|(_, b)| containers::kind(*b) == Some(containers::Kind::Chest)).map(|((ox, oy, oz), _)| (x + ox, y + oy, z + oz));
             let held_contents = self.inv.held(self.selected_slot as usize).map(|s| items::contents(&s.item));
             for ((ox, oy, oz), block) in parts {
+                // Placed into a water source: it holds the water (waterlogged).
+                let wet = self.server.world.get(x + ox, y + oy, z + oz) == fluids::Kind::Water.source() && world::waterloggable(block);
+                if wet {
+                    let (bx, by, bz) = (x + ox, y + oy, z + oz);
+                    let server = self.server.clone();
+                    // after the block is set below
+                    tokio::spawn(async move { server.set_water(bx, by, bz, true) });
+                }
                 if containers::kind(block) == Some(containers::Kind::Shulker)
                     && let Some(c) = held_contents.clone()
                     && c.iter().any(Option::is_some)

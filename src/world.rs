@@ -97,6 +97,9 @@ impl Dims {
 #[derive(Clone)]
 pub struct World {
     changes: Arc<Mutex<HashMap<(i32, i32), HashMap<(i32, i32, i32), i32>>>>,
+    /// Waterlogged spots (Bedrock's second block layer holds a water source), per column,
+    /// local x, world y, local z.
+    water: Arc<Mutex<HashMap<(i32, i32), std::collections::HashSet<(i32, i32, i32)>>>>,
     /// set on edit, cleared after a save
     dirty: Arc<std::sync::atomic::AtomicBool>,
     generator: Arc<Generator>,
@@ -159,11 +162,21 @@ impl VanillaCache {
 /// count u32 + ids, custom name len u32 + bytes, entry count, then (x, y, z, block id) LE i32s.
 /// v2 has no layers/name, v1 (no generator) is always flat.
 const SAVE_MAGIC: &[u8; 4] = b"RSTW";
-const SAVE_VERSION: u32 = 3;
+const SAVE_VERSION: u32 = 4;
+
+/// Blocks that can hold water in their second layer (Bedrock waterlogging).
+pub fn waterloggable(b: i32) -> bool {
+    let n = crate::blocks::entry(b).map_or("", |e| e.name.as_str()).trim_start_matches("minecraft:");
+    (n.ends_with("_slab") && !n.contains("double")) || n.ends_with("_stairs") || n.ends_with("_fence") || n.ends_with("_fence_gate") || n == "fence_gate"
+        || n.ends_with("_wall") || n.contains("pane") || n == "iron_bars" || n.ends_with("trapdoor") || n.ends_with("sign") || n.ends_with("hanging_sign")
+        || n.contains("chest") || n.contains("lantern") || n == "chain" || n == "iron_chain" || n == "ladder" || n.contains("coral") || n == "sea_pickle"
+        || n == "conduit" || n == "lightning_rod" || n.contains("candle") || n == "scaffolding" || n.ends_with("_leaves") || n == "hopper"
+        || n.ends_with("_door") || n == "pointed_dripstone" || n.contains("amethyst_bud") || n == "amethyst_cluster" || n == "mangrove_roots"
+}
 
 impl World {
     pub fn with_generator(generator: Generator) -> Self {
-        Self { changes: Arc::default(), dirty: Arc::default(), generator: Arc::new(generator), dims: Arc::default() }
+        Self { changes: Arc::default(), water: Arc::default(), dirty: Arc::default(), generator: Arc::new(generator), dims: Arc::default() }
     }
 
     /// No layers means a void world (with one bedrock block to stand on).
@@ -327,6 +340,9 @@ impl World {
         if !(lo..=hi).contains(&y) {
             return false;
         }
+        if !waterloggable(id) {
+            self.set_water(x, y, z, false);
+        }
         let mut all = self.changes.lock();
         let col = all.entry((x >> 4, z >> 4)).or_default();
         let local = (x & 15, y, z & 15);
@@ -373,6 +389,16 @@ impl World {
                     }
                 }
             }
+            // v4: waterlogged spots, count then (x, y, z)
+            let water = self.water.lock();
+            buf.extend((water.values().map(|c| c.len()).sum::<usize>() as u32).to_le_bytes());
+            for (&(cx, cz), col) in water.iter() {
+                for &(lx, y, lz) in col {
+                    for v in [cx * 16 + lx, y, cz * 16 + lz] {
+                        buf.extend(v.to_le_bytes());
+                    }
+                }
+            }
         }
         let tmp = path.with_extension("tmp");
         let result = std::fs::write(&tmp, &buf).and_then(|()| std::fs::rename(&tmp, path));
@@ -411,7 +437,7 @@ impl World {
                 };
                 (world, 17)
             }
-            3 if buf.len() >= 25 => {
+            3 | 4 if buf.len() >= 25 => {
                 let seed = u64::from_le_bytes(buf[9..17].try_into().unwrap());
                 let n = int(17) as u32 as usize;
                 let layers_end = 21 + n * 4;
@@ -434,15 +460,50 @@ impl World {
             _ => return Err(bad("unsupported save version")),
         };
         let count = int(start) as u32 as usize;
-        if buf.len() != start + 4 + count * 16 {
+        let blocks_end = start + 4 + count * 16;
+        let v4 = int(4) == 4;
+        if (!v4 && buf.len() != blocks_end) || (v4 && buf.len() < blocks_end + 4) {
             return Err(bad("truncated or corrupt"));
         }
         for e in 0..count {
             let o = start + 4 + e * 16;
             world.set(int(o), int(o + 4), int(o + 8), int(o + 12));
         }
+        if v4 {
+            let n = int(blocks_end) as u32 as usize;
+            if buf.len() != blocks_end + 4 + n * 12 {
+                return Err(bad("truncated or corrupt"));
+            }
+            for e in 0..n {
+                let o = blocks_end + 4 + e * 12;
+                world.set_water(int(o), int(o + 4), int(o + 8), true);
+            }
+        }
         world.dirty.store(false, std::sync::atomic::Ordering::Relaxed);
         Ok(world)
+    }
+
+    /// Whether this block holds water in its second layer.
+    pub fn waterlogged(&self, x: i32, y: i32, z: i32) -> bool {
+        self.water.lock().get(&(x >> 4, z >> 4)).is_some_and(|c| c.contains(&(x & 15, y, z & 15)))
+    }
+
+    /// Fills or drains the water layer. Returns true if it changed.
+    pub fn set_water(&self, x: i32, y: i32, z: i32, on: bool) -> bool {
+        let mut w = self.water.lock();
+        let changed = if on {
+            w.entry((x >> 4, z >> 4)).or_default().insert((x & 15, y, z & 15))
+        } else {
+            w.get_mut(&(x >> 4, z >> 4)).is_some_and(|c| c.remove(&(x & 15, y, z & 15)))
+        };
+        if changed {
+            self.dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        changed
+    }
+
+    fn water_in(&self, cx: i32, cz: i32) -> std::collections::HashSet<(i32, i32, i32)> {
+        self.water.lock().get(&(cx, cz)).cloned().unwrap_or_default()
     }
 
     pub fn get(&self, x: i32, y: i32, z: i32) -> i32 {
@@ -464,9 +525,11 @@ impl World {
         let col = self.dims.column(dim, cx, cz);
         // edits are stored `lo` blocks up
         let local: HashMap<(i32, i32, i32), i32> = edits.into_iter().filter(|((_, y, _), _)| (lo..=hi).contains(y)).map(|((x, y, z), b)| ((x, y - lo, z), b)).collect();
+        let water: std::collections::HashSet<(i32, i32, i32)> = self.water_in(cx, cz).into_iter().filter(|(_, y, _)| (lo..=hi).contains(y)).map(|(x, y, z)| (x, y - lo, z)).collect();
         let default_biome = if dim == crate::dims::NETHER { 8 } else { 9 };
         encode_range(
             &local,
+            &water,
             |lx, y, lz| {
                 let b = col.as_ref().map_or(AIR, |c| c.get(lx, y, lz));
                 if crate::connect::connects(b) { self.generated_at(cx * 16 + lx, y + lo, cz * 16 + lz) } else { b }
@@ -479,16 +542,18 @@ impl World {
 
     pub fn chunk_payload(&self, cx: i32, cz: i32) -> (Vec<u8>, u32) {
         let edits = self.changes.lock().get(&(cx, cz)).cloned().unwrap_or_default();
+        let water = self.water_in(cx, cz);
         match &*self.generator {
             Generator::Flat { layers, chunk } => {
                 let flat = |_: i32, y: i32, _: i32| layer(layers, y);
-                if edits.is_empty() {
-                    return chunk.get_or_init(|| encode_column(&HashMap::new(), flat, |_, _, _| PLAINS)).clone();
+                if edits.is_empty() && water.is_empty() {
+                    return chunk.get_or_init(|| encode_column(&HashMap::new(), &water, flat, |_, _, _| PLAINS)).clone();
                 }
-                encode_column(&edits, flat, |_, _, _| PLAINS)
+                encode_column(&edits, &water, flat, |_, _, _| PLAINS)
             }
             Generator::Custom { generator, .. } => encode_column(
                 &edits,
+                &water,
                 |lx, y, lz| generator.block(cx * 16 + lx, y, cz * 16 + lz),
                 |lx, _, lz| generator.biome(cx * 16 + lx, cz * 16 + lz),
             ),
@@ -498,12 +563,13 @@ impl World {
                     let b = ch.get(lx, y, lz);
                     if crate::connect::connects(b) { self.generated_at(cx * 16 + lx, y, cz * 16 + lz) } else { b }
                 };
-                encode_column(&edits, shaped, |lx, y, lz| ch.biome(lx, y, lz) as i32)
+                encode_column(&edits, &water, shaped, |lx, y, lz| ch.biome(lx, y, lz) as i32)
             }
             Generator::Normal { seed, cache } => {
                 let g = cache.get(*seed, cx, cz);
                 encode_column(
                     &edits,
+                    &water,
                     |lx, y, lz| crate::terrain::block(*seed, &g, cx, cz, lx, y, lz),
                     |lx, _, lz| g.biome(lx, lz).id(),
                 )
@@ -573,16 +639,18 @@ fn write_varint(buf: &mut Vec<u8>, v: i32) {
 /// on top, plus `biome` per column.
 fn encode_column(
     edits: &HashMap<(i32, i32, i32), i32>,
+    water: &std::collections::HashSet<(i32, i32, i32)>,
     base: impl Fn(i32, i32, i32) -> i32,
     biome: impl Fn(i32, i32, i32) -> i32,
 ) -> (Vec<u8>, u32) {
     // Always send the full height. The client treats missing sub-chunks as solid and players
     // got stuck in the air above the ground.
-    encode_range(edits, base, biome, MIN_Y, SUBCHUNKS)
+    encode_range(edits, water, base, biome, MIN_Y, SUBCHUNKS)
 }
 
 fn encode_range(
     edits: &HashMap<(i32, i32, i32), i32>,
+    water: &std::collections::HashSet<(i32, i32, i32)>,
     base: impl Fn(i32, i32, i32) -> i32,
     biome: impl Fn(i32, i32, i32) -> i32,
     min_y: i32,
@@ -610,8 +678,17 @@ fn encode_range(
             }
         }
 
-        buf.extend([9, 1, (base_y >> 4) as i8 as u8]); // format 9, 1 layer, absolute index
+        // Waterlogged blocks in this sub-chunk: a second layer with their water.
+        let wet: Vec<(i32, i32, i32)> = water.iter().filter(|(_, y, _)| (base_y..base_y + 16).contains(y)).copied().collect();
+        buf.extend([9, if wet.is_empty() { 1 } else { 2 }, (base_y >> 4) as i8 as u8]); // format 9, layers, absolute index
         write_paletted(&mut buf, &indices, &palette);
+        if !wet.is_empty() {
+            let mut layer = [0u16; 4096];
+            for &(x, y, z) in &wet {
+                layer[((x << 8) | (z << 4) | (y - base_y)) as usize] = 1;
+            }
+            write_paletted(&mut buf, &layer, &[AIR, crate::fluids::Kind::Water.source()]);
+        }
     }
 
     // one biome storage per sub-chunk, same format (cave biomes change with height)
@@ -733,6 +810,28 @@ mod tests {
         w.set(-1, -61, -1, AIR);
         assert_eq!(w.get(-1, -61, -1), AIR);
         assert_eq!(w.get(15, -61, 15), GRASS);
+    }
+
+    #[test]
+    fn waterlogged_blocks_save_and_go_in_the_second_layer() {
+        crate::blocks::init();
+        let path = std::env::temp_dir().join(format!("rusted_water_test_{}.dat", std::process::id()));
+        let w = World::default();
+        let slab = crate::blocks::any_state("minecraft:oak_slab").unwrap();
+        let dry = w.chunk_payload(0, 0);
+        w.set(1, -60, 1, slab);
+        assert!(waterloggable(slab) && !waterloggable(DIRT));
+        assert!(w.set_water(1, -60, 1, true));
+        let wet = w.chunk_payload(0, 0);
+        assert!(wet.0.len() > dry.0.len(), "a second storage layer was written");
+        assert!(w.save_if_dirty(&path).unwrap());
+        let loaded = World::load(&path, || Ok(World::normal(1))).unwrap();
+        assert!(loaded.waterlogged(1, -60, 1));
+        assert_eq!(loaded.chunk_payload(0, 0), wet);
+        // a block that can't hold water drains it
+        loaded.set(1, -60, 1, DIRT);
+        assert!(!loaded.waterlogged(1, -60, 1));
+        std::fs::remove_file(&path).ok();
     }
 
     #[test]

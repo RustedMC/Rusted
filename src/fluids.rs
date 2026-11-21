@@ -174,7 +174,7 @@ fn next_state(world: &World, (x, y, z): (i32, i32, i32)) -> Option<i32> {
     if let Some((Kind::Lava, level)) = here {
         let wet = [(1, 0, 0), (-1, 0, 0), (0, 0, 1), (0, 0, -1), (0, 1, 0)]
             .iter()
-            .any(|(dx, dy, dz)| read(world.get(x + dx, y + dy, z + dz)).is_some_and(|(k, _)| k == Kind::Water));
+            .any(|(dx, dy, dz)| read(world.get(x + dx, y + dy, z + dz)).is_some_and(|(k, _)| k == Kind::Water) || world.waterlogged(x + dx, y + dy, z + dz));
         if wet {
             let name = if level == Level::Source { "minecraft:obsidian" } else { "minecraft:cobblestone" };
             return crate::blocks::any_state(name);
@@ -190,15 +190,18 @@ fn next_state(world: &World, (x, y, z): (i32, i32, i32)) -> Option<i32> {
     };
     let sides = [(1, 0), (-1, 0), (0, 1), (0, -1)];
     for &kind in kinds {
-        let is = |b: i32| read(b).filter(|(k, _)| *k == kind).map(|(_, l)| l);
-        let want = if is(world.get(x, y + 1, z)).is_some() {
+        let is_block = |b: i32| read(b).filter(|(k, _)| *k == kind).map(|(_, l)| l);
+        // Waterlogged blocks feed their neighbours like a source.
+        let is_at = |x: i32, y: i32, z: i32| if kind == Kind::Water && world.waterlogged(x, y, z) { Some(Level::Source) } else { is_block(world.get(x, y, z)) };
+        let is = is_block;
+        let want = if is_at(x, y + 1, z).is_some() {
             Some(Level::Falling)
         } else {
             let mut sources = 0;
             let mut best: Option<i32> = None;
             for (dx, dz) in sides {
                 let (nx, nz) = (x + dx, z + dz);
-                let Some(level) = is(world.get(nx, y, nz)) else { continue };
+                let Some(level) = is_at(nx, y, nz) else { continue };
                 if level == Level::Source {
                     sources += 1;
                 }
@@ -396,6 +399,18 @@ mod tests {
         f.notify((5, -60, 5));
         run(&w, &f);
         assert_eq!(crate::blocks::entry(w.get(5, -60, 5)).map(|e| e.name.as_str()), Some("minecraft:obsidian"));
+    }
+
+    #[test]
+    fn water_flows_out_of_a_waterlogged_slab() {
+        crate::blocks::init();
+        let w = World::default();
+        let f = Fluids::default();
+        w.set(0, -60, 0, crate::blocks::any_state("minecraft:oak_slab").unwrap());
+        w.set_water(0, -60, 0, true);
+        f.notify((0, -60, 0));
+        run(&w, &f);
+        assert_eq!(read(w.get(1, -60, 0)), Some((Kind::Water, Level::Flow(1))));
     }
 
     #[test]

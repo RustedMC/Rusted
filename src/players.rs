@@ -202,7 +202,12 @@ impl Server {
 
     fn change_block(&self, by: i64, x: i32, y: i32, z: i32, id: i32, effects: bool) {
         let old = self.world.get(x, y, z);
+        let wet = self.world.waterlogged(x, y, z);
         if old != id && self.world.set(x, y, z, id) {
+            if wet && !self.world.waterlogged(x, y, z) {
+                // The new block can't hold water: clients drop the water layer too.
+                let _ = self.events.send(Event::Relay { from: 0, packet: Box::new(crate::packets::update_layer(x, y, z, crate::world::AIR, 1)) });
+            }
             self.fluids.notify((x, y, z)); // nearby water/lava may flow now
             crate::redstone::mark((x, y, z));
             if effects {
@@ -219,6 +224,16 @@ impl Server {
                     }
                 }
             }
+        }
+    }
+
+    /// Waterlogs (or drains) the block at this spot: everyone sees the water layer change and
+    /// the water can flow from it.
+    pub fn set_water(&self, x: i32, y: i32, z: i32, on: bool) {
+        if self.world.set_water(x, y, z, on) {
+            let b = if on { crate::fluids::Kind::Water.source() } else { crate::world::AIR };
+            let _ = self.events.send(Event::Relay { from: 0, packet: Box::new(crate::packets::update_layer(x, y, z, b, 1)) });
+            self.fluids.notify((x, y, z));
         }
     }
 

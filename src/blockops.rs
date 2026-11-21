@@ -310,7 +310,13 @@ pub(crate) fn break_block(server: &players::Server, id: i64, p: (i32, i32, i32),
             server.set_block_quiet(id, other.0, other.1, other.2, world::AIR);
         }
     }
+    let wet = server.world.waterlogged(p.0, p.1, p.2);
     server.set_block(id, p.0, p.1, p.2, world::AIR);
+    if wet {
+        // Its water stays behind as a source (and the client drops the old water layer).
+        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(crate::packets::update_layer(p.0, p.1, p.2, world::AIR, 1)) });
+        server.set_block_quiet(id, p.0, p.1, p.2, crate::fluids::Kind::Water.source());
+    }
     if let Some(o) = partner {
         announce_chest(server, o);
     }

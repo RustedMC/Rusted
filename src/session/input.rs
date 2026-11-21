@@ -221,7 +221,7 @@ impl Session {
         GO
     }
 
-    /// Swimming or crawling: the SWIMMING flag (56) and a 0.6-high hitbox, which is what lets
+    /// Swimming or crawling: the SWIMMING (56) / CRAWLING (114) flags and a 0.6-high hitbox, which is what lets
     /// the client fit through 1x1 gaps (PNX Player.setSwimming / setCrawling).
     pub(super) async fn update_pose(&mut self) {
         use bedrock::protocol::v662::types::{ActorRuntimeID, DataItem, PropertySyncData};
@@ -233,6 +233,8 @@ impl Session {
             actor_data: vec![
                 DataItem { data_item_id: D::Reserved0, data_item_type: T::Int64(spawn::FLAGS | (self.swimming as i64) << 56) },
                 DataItem { data_item_id: D::Reserved054, data_item_type: T::Float(if low { 0.6 } else { 1.8 }) },
+                // CRAWLING (114) sits in the extended flags with BLOCKING (72, a raised shield).
+                DataItem { data_item_id: D::Reserved092, data_item_type: T::Int64(spawn::FLAGS_EXTENDED | (self.inv.shield().is_some() as i64) << (72 - 64) | (self.crawling as i64) << (114 - 64)) },
             ],
             synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
             tick: 0,
@@ -249,7 +251,7 @@ impl Session {
             target_runtime_id: ActorRuntimeID(self.id as u64),
             actor_data: vec![DataItem {
                 data_item_id: bedrock::protocol::v924::enums::ActorDataIDs::Reserved092,
-                data_item_type: bedrock::protocol::v2168::enums::DataItemType::Int64(spawn::FLAGS_EXTENDED | (up as i64) << (72 - 64)),
+                data_item_type: bedrock::protocol::v2168::enums::DataItemType::Int64(spawn::FLAGS_EXTENDED | (up as i64) << (72 - 64) | (self.crawling as i64) << (114 - 64)),
             }],
             synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
             tick: 0,

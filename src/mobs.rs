@@ -3126,6 +3126,13 @@ pub fn explode(server: &Server, at: (f32, f32, f32), power: f32, by: &'static st
         crate::pop_unsupported(server, 0, p);
     }
     let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(sound("explode", at)) });
+    // Mobs in range take the same vanilla damage (and get knocked away from the blast).
+    let reach = power * 2.0;
+    let near: Vec<(i64, f32)> = server.mobs.mobs.lock().values().filter(|m| m.dying == 0).map(|m| (m.id, dist2(m.pos, at).sqrt())).filter(|(_, d)| *d < reach).collect();
+    for (id, d) in near {
+        let impact = 1.0 - d / reach;
+        server.mobs.hurt(server, id, ((impact * impact + impact) / 2.0 * 7.0 * reach + 1.0).floor(), at, None);
+    }
     for p in server.all() {
         let feet = (p.pos.0, p.pos.1 - 1.62, p.pos.2);
         let d = dist2(feet, at).sqrt();
