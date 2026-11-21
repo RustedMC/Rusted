@@ -1,9 +1,9 @@
-//! Placeholders shared by every plugin, like PlaceholderAPI: `{player}`, `{balance}`,
-//! `{rank}`... in sidebars, chat formats, menus and messages.
+//! Placeholders for plugins, like PlaceholderAPI: `{player}`, `{online}`... in sidebars,
+//! chat formats, menus and messages.
 //!
-//! Built in: `{player}` `{online}` `{max}` `{x}` `{y}` `{z}` `{balance}` `{rank}` `{prefix}`
-//! `{suffix}`, plus the stats plugin's `{top:kills:1}` style ones. A plugin adds its own with `placeholders::register("kills", |server, p| ...)`.
+//! Built in: `{player}` `{online}` `{max}` `{x}` `{y}` `{z}`. A plugin adds its own with `placeholders::register("kills", |server, p| ...)`.
 
+#![allow(dead_code)] // the plugin API: nothing built in uses it, your plugins do
 use crate::players::{PlayerInfo, Server};
 use parking_lot::Mutex;
 
@@ -27,11 +27,7 @@ fn builtin(name: &str, server: &Server, p: &PlayerInfo) -> Option<String> {
         "x" => format!("{:.0}", p.pos.0.floor()),
         "y" => format!("{:.0}", (p.pos.1 - 1.62).floor()),
         "z" => format!("{:.0}", p.pos.2.floor()),
-        "balance" => crate::economy::format(crate::economy::balance(&p.name)),
-        "rank" => crate::ranks::display_name(&p.name),
-        "prefix" => crate::ranks::prefix(&p.name),
-        "suffix" => crate::ranks::suffix(&p.name),
-        _ => return crate::stats::top_placeholder(name),
+        _ => return None,
     })
 }
 

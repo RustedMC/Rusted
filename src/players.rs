@@ -109,6 +109,7 @@ pub struct PlayerInfo {
 pub static EQUIPMENT: Mutex<Option<HashMap<i64, Equipment>>> = Mutex::new(None);
 
 #[derive(Clone, Default)]
+#[allow(dead_code)] // read by plugins
 pub struct Equipment {
     pub held: Option<crate::inventory::Stack>,
     pub armor: [Option<crate::inventory::Stack>; 4],
@@ -159,7 +160,7 @@ impl Server {
             world,
             clock: Arc::new(Mutex::new((1000, std::time::Instant::now(), false))), // morning
             game_rules: Arc::default(),
-            plugins: Arc::new(crate::plugin::Plugins::new(if crate::config::get().plugins { crate::plugin::all() } else { vec![] })),
+            plugins: Arc::new(crate::plugin::Plugins::new(crate::plugin::all())),
             fluids: Arc::default(),
             entities: Arc::default(),
             mobs: Arc::default(),

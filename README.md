@@ -19,7 +19,7 @@
  |  _ <| |_| \__ \ ||  __/ (_| |
  |_| \_\\__,_|___/\__\___|\__,_|
 
-Starting Rusted 0.4.6 for Minecraft: Bedrock Edition 1.26.60
+Starting Rusted 0.4.7 for Minecraft: Bedrock Edition 1.26.60
 Rusted listening on 0.0.0.0:19132 (RakNet UDP + NetherNet TCP)
 Level 'world': seed 1794952337106584800
 Done (0.2s)! Players can join on port 19132. Type "help" for commands, "stop" to shut down.
@@ -139,9 +139,8 @@ The full list of what's done and what isn't is in [ROADMAP.md](ROADMAP.md).
 
 ## Plugins, in Rust
 
-Rusted comes with plugins built in (a lobby, economy, ranks, kits, homes, auction house,
-scoreboard and more), **off by default** so a fresh server is plain vanilla. Turn them on with
-`plugins=true` in `server.properties`.
+Rusted is a plain vanilla server: it ships with **no gameplay plugins** (no economy,
+lifesteal, ranks or lobby). Write your own in Rust and they load with the server.
 
 Override only the events you need; leave the rest out.
 

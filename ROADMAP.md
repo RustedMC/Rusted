@@ -10,7 +10,7 @@ See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands
 
 - ✅ **0.4.0** Redstone that connects and powers like vanilla, PNX pistons (slime, honey,
   containers), block support rules, vanilla sounds, knockback, mobs jumping, XP orbs, spawn
-  eggs, sleeping, plugin suite
+  eggs, sleeping
 - ✅ **0.4.1** Skeletons draw and pillagers charge before shooting, vanilla spawn weights and
   cap, rarer patrols
 - ✅ **0.4.2** Pistons slide like vanilla (moving blocks), crushed blocks drop, mobs ride

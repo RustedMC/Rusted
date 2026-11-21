@@ -12,6 +12,7 @@ pub fn max_of(id: i64) -> f32 {
 }
 
 /// Sets a player's max health (2 to 200, i.e. 1 to 100 hearts).
+#[allow(dead_code)] // for plugins (lifesteal-style max health)
 pub fn set_max(id: i64, max: f32) {
     MAXES.lock().get_or_insert_with(Default::default).insert(id, max.clamp(2.0, 200.0));
 }

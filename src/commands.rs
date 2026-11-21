@@ -52,7 +52,20 @@ pub struct Lists {
     pub ops: NameList,
     pub whitelist: NameList,
     pub banned: NameList,
+    /// banned-ips.txt: addresses refused at login (/ban-ip).
+    pub banned_ips: NameList,
     pub whitelist_on: Mutex<bool>,
+}
+
+/// The address each player logged in from (this run), for /ban-ip <player>.
+static IPS: Mutex<Option<std::collections::HashMap<String, String>>> = Mutex::new(None);
+
+pub fn record_ip(name: &str, ip: &str) {
+    IPS.lock().get_or_insert_with(Default::default).insert(name.to_lowercase(), ip.to_string());
+}
+
+fn ip_of(name: &str) -> Option<String> {
+    IPS.lock().as_ref().and_then(|m| m.get(&name.to_lowercase()).cloned())
 }
 
 pub fn lists() -> &'static Lists {
@@ -61,6 +74,7 @@ pub fn lists() -> &'static Lists {
         ops: NameList::load("ops.txt"),
         whitelist: NameList::load("whitelist.txt"),
         banned: NameList::load("banned-players.txt"),
+        banned_ips: NameList::load("banned-ips.txt"),
         whitelist_on: Mutex::new(crate::config::get().white_list),
     })
 }
@@ -365,7 +379,7 @@ pub fn difficulty_packet(d: u32) -> crate::Protocol {
 
 /// Op-only commands (console can run them too).
 pub const OP_ONLY: &[&str] = &[
-    "kick", "op", "deop", "ban", "unban", "pardon", "whitelist", "say", "weather", "difficulty", "gamemode", "gm",
+    "kick", "op", "deop", "ban", "unban", "pardon", "ban-ip", "banip", "unban-ip", "pardon-ip", "banlist", "whitelist", "say", "weather", "difficulty", "gamemode", "gm",
     "tp", "teleport", "give", "summon", "effect", "enchant", "xp", "title", "titleraw", "tellraw", "playsound", "stopsound", "camerashake",
     "transfer", "damage", "setblock", "fill", "clone", "testfor", "testforblock", "toggledownfall", "daylock", "alwaysday", "scoreboard", "time", "gamerule", "kill", "clear", "spawnpoint", "setworldspawn", "stop", "status", "perf",
 ];
@@ -373,6 +387,9 @@ pub const OP_ONLY: &[&str] = &[
 /// (name, description) for everything we advertise and show in /help.
 pub const HELP: &[(&str, &str)] = &[
     ("ban", "Bans a player"),
+    ("ban-ip", "Bans an IP address, or the address a player joined from"),
+    ("unban-ip", "Lifts an IP ban"),
+    ("banlist", "Lists bans (banlist ips for addresses)"),
     ("clear", "Clears items from your inventory"),
     ("perf", "Shows TPS, MSPT and RAM in a boss bar"),
     ("deop", "Revokes operator status"),
@@ -540,6 +557,26 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
             }
             format!("Banned player {who}")
         }
+        ["ban-ip" | "banip", target, why @ ..] => {
+            // A player's name (online this run) or an address.
+            let Some(ip) = ip_of(target).or_else(|| target.parse::<std::net::IpAddr>().ok().map(|_| target.to_string())) else {
+                return Some(format!("§c{target} isn't a known player or an IP address"));
+            };
+            l.banned_ips.set(&ip, true);
+            let message = if why.is_empty() { "You are banned from this server".to_string() } else { why.join(" ") };
+            let mut kicked = 0;
+            for p in server.all() {
+                if ip_of(&p.name).as_deref() == Some(ip.as_str()) {
+                    let _ = server.events.send(Event::Kick { id: p.id, message: message.clone(), reason: Kick::Kicked });
+                    kicked += 1;
+                }
+            }
+            format!("Banned IP {ip} ({kicked} kicked)")
+        }
+        ["unban-ip" | "pardon-ip", ip] => {
+            if l.banned_ips.set(ip, false) { format!("Unbanned IP {ip}") } else { format!("§c{ip} is not banned") }
+        }
+        ["banlist", "ips"] => format!("Banned IPs: {}", l.banned_ips.all().join(", ")),
         ["unban" | "pardon", who] => {
             if l.banned.set(who, false) { format!("Unbanned player {who}") } else { format!("§c{who} is not banned") }
         }

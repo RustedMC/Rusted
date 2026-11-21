@@ -89,7 +89,9 @@ pub(crate) async fn handle_login(unknown_conn: Connection<Unknown>, server: play
     let display_name = login.authentication.identity().display_name.clone();
     let lists = commands::lists();
     let xuid = login.authentication.identity().xuid.clone();
-    let refuse = if lists.banned.contains(&display_name) {
+    let ip = conn.get_socket_addr().ip().to_string();
+    commands::record_ip(&display_name, &ip);
+    let refuse = if lists.banned.contains(&display_name) || lists.banned_ips.contains(&ip) {
         Some((players::Kick::Kicked, "You are banned from this server".to_string()))
     } else if *lists.whitelist_on.lock() && !lists.whitelist.contains(&display_name) && !lists.ops.contains(&display_name) {
         Some((players::Kick::Kicked, "You are not white-listed on this server".to_string()))

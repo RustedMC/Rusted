@@ -3,8 +3,7 @@
 Plugins are Rust code compiled into the server. There's no separate plugin jar or loader
 yet: you add your plugin to the source and rebuild.
 
-Plugins only load when `plugins=true` is set in `server.properties` (it's off by default, so a
-fresh server is plain vanilla).
+Rusted ships with no plugins of its own, so the server stays plain vanilla until you add yours.
 
 ## 1. Write it
 
@@ -39,7 +38,7 @@ fn version(&self) -> &str { "1.2.0" }
 fn description(&self) -> &str { "Greets players" }
 fn authors(&self) -> &[&str] { &["Steve"] }
 
-/// Needed: if "economy" isn't loaded, this plugin isn't either.
+/// Needed: if "economy" (another plugin of yours) isn't loaded, this one isn't either.
 fn depends(&self) -> &[&str] { &["economy"] }
 
 /// Used if present: loads first when it's there, ignored when it isn't.

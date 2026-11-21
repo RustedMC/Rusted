@@ -318,27 +318,8 @@ pub trait Plugin: Send + Sync {
 
 /// Every loaded plugin. Add yours here.
 pub fn all() -> Vec<Box<dyn Plugin>> {
-    vec![
-        Box::new(crate::demo::Demo),
-        Box::new(crate::lobby::Lobby),
-        Box::new(crate::npcs::Npcs),
-        Box::new(crate::worldedit::WorldEdit),
-        Box::new(crate::worldguard::WorldGuard),
-        Box::new(crate::economy::Economy),
-        Box::new(crate::essentials::Essentials),
-        Box::new(crate::ranks::Ranks),
-        Box::new(crate::kits::Kits),
-        Box::new(crate::market::Market),
-        Box::new(crate::shops::Shops),
-        Box::new(crate::holograms::Holograms),
-        Box::new(crate::stats::Stats),
-        Box::new(crate::teams::Teams),
-        Box::new(crate::scoreboard::Scoreboard),
-        Box::new(crate::menus::Menus),
-        Box::new(crate::lifesteal::Lifesteal),
-        Box::new(crate::spawners::Spawners),
-        Box::new(crate::quests::Quests),
-    ]
+    // Rusted ships no gameplay plugins: it's a vanilla server. Add your own here.
+    vec![]
 }
 
 /// Registered plugins, plus helpers to run an event through all of them.
@@ -653,7 +634,7 @@ impl Plugins {
     /// Does `player` have `node`? `permissions.txt` wins, then the plugin's default for it.
     /// Nodes nobody declared are ops-only.
     pub fn allowed(&self, player: &str, node: &str) -> bool {
-        if let Some(set) = permissions().get(player, node).or_else(|| crate::ranks::allowed(player, node)) {
+        if let Some(set) = permissions().get(player, node) {
             return set;
         }
         match self.defaults.iter().find(|(n, _)| *n == node).map_or(Access::Ops, |(_, a)| *a) {
