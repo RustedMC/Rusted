@@ -595,21 +595,31 @@ impl Session {
             let center = (p.0 as f32 + 0.5, p.1 as f32 + 0.5, p.2 as f32 + 0.5);
             let block = self.server.world.get(p.0, p.1, p.2);
             let event = |id: i32, data: i32| Protocol::LevelEventPacket(Box::new(LevelEventPacket { event_id: id, position: center, data }));
+            // Cracks start on a new block: the first hit, or sliding onto the next one.
+            let start = matches!(a.action_type, PlayerActionType::StartDestroyBlock)
+                || (matches!(a.action_type, PlayerActionType::CrackBlock | PlayerActionType::ContinueDestroyBlock) && self.mining != Some(p));
+            if start && survival_like(&self.mode) && block != world::AIR {
+                self.mining = Some(p);
+                // LevelEvent 3600 starts the crack animation; data is 65535 / break ticks (PNX: everyone, us too).
+                let ticks = crate::drops::break_ticks(block, self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id))).max(1);
+                let crack = event(3600, 65535 / ticks);
+                let _ = self.conn.send(&[crack.clone()]).await;
+                let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(crack) });
+            }
             match a.action_type {
-                PlayerActionType::StartDestroyBlock => {
-                    // LevelEvent 3600 starts the crack animation; data is 65535 / break ticks.
-                    let ticks = crate::drops::break_ticks(block, self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id))).max(1);
-                    let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(event(3600, 65535 / ticks)) });
-                }
                 PlayerActionType::CrackBlock | PlayerActionType::ContinueDestroyBlock => {
                     // 2014: the little punch particles, on the face being mined.
                     let face = a.facing;
                     let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(event(2014, block | (face << 24))) });
                 }
                 PlayerActionType::AbortDestroyBlock => {
+                    self.mining = None;
+                    let stop = event(3601, 0);
+                    let _ = self.conn.send(&[stop]).await;
                     let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(event(3601, 0)) });
                 }
                 PlayerActionType::PredictDestroyBlock | PlayerActionType::CreativeDestroyBlock => {
+                    self.mining = None;
                     let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(event(3601, 0)) });
                     self.destroy_block(p).await;
                 }

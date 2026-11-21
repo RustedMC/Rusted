@@ -30,6 +30,7 @@ impl Session {
         let (container_type, name) = match kind {
             containers::Kind::Chest => (ContainerType::Container, ContainerEnumName::LevelEntityContainer),
             containers::Kind::Barrel => (ContainerType::Container, ContainerEnumName::BarrelContainer),
+            containers::Kind::EnderChest => (ContainerType::Container, ContainerEnumName::LevelEntityContainer),
             containers::Kind::Furnace => (ContainerType::Furnace, ContainerEnumName::FurnaceIngredientContainer),
             containers::Kind::Smoker => (ContainerType::Smoker, ContainerEnumName::SmokerIngredientContainer),
             containers::Kind::BlastFurnace => (ContainerType::BlastFurnace, ContainerEnumName::BlastFurnaceIngredientContainer),
@@ -60,6 +61,10 @@ impl Session {
         let pair = (kind == containers::Kind::Chest).then(|| containers::chest_pair(&self.server.world, pos)).flatten();
         let pos = match pair {
             Some(o) => pos.min(o),
+            None if kind == containers::Kind::EnderChest => {
+                container_opened(&self.server, pos);
+                containers::ender_store(&self.name)
+            }
             None => pos,
         };
         if let (Some(o), Protocol::ContainerOpenPacket(c)) = (pair, &mut out[0]) {
@@ -82,6 +87,23 @@ impl Session {
             out.extend(self.inv.open_packet(self.window_id as u32, name));
         }
         let _ = self.conn.send(&out).await;
+    }
+
+    /// Someone else moved items in the container we have open: show what's there now.
+    pub(super) async fn reload_container(&mut self, pos: (i32, i32, i32)) {
+        if self.open_container != Some(pos) && self.open_pair != Some(pos) {
+            return;
+        }
+        let (Some(lead), Some((kind, name))) = (self.open_container, self.open_kind.clone()) else { return };
+        let mut slots = self.server.containers.get(lead);
+        slots.truncate(containers::open_slots(kind));
+        if let Some(o) = self.open_pair {
+            slots.extend(self.server.containers.get(o));
+        }
+        self.inv.open_container(slots);
+        if let Some(p) = self.inv.open_packet(self.window_id as u32, name) {
+            let _ = self.conn.send(&[p]).await;
+        }
     }
 
     /// Opens a chest minecart's 27 slots, kept in the container store at `store`.
@@ -181,6 +203,9 @@ impl Session {
             self.end_menu().await;
             let _ = self.conn.send(&[Protocol::ContainerClosePacket(c)]).await;
             return;
+        }
+        if self.open_kind.as_ref().is_some_and(|k| k.0 == containers::Kind::EnderChest) && let Some(at) = self.open_table {
+            container_closed(&self.server, at);
         }
         // A closing chest keeps its contents on the server.
         if let (Some(pos), Some(slots)) = (self.open_container.take(), self.inv.open.take()) {
@@ -298,6 +323,13 @@ impl Session {
             })
             .collect();
         let _ = self.conn.send(&[Protocol::ItemStackResponsePacket(Box::new(ItemStackResponsePacket { responses }))]).await;
+        // Shared storage: save the change now so every viewer (and hoppers) sees the same items.
+        if let (Some(pos), Some(slots)) = (self.open_container, self.inv.open.clone())
+            && self.open_kind.as_ref().is_some_and(|k| !containers::ui_only(k.0))
+        {
+            store_open(&self.server, pos, slots, self.open_pair);
+            let _ = self.server.events.send(Event::Container { pos, by: self.id });
+        }
         if std::mem::take(&mut self.table_changed) {
             save_xp(&self.name, self.xp);
             let _ = self.conn.send(&[self.xp.packet(self.id)]).await;

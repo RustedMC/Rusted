@@ -27,6 +27,8 @@ pub enum Event {
     /// `old` is the previous block, for break particles and sounds.
     /// `by` already saw the effects on their own client.
     Block { x: i32, y: i32, z: i32, id: i32, old: i32, #[allow(dead_code)] by: i64, effects: bool },
+    /// `by` changed the slots of the container at `pos`: other viewers reload it
+    Container { pos: (i32, i32, i32), by: i64 },
     /// shown to everyone but `from` (arm swings, held items)
     Relay { from: i64, packet: Box<crate::Protocol> },
     Tell { to: i64, message: String },

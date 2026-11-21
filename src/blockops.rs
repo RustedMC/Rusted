@@ -160,8 +160,20 @@ pub(crate) fn apply_use(server: &players::Server, id: i64, p: (i32, i32, i32), o
 }
 
 /// Closes whatever container a player had open; a double chest goes back as two halves.
-pub(crate) fn close_open(server: &players::Server, pos: (i32, i32, i32), mut slots: Vec<Option<inventory::Stack>>, pair: Option<(i32, i32, i32)>) {
-    // A chest minecart's store isn't a block: just keep the items.
+pub(crate) fn close_open(server: &players::Server, pos: (i32, i32, i32), slots: Vec<Option<inventory::Stack>>, pair: Option<(i32, i32, i32)>) {
+    store_open(server, pos, slots, pair);
+    // A chest minecart's or ender chest's store isn't a block.
+    if pos.1 < -50_000 {
+        return;
+    }
+    if let Some(other) = pair {
+        container_closed(server, other);
+    }
+    container_closed(server, pos);
+}
+
+/// Writes an open screen's slots back to the store (both halves of a double chest).
+pub(crate) fn store_open(server: &players::Server, pos: (i32, i32, i32), mut slots: Vec<Option<inventory::Stack>>, pair: Option<(i32, i32, i32)>) {
     if pos.1 < -50_000 {
         server.containers.put(pos, slots);
         return;
@@ -171,10 +183,8 @@ pub(crate) fn close_open(server: &players::Server, pos: (i32, i32, i32), mut slo
     {
         let rest = slots.split_off(inventory::CHEST_SLOTS);
         server.containers.close(&server.world, other, rest);
-        container_closed(server, other);
     }
     server.containers.close(&server.world, pos, slots);
-    container_closed(server, pos);
 }
 
 /// Pair data for a chest and its partner, to everyone (after placing or breaking one).

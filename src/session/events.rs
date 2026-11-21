@@ -4,8 +4,47 @@ use super::*;
 use players::Event;
 
 impl Session {
+    /// Spawns other players in view this client doesn't have, and forgets the ones out of view
+    /// (the client drops them with their chunks), so they reappear after far teleports.
+    pub async fn show_players(&mut self) {
+        let Some(me) = self.server.get(self.id) else { return };
+        let range = (self.chunks.radius as f32 * 16.0 - 8.0).max(32.0);
+        let mut out = vec![];
+        let gone = |id: i64| Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) }));
+        // A teleport: the client threw away what was in the old chunks, so send it all again.
+        let jumped = self.last_view.replace(me.pos).is_some_and(|l| (l.0 - me.pos.0).powi(2) + (l.2 - me.pos.2).powi(2) > 64.0 * 64.0 || (l.1 - me.pos.1).abs() > 256.0);
+        if jumped {
+            out.extend(self.seen.drain().map(gone));
+            for p in self.server.entities.spawn_packets().into_iter().chain(self.server.mobs.spawn_packets()) {
+                let id = match &p {
+                    Protocol::AddItemActorPacket(a) => Some(a.target_actor_id.0),
+                    Protocol::AddActorPacket(a) => Some(a.target_actor_id.0),
+                    _ => None,
+                };
+                out.extend(id.map(gone));
+                out.push(p);
+            }
+        }
+        for p in self.server.all() {
+            if p.id == self.id {
+                continue;
+            }
+            let (dx, dy, dz) = (p.pos.0 - me.pos.0, p.pos.1 - me.pos.1, p.pos.2 - me.pos.2);
+            let near = dx * dx + dz * dz < range * range && dy.abs() < 512.0;
+            if near && self.seen.insert(p.id) {
+                out.push(add_player(&p));
+            } else if !near && self.seen.remove(&p.id) {
+                out.push(gone(p.id));
+            }
+        }
+        if !out.is_empty() {
+            let _ = self.conn.send(&out).await;
+        }
+    }
+
     pub async fn every_second(&mut self) {
         self.regen_ticks += 1;
+        self.show_players().await;
         {
             let armor = std::array::from_fn(|i| self.inv.held(inventory::ARMOR + i).cloned());
             let max = health::max_of(self.id);
@@ -292,21 +331,31 @@ impl Session {
                 }
                 packets
             }
+            Ok(Event::Container { pos, by }) if by != self.id => {
+                self.reload_container(pos).await;
+                return GO;
+            }
             Ok(Event::Join(other)) if other != self.id => match self.server.get(other) {
-                Some(p) => vec![player_list_add(&p), add_player(&p)],
+                Some(p) => {
+                    self.seen.insert(other);
+                    vec![player_list_add(&p), add_player(&p)]
+                }
                 None => return GO,
             },
             Ok(Event::Move { id: other, pos, rot, head_yaw }) if other != self.id => {
                 vec![move_player(other, pos, rot, head_yaw)]
             }
-            Ok(Event::Leave { id: other, uuid }) if other != self.id => vec![
+            Ok(Event::Leave { id: other, uuid }) if other != self.id => {
+                self.seen.remove(&other);
+                vec![
                 Protocol::RemoveActorPacket(Box::new(RemoveActorPacket {
                     target_actor_id: ActorUniqueID(other),
                 })),
                 Protocol::PlayerListPacket(Box::new(PlayerListPacket {
                     entries: vec![PlayerListEntry::Remove { uuid }],
                 })),
-            ],
+            ]
+            }
             // Fell behind the event stream; positions catch up on the next move.
             Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => return GO,
             Err(_) => return END,

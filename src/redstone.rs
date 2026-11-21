@@ -487,6 +487,8 @@ fn breaks(b: i32) -> bool {
     n.ends_with("water") || n.ends_with("lava") || n.ends_with("torch") || n.contains("flower") || n.ends_with("grass") || n.ends_with("_sapling")
         || n == "fire" || n == "redstone_wire" || n.ends_with("_carpet") || n == "snow_layer" || n == "vine" || n.ends_with("_mushroom") || n == "deadbush"
         || matches!(n, "wheat" | "carrots" | "potatoes" | "beetroot" | "reeds" | "fern" | "tall_grass" | "short_grass")
+        // Anything hanging on a block (buttons, levers, ladders, doors, rails, plates).
+        || crate::physics::support_of(b).is_some()
 }
 
 /// Slime and honey drag the blocks touching them along.
@@ -673,6 +675,16 @@ fn piston(w: &World, p: Pos, b: i32, extend: bool, step: &mut Step) -> Option<Mo
     }
     let mut mv = Move { extending: extend, sticky, to: vec![], from: vec![], dir, progress: if extend { 0.0 } else { 1.0 } };
     if can && (sticky || extend) {
+        // Buttons, torches and the like on a moved block's sides fall off.
+        for i in 0..calc.to_move.len() {
+            let q = calc.to_move[i];
+            for d in DIRS {
+                let nb = add(q, d);
+                if crate::physics::support_of(w.get(nb.0, nb.1, nb.2)) == Some(neg(d)) && !calc.to_move.contains(&nb) && !calc.to_destroy.contains(&nb) {
+                    calc.to_destroy.push(nb);
+                }
+            }
+        }
         for &q in &calc.to_destroy {
             step.broken.push((q, w.get(q.0, q.1, q.2)));
             step.blocks.push((q, AIR));
@@ -1261,6 +1273,32 @@ mod tests {
         mark((29, y, 0));
         run(&w, 4);
         assert_eq!(name(w.get(31, y, 0)), "stone", "sticky pulled it back");
+    }
+
+    #[test]
+    fn pistons_break_buttons_in_the_way_and_on_moved_blocks() {
+        let _serial = SERIAL.lock();
+        crate::blocks::init();
+        let w = World::default();
+        let y = -30;
+        let p = with(block("piston"), &[("facing_direction", State::Int(4))]); // pushes east
+        w.set(110, y, 0, p);
+        w.set(111, y, 0, block("stone"));
+        // a button on the stone's north side (facing north, held by the block to its south)
+        w.set(111, y, -1, with(block("stone_button"), &[("facing_direction", State::Int(2))]));
+        // and one right in front of the second piston's face
+        let p2 = with(block("piston"), &[("facing_direction", State::Int(4))]);
+        w.set(110, y, 5, p2);
+        w.set(112, y, 5, block("stone"));
+        w.set(111, y, 5, with(block("stone_button"), &[("facing_direction", State::Int(5))]));
+        w.set(109, y, 0, block("redstone_block"));
+        w.set(109, y, 5, block("redstone_block"));
+        mark((109, y, 0));
+        mark((109, y, 5));
+        run(&w, 4);
+        assert_eq!(name(w.get(112, y, 0)), "stone");
+        assert_eq!(w.get(111, y, -1), AIR, "button fell off the pushed block");
+        assert!(name(w.get(111, y, 5)).contains("piston_arm"), "button in front got crushed");
     }
 
     #[test]

@@ -427,6 +427,8 @@ pub enum Throw {
     Pearl,
     /// Splash or lingering potion with this potion id.
     Potion(u32),
+    /// Bottle o' enchanting.
+    XpBottle,
 }
 
 impl Throw {
@@ -435,6 +437,7 @@ impl Throw {
             "minecraft:snowball" => Some(Throw::Snowball),
             "minecraft:egg" | "minecraft:blue_egg" | "minecraft:brown_egg" => Some(Throw::Egg),
             "minecraft:ender_pearl" => Some(Throw::Pearl),
+            "minecraft:experience_bottle" => Some(Throw::XpBottle),
             _ => None,
         }
     }
@@ -444,6 +447,7 @@ impl Throw {
             Throw::Egg => "minecraft:egg",
             Throw::Pearl => "minecraft:ender_pearl",
             Throw::Potion(_) => "minecraft:splash_potion",
+            Throw::XpBottle => "minecraft:xp_bottle",
         }
     }
 }
@@ -2349,6 +2353,13 @@ impl Mobs {
             }
             match kind {
                 Throw::Snowball => {}
+                Throw::XpBottle => {
+                    // PNX EntityExpBottle: 3 + 0..8 points, the splash in its blue-yellow colour.
+                    let splash = Protocol::LevelEventPacket(Box::new(bedrock::protocol::v662::packets::LevelEventPacket { event_id: 2002, position: pos, data: 0x00385dc6 }));
+                    let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(splash) });
+                    let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(sound("glass", pos)) });
+                    server.entities.drop_xp(server, pos, 3 + (self.rand() % 9) as i32);
+                }
                 Throw::Potion(aux) => {
                     if crate::effects::potion(aux).iter().any(|e| e.0 == crate::effects::WEAKNESS) {
                         for m in self.mobs.lock().values_mut() {

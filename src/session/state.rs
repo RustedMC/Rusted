@@ -67,6 +67,14 @@ pub(crate) struct Session {
     pub gliding: bool,
     /// A plugin menu is open: the fake chest's position and the real block there.
     pub menu_at: Option<((i32, i32, i32), i32)>,
+    /// Other players this client has spawned, so ones it dropped (far teleport, death) come back.
+    pub seen: std::collections::HashSet<i64>,
+    /// Where `show_players` last ran, to spot teleports.
+    pub last_view: Option<(f32, f32, f32)>,
+    /// Block being mined, so moving onto the next one restarts the cracks.
+    pub mining: Option<(i32, i32, i32)>,
+    /// Going down since the last movement packet (a hit now is a critical hit).
+    pub falling: bool,
 }
 
 impl Session {
@@ -165,6 +173,10 @@ impl Session {
             riding: None,
             gliding: false,
             menu_at: None,
+            seen: Default::default(),
+            last_view: None,
+            mining: None,
+            falling: false,
         })
     }
 

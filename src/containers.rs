@@ -43,6 +43,15 @@ pub enum Kind {
     Dispenser,
     Dropper,
     Smithing,
+    /// Each player's own 27 slots, kept at `ender_store(name)`.
+    EnderChest,
+}
+
+/// Where a player's ender chest items live in the container store (below every real block,
+/// like chest minecarts, keyed by name so they last across restarts).
+pub fn ender_store(name: &str) -> (i32, i32, i32) {
+    let h = name.to_lowercase().bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3));
+    (h as i32, -70_000, (h >> 32) as i32)
 }
 
 /// Slots shown when opened. Storage is always CHEST_SLOTS wide.
@@ -127,6 +136,7 @@ pub fn kind(block: i32) -> Option<Kind> {
     match crate::blocks::entry(block)?.name.as_str() {
         "minecraft:chest" | "minecraft:trapped_chest" => Some(Kind::Chest),
         "minecraft:barrel" => Some(Kind::Barrel),
+        "minecraft:ender_chest" => Some(Kind::EnderChest),
         "minecraft:furnace" | "minecraft:lit_furnace" => Some(Kind::Furnace),
         "minecraft:smoker" | "minecraft:lit_smoker" => Some(Kind::Smoker),
         "minecraft:blast_furnace" | "minecraft:lit_blast_furnace" => Some(Kind::BlastFurnace),

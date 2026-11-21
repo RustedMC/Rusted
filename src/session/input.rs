@@ -85,6 +85,7 @@ impl Session {
         if let Some(damage) = self.hp.on_move(pos.1 - 1.62, takes_damage, in_water) {
             hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, damage, &mut self.inv, &self.effects, &self.mode).await;
         }
+        self.falling = self.last_pos.is_some_and(|l| pos.1 < l.1 - 0.01) && !in_water && !self.flying && !self.gliding && self.riding.is_none();
         if let Some(last) = self.last_pos.replace(pos) && survival_like(&self.mode) && !self.flying {
             let walked = ((pos.0 - last.0).powi(2) + (pos.2 - last.2).powi(2)).sqrt().min(10.0);
             if self.food.exhaust(walked * if self.sprinting { 0.1 } else { 0.01 }) {
@@ -192,6 +193,15 @@ impl Session {
             }
         }
         respawn(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, &self.mode, &self.inv).await;
+        // Others still have our dead body: replace it. Ours get re-sent within a second.
+        let gone = Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(self.id) }));
+        let _ = self.server.events.send(players::Event::Relay { from: self.id, packet: Box::new(gone) });
+        let _ = self.server.events.send(players::Event::Join(self.id));
+        let mut out = vec![];
+        for id in self.seen.drain() {
+            out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
+        }
+        let _ = self.conn.send(&out).await;
         if let Some(me) = self.server.get(self.id) {
             self.server.plugins.player_respawn(&self.server, &me);
         }

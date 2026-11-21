@@ -166,6 +166,10 @@ pub fn orient(block: i32, click: &Click) -> Vec<((i32, i32, i32), i32)> {
         };
         return vec![((0, 0, 0), with(b, &[("facing_direction", State::Int(dir))]))];
     }
+    if bname.ends_with("_button") {
+        // Buttons sit on the clicked face (same numbering: 0 down, 1 up, 2-5 N S W E).
+        return vec![((0, 0, 0), with(b, &[("facing_direction", State::Int(click.face.min(5) as i32))]))];
+    }
     if has_state(b, "facing_direction") {
         // 6-way blocks face the player, or up/down when looking steeply
         let dir = if click.pitch > 45.0 {
@@ -302,5 +306,15 @@ mod tests {
         assert!(orient(torch, &click(0, 0.0, 0.0)).is_empty());
         let wall = orient(torch, &click(3, 0.5, 0.0))[0].1;
         assert_eq!(state(wall, "torch_facing_direction"), Some(&State::Str("south".into())));
+    }
+
+    #[test]
+    fn buttons_go_on_every_face() {
+        let button = id_of("minecraft:stone_button");
+        // (clicked face, block holding it up)
+        for (face, support) in [(0, (0, 1, 0)), (1, (0, -1, 0)), (2, (0, 0, 1)), (3, (0, 0, -1)), (4, (1, 0, 0)), (5, (-1, 0, 0))] {
+            let placed = orient(button, &click(face, 0.5, 0.0))[0].1;
+            assert_eq!(crate::physics::support_of(placed), Some(support), "face {face}");
+        }
     }
 }

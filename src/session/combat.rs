@@ -83,11 +83,11 @@ impl Session {
             let kind = self.server.mobs.kind_of(target);
             let bonus = enchant::melee_bonus(&data, kind.is_some_and(|k| k.undead()), kind.is_some_and(|k| k.arthropod()));
             let hit = mobs::Hit {
-                knockback: enchant::level(&data, enchant::KNOCKBACK),
+                knockback: enchant::level(&data, enchant::KNOCKBACK) + self.sprinting as i16,
                 fire: 40 * enchant::level(&data, enchant::FIRE_ASPECT) as u32, // 4 s per level
                 looting: enchant::level(&data, enchant::LOOTING),
             };
-            let dmg = self.effects.melee(mobs::attack_damage(held) + bonus);
+            let dmg = self.crit(target, self.effects.melee(mobs::attack_damage(held) + bonus));
             if kind.is_none_or(|k| self.server.plugins.entity_damage(&self.server, &me, target, k.identifier(), dmg)) {
                 self.server.mobs.hurt_with(&self.server, target, dmg, me.pos, Some(self.id), hit);
             }
@@ -97,6 +97,23 @@ impl Session {
                 self.food.exhaust(0.1);
             }
         }
+    }
+
+    /// A hit while falling is critical: 1.5x damage and the star particles on the target.
+    fn crit(&self, target: i64, dmg: f32) -> f32 {
+        if !self.falling {
+            return dmg;
+        }
+        use bedrock::protocol::v898::packets::AnimatePacketAction;
+        let stars = Protocol::AnimatePacket(Box::new(bedrock::protocol::v2225::packets::AnimatePacket {
+            action: AnimatePacketAction::CriticalHit,
+            target_runtime_id: bedrock::protocol::v662::types::ActorRuntimeID(target as u64),
+            data: 0.0,
+            swing_source: None,
+            hand: 0,
+        }));
+        let _ = self.server.events.send(crate::players::Event::Relay { from: 0, packet: Box::new(stars) });
+        dmg * 1.5
     }
 
     /// PvP: the hit goes to the victim's session as mob-style damage named after us, so armor,
@@ -117,11 +134,12 @@ impl Session {
         }
         let held = self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id));
         let data = self.inv.held(self.selected_slot as usize).map(|s| s.item.user_data_buffer.clone()).unwrap_or_default();
-        let dmg = self.effects.melee(mobs::attack_damage(held) + enchant::melee_bonus(&data, false, false));
+        let dmg = self.crit(target, self.effects.melee(mobs::attack_damage(held) + enchant::melee_bonus(&data, false, false)));
         let (dx, dz) = (them.pos.0 - me.pos.0, them.pos.2 - me.pos.2);
         let len = (dx * dx + dz * dz).sqrt().max(0.01);
         // PNX: knockback 0.3, +0.5 a Knockback level; up is the same, capped at 0.4.
-        let push = 0.3 + 0.5 * enchant::level(&data, enchant::KNOCKBACK) as f32;
+        // Sprinting counts as one more Knockback level.
+        let push = 0.3 + 0.5 * (enchant::level(&data, enchant::KNOCKBACK) + self.sprinting as i16) as f32;
         let knock = (dx / len * push, push.min(0.4), dz / len * push);
         let _ = self.server.events.send(crate::players::Event::Damage { to: target, damage: crate::health::Damage::Mob(dmg, intern(&me.name)), knock });
         // shortcut: fire aspect doesn't set players alight yet; add it with player burning.
