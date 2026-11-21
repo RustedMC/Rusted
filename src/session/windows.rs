@@ -138,6 +138,13 @@ impl Session {
     }
 
     pub(super) async fn on_open_inventory(&mut self) {
+        // Riding a chest boat: the inventory button opens its chest (vanilla Bedrock).
+        if let Some(boat) = self.riding
+            && let Some(store) = self.server.mobs.chest_boat_store(boat)
+        {
+            self.open_cart(boat, store).await;
+            return;
+        }
         // Same reply PNX gives: open the player's own inventory (type -1).
         self.window_id = if self.window_id >= 99 { 2 } else { self.window_id + 1 };
         let pos = self.server.get(self.id).map(|p| p.pos).unwrap_or_default();

@@ -186,11 +186,12 @@ impl Session {
         let held_name = items::name_of(u.held_item.id).unwrap_or("");
         let clicked_name = blocks::entry(clicked).map_or("", |e| e.name.as_str());
         // Minecarts go on rails.
-        if held_name == "minecraft:minecart"
+        if matches!(held_name, "minecraft:minecart" | "minecraft:tnt_minecart")
             && !matches!(self.mode, GameType::Spectator)
             && crate::minecart::rail_at(&self.server.world, p.x, p.y, p.z).is_some()
         {
-            self.server.mobs.spawn_minecart(&self.server, (p.x, p.y, p.z));
+            let kind = if held_name == "minecraft:tnt_minecart" { mobs::Kind::TntMinecart } else { mobs::Kind::Minecart };
+            self.server.mobs.spawn_cart(&self.server, kind, (p.x, p.y, p.z));
             if survival_like(&self.mode) {
                 self.inv.use_one(self.selected_slot as usize);
                 let _ = self.conn.send(&[self.inv.content_packet()]).await;
@@ -198,13 +199,13 @@ impl Session {
             return;
         }
         // Boats go on the block clicked, or float on water.
-        if let Some(wood) = mobs::boat_wood(held_name)
+        if let Some((wood, chest)) = mobs::boat_wood(held_name)
             && !matches!(self.mode, GameType::Spectator)
             && let Some(me) = self.server.get(self.id)
         {
             let water = crate::overworld::feature::blocks::is_water(clicked);
             let y = if water { p.y as f32 + 0.9 } else { p.y as f32 + 1.0 };
-            self.server.mobs.spawn_boat(&self.server, wood, (p.x as f32 + 0.5, y, p.z as f32 + 0.5), me.rot.1);
+            self.server.mobs.spawn_boat(&self.server, wood, (p.x as f32 + 0.5, y, p.z as f32 + 0.5), me.rot.1, chest);
             if survival_like(&self.mode) {
                 self.inv.use_one(self.selected_slot as usize);
                 let _ = self.conn.send(&[self.inv.content_packet()]).await;

@@ -23,12 +23,10 @@ See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands
   chests, break cracks); critical hits, sprint knockback, bottles o' enchanting; vanilla
   explosions (rays, blast resistance), item physics (ice, currents, burning), trapdoors, gates,
   selectors on every command, sign input for plugins, swimming/crawling through 1x1 gaps
+- 🔨 **0.4.5** Mobs: 12 more types, snow and iron golems and the wither built from blocks, wandering
+  traders (trades, visits), villager breeding, leads and llama caravans, polar bears guarding
+  cubs, chest boats, TNT minecarts; still to come: PNX's full behaviour system
 - 🔨 **0.4.6** Waterlogging (a second block layer in chunks and saves); crawling pose; explosions hurt mobs
-- ⏳ **0.4.5** Mob AI: the rest of PNX's behaviours for neutrals, villagers, fish and flyers;
-  arrows and tridents checked against PNX
-
-## 0.5: the world
-
 - ⏳ **0.5.0** Sky light
 - ⏳ **0.5.1** Multiple worlds (Multiverse), with per-world inventories
 - ⏳ **0.5.2** Maps and the cartography table
