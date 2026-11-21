@@ -125,40 +125,94 @@ fn entry_int(block: i32, key: &str) -> i32 {
     }
 }
 
-/// Roughly how many game ticks mining `block` takes with `tool` (vanilla: hardness x 1.5 s
-/// with a usable tool, x 5 without, divided by the tool's speed). Only used for the crack
-/// animation other players see; the miner's own client times the break itself.
-pub fn break_ticks(block: i32, tool: Option<&str>) -> i32 {
+/// Game ticks mining `block` takes (vanilla/PNX Block.calculateBreakTime): hardness x 1.5 s,
+/// x 5 when the block needs a pickaxe and this isn't one; the right tool divides by its speed
+/// (+ efficiency^2 + 1), haste speeds it up 20% a level. Sent as the crack animation's speed,
+/// so it has to match the client's own timer or the cracks finish before the block breaks.
+pub fn break_ticks(block: i32, tool: Option<&str>, efficiency: i16, haste: Option<i32>) -> i32 {
     let n = crate::blocks::entry(block).map_or("", |e| e.name.as_str()).trim_start_matches("minecraft:");
     let hardness: f32 = match n {
         "obsidian" | "crying_obsidian" | "respawn_anchor" => 50.0,
         "ancient_debris" => 30.0,
         "bedrock" | "barrier" | "end_portal_frame" => return i32::MAX / 2,
         "ender_chest" => 22.5,
+        "iron_block" | "diamond_block" | "emerald_block" | "netherite_block" | "anvil" | "chipped_anvil" | "damaged_anvil" | "enchanting_table" => 5.0,
+        "gold_block" | "redstone_block" | "lapis_block" | "copper_block" | "coal_block" | "hopper" | "iron_bars" | "iron_door" | "iron_trapdoor" | "mob_spawner" | "observer" | "end_stone" => 3.0,
+        "furnace" | "lit_furnace" | "blast_furnace" | "lit_blast_furnace" | "smoker" | "lit_smoker" | "dispenser" | "dropper" => 3.5,
+        n if n.starts_with("deepslate_") && n.ends_with("_ore") => 4.5,
         n if n.ends_with("_ore") => 3.0,
-        n if n.contains("deepslate") => 3.0,
-        n if n.contains("planks") || n.ends_with("_log") || n.ends_with("_wood") || n.contains("chest") || n.contains("fence") || n.ends_with("_door") => 2.0,
-        "stone" | "cobblestone" | "stone_bricks" | "bricks" | "andesite" | "diorite" | "granite" | "blackstone" => 1.5,
-        n if n.contains("stone") || n.contains("brick") => 1.5,
-        n if n.contains("dirt") || n == "grass_block" || n.contains("sand") || n == "gravel" || n == "clay" || n == "farmland" || n.contains("mud") => 0.6,
+        "deepslate" | "cobbled_deepslate" | "polished_deepslate" => 3.0,
+        n if n.contains("deepslate") => 3.5,
+        n if n.contains("glazed_terracotta") => 1.4,
+        n if n.contains("terracotta") => 1.25,
+        n if n.ends_with("_concrete_powder") => 0.5,
+        n if n.ends_with("_concrete") => 1.8,
+        "netherrack" | "crimson_nylium" | "warped_nylium" => 0.4,
+        "glowstone" | "sea_lantern" => 0.3,
+        "ice" | "packed_ice" => 0.5,
+        "blue_ice" => 2.8,
+        n if n.contains("chest") || n == "crafting_table" || n == "barrel" || n == "lectern" => 2.5,
+        "bookshelf" => 1.5,
+        n if n.contains("planks") || n.ends_with("_log") || n.ends_with("_wood") || n.ends_with("_stem") || n.ends_with("_hyphae") || n.contains("fence") || n.ends_with("_door") => 2.0,
+        "cobblestone" | "mossy_cobblestone" | "stone_bricks" | "bricks" | "blackstone" | "nether_brick" | "red_nether_brick" => 2.0,
+        n if n.contains("sandstone") => 0.8,
+        n if n.contains("stone") || n.contains("brick") || matches!(n, "andesite" | "diorite" | "granite" | "polished_andesite" | "polished_diorite" | "polished_granite" | "tuff" | "calcite") => 1.5,
+        "grass_block" | "mycelium" | "podzol" | "farmland" | "grass_path" | "dirt_path" | "clay" | "gravel" => 0.6,
+        n if n.contains("dirt") || n.contains("sand") || n.contains("mud") || n.starts_with("soul_") => 0.5,
         n if n.contains("leaves") => 0.2,
         n if n.contains("glass") => 0.3,
-        n if n.contains("wool") || n.contains("carpet") => 0.8,
+        n if n.contains("carpet") => 0.1,
+        n if n.contains("wool") => 0.8,
+        "pumpkin" | "carved_pumpkin" | "lit_pumpkin" | "melon_block" => 1.0,
+        "snow" => 0.2,
+        "snow_layer" => 0.1,
         n if crate::overworld::feature::blocks::is_plant(block) || n.contains("torch") || n.contains("sapling") || n == "redstone_wire" => 0.0,
         _ => 1.0,
     };
+    if hardness == 0.0 {
+        return 0;
+    }
     let t = tool.unwrap_or("").trim_start_matches("minecraft:");
-    let speed = match t.split('_').next() {
-        Some("wooden") => 2.0,
-        Some("stone") => 4.0,
-        Some("iron") => 6.0,
-        Some("diamond") => 8.0,
-        Some("netherite") => 9.0,
-        Some("golden") => 12.0,
-        _ => 1.0,
-    };
-    let is_tool = t.ends_with("_pickaxe") || t.ends_with("_axe") || t.ends_with("_shovel") || t.ends_with("_hoe");
-    let secs = hardness * if is_tool { 1.5 / speed } else { 1.5 };
+    let metal = matches!(n, "iron_block" | "diamond_block" | "emerald_block" | "netherite_block" | "gold_block" | "redstone_block" | "lapis_block" | "copper_block" | "coal_block");
+    let pick = metal
+        || (!n.contains("sand") || n.contains("sandstone")) && !n.contains("redstone_wire") && !n.contains("torch")
+            && (n.ends_with("_ore") || n.contains("stone") || n.contains("brick") || n.contains("deepslate") || n.contains("obsidian") || n.contains("terracotta") || n.ends_with("_concrete"))
+        || matches!(n, "netherrack" | "furnace" | "lit_furnace" | "blast_furnace" | "lit_blast_furnace" | "smoker" | "lit_smoker" | "dispenser" | "dropper" | "hopper"
+            | "anvil" | "chipped_anvil" | "damaged_anvil" | "iron_bars" | "iron_door" | "iron_trapdoor" | "ender_chest" | "enchanting_table" | "mob_spawner"
+            | "ancient_debris" | "respawn_anchor" | "observer" | "andesite" | "diorite" | "granite" | "polished_andesite" | "polished_diorite" | "polished_granite"
+            | "tuff" | "calcite" | "basalt" | "polished_basalt" | "crimson_nylium" | "warped_nylium" | "ice" | "packed_ice" | "blue_ice");
+    let axe = !pick
+        && (n.contains("planks") || n.ends_with("_log") || n.ends_with("_wood") || n.ends_with("_stem") || n.ends_with("_hyphae") || n.contains("fence") || n.ends_with("_door")
+            || n.contains("chest") || matches!(n, "crafting_table" | "barrel" | "bookshelf" | "lectern" | "pumpkin" | "carved_pumpkin" | "lit_pumpkin" | "melon_block"));
+    let shovel = !pick
+        && (n.contains("dirt") || n.contains("sand") || n.contains("mud") || n.starts_with("soul_")
+            || matches!(n, "grass_block" | "mycelium" | "podzol" | "farmland" | "grass_path" | "dirt_path" | "clay" | "gravel" | "snow" | "snow_layer"));
+    let hoe = n.contains("leaves") || matches!(n, "hay_block" | "sponge" | "wet_sponge" | "target" | "sculk" | "nether_wart_block" | "warped_wart_block");
+    let shears = t == "shears" && (n.contains("leaves") || n.contains("wool") || n == "web");
+    let right = (pick && t.ends_with("_pickaxe")) || (axe && t.ends_with("_axe")) || (shovel && t.ends_with("_shovel")) || (hoe && t.ends_with("_hoe")) || shears;
+    // Blocks that drop nothing by hand take 5x as long without a pickaxe.
+    let needs_tool = pick && !matches!(n, "ice" | "packed_ice" | "blue_ice");
+    let mut secs = hardness * if needs_tool && !right { 5.0 } else { 1.5 };
+    if right {
+        let speed = if shears {
+            if n.contains("wool") { 5.0 } else { 15.0 }
+        } else {
+            match t.split('_').next() {
+                Some("wooden") => 2.0,
+                Some("stone") => 4.0,
+                Some("iron") => 6.0,
+                Some("diamond") => 8.0,
+                Some("netherite") => 9.0,
+                Some("golden") => 12.0,
+                _ => 1.0,
+            }
+        };
+        let eff = if efficiency > 0 { (efficiency as f32).powi(2) + 1.0 } else { 0.0 };
+        secs /= speed + eff;
+    }
+    if let Some(amp) = haste {
+        secs /= 1.0 + 0.2 * (amp + 1) as f32;
+    }
     (secs * 20.0).ceil() as i32
 }
 
@@ -180,5 +234,16 @@ mod tests {
         assert_eq!(name_of(&drops(diamond, (0, 0, 0), Some("minecraft:iron_pickaxe"))), ["minecraft:diamond"]);
         assert_eq!(name_of(&drops(crate::world::GRASS, (0, 0, 0), None)), ["minecraft:dirt"]);
         assert!(drops(crate::world::BEDROCK, (0, 0, 0), Some("minecraft:diamond_pickaxe")).is_empty());
+    }
+
+    #[test]
+    fn break_times_match_vanilla() {
+        let b = |n: &str| crate::blocks::any_state(n).unwrap();
+        assert_eq!(break_ticks(b("minecraft:stone"), None, 0, None), 150, "stone by hand 7.5 s");
+        assert_eq!(break_ticks(b("minecraft:stone"), Some("minecraft:wooden_pickaxe"), 0, None), 23, "1.15 s");
+        assert_eq!(break_ticks(b("minecraft:dirt"), None, 0, None), 15, "dirt by hand 0.75 s");
+        assert_eq!(break_ticks(b("minecraft:oak_planks"), None, 0, None), 60, "planks by hand 3 s");
+        assert_eq!(break_ticks(b("minecraft:oak_planks"), Some("minecraft:stone_pickaxe"), 0, None), 60, "wrong tool is like a hand");
+        assert_eq!(break_ticks(b("minecraft:obsidian"), Some("minecraft:diamond_pickaxe"), 0, None), 188, "9.4 s");
     }
 }

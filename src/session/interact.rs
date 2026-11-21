@@ -601,7 +601,9 @@ impl Session {
             if start && survival_like(&self.mode) && block != world::AIR {
                 self.mining = Some(p);
                 // LevelEvent 3600 starts the crack animation; data is 65535 / break ticks (PNX: everyone, us too).
-                let ticks = crate::drops::break_ticks(block, self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id))).max(1);
+                let held = self.inv.held(self.selected_slot as usize);
+                let eff = held.map_or(0, |s| enchant::level(&s.item.user_data_buffer, 15)); // 15 = efficiency
+                let ticks = crate::drops::break_ticks(block, held.and_then(|s| items::name_of(s.item.id)), eff, self.effects.level(3)).max(1); // 3 = haste
                 let crack = event(3600, 65535 / ticks);
                 let _ = self.conn.send(&[crack.clone()]).await;
                 let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(crack) });
