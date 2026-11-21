@@ -217,9 +217,51 @@ pub fn trades(profession_index: i32, seed: i32, clothing: Clothing) -> Vec<Trade
         11 => butcher(r, &mut t),
         12 => leatherworker(r, &mut t),
         13 => mason(r, &mut t),
+        WANDERING => wandering(r, &mut t),
         _ => {}
     }
     t.0
+}
+
+/// The wandering trader's "profession" (not a villager job).
+pub const WANDERING: i32 = 100;
+
+/// Vanilla wandering trader: five of the common offers and one rare one, all for emeralds.
+/// (PNX has no table for it; these are the Bedrock offers.)
+fn wandering(r: &mut JavaRandom, t: &mut T) {
+    const COMMON: &[(&str, i8, i8, i32)] = &[
+        ("fern", 1, 1, 12), ("sugar_cane", 1, 1, 8), ("pumpkin", 1, 1, 4), ("kelp", 3, 1, 12), ("cactus", 3, 1, 8),
+        ("dandelion", 1, 1, 12), ("poppy", 1, 1, 12), ("blue_orchid", 1, 1, 8), ("allium", 1, 1, 12), ("azure_bluet", 1, 1, 12),
+        ("red_tulip", 1, 1, 12), ("orange_tulip", 1, 1, 12), ("white_tulip", 1, 1, 12), ("pink_tulip", 1, 1, 12),
+        ("oxeye_daisy", 1, 1, 12), ("cornflower", 1, 1, 12), ("lily_of_the_valley", 1, 1, 7), ("wheat_seeds", 1, 1, 12),
+        ("beetroot_seeds", 1, 1, 12), ("pumpkin_seeds", 1, 1, 12), ("melon_seeds", 1, 1, 12), ("oak_sapling", 5, 1, 8),
+        ("spruce_sapling", 5, 1, 8), ("birch_sapling", 5, 1, 8), ("jungle_sapling", 5, 1, 8), ("acacia_sapling", 5, 1, 8),
+        ("dark_oak_sapling", 5, 1, 8), ("cherry_sapling", 5, 1, 8), ("mangrove_propagule", 5, 1, 8), ("red_dye", 1, 3, 12),
+        ("white_dye", 1, 3, 12), ("blue_dye", 1, 3, 12), ("pink_dye", 1, 3, 12), ("black_dye", 1, 3, 12), ("green_dye", 1, 3, 12),
+        ("light_gray_dye", 1, 3, 12), ("magenta_dye", 1, 3, 12), ("yellow_dye", 1, 3, 12), ("gray_dye", 1, 3, 12),
+        ("purple_dye", 1, 3, 12), ("light_blue_dye", 1, 3, 12), ("lime_dye", 1, 3, 12), ("orange_dye", 1, 3, 12),
+        ("brown_dye", 1, 3, 12), ("cyan_dye", 1, 3, 12), ("brain_coral_block", 3, 1, 8), ("bubble_coral_block", 3, 1, 8),
+        ("fire_coral_block", 3, 1, 8), ("horn_coral_block", 3, 1, 8), ("tube_coral_block", 3, 1, 8), ("vine", 1, 1, 12),
+        ("brown_mushroom", 1, 1, 12), ("red_mushroom", 1, 1, 12), ("waterlily", 1, 2, 5), ("small_dripleaf_block", 1, 2, 5),
+        ("sand", 1, 8, 8), ("red_sand", 1, 4, 6), ("pointed_dripstone", 1, 2, 5), ("dirt_with_roots", 1, 2, 5), ("moss_block", 1, 2, 5),
+    ];
+    const RARE: &[(&str, i8, i8, i32)] = &[
+        ("tropical_fish_bucket", 5, 1, 4), ("pufferfish_bucket", 5, 1, 4), ("packed_ice", 3, 1, 6), ("blue_ice", 6, 1, 6),
+        ("gunpowder", 1, 1, 8), ("podzol", 3, 3, 6), ("nautilus_shell", 5, 1, 5), ("slime_ball", 4, 1, 5),
+    ];
+    let mut picked: Vec<usize> = Vec::new();
+    while picked.len() < 5 {
+        let i = r.next_int_bound(COMMON.len() as i32) as usize;
+        if !picked.contains(&i) {
+            picked.push(i);
+        }
+    }
+    for i in picked {
+        let (item, price, n, uses) = COMMON[i];
+        t.t(em(price), it(item, 0, n), uses, 1, 1, 0.05);
+    }
+    let (item, price, n, uses) = RARE[r.next_int_bound(RARE.len() as i32) as usize];
+    t.t(em(price), it(item, 0, n), uses, 1, 1, 0.05);
 }
 
 fn farmer(r: &mut JavaRandom, t: &mut T) {
@@ -609,5 +651,14 @@ mod tests {
         assert_eq!(Clothing::from_index(99), Clothing::Plains);
         assert_eq!(Clothing::Taiga as i32, 6);
         assert_eq!(trades(2, 0, Clothing::Swamp).last().unwrap().buy_a.name, "minecraft:dark_oak_boat");
+    }
+}
+
+#[cfg(test)]
+mod wandering_tests {
+    #[test]
+    fn wandering_trader_has_five_common_and_one_rare() {
+        let t = super::trades(super::WANDERING, 1234, super::Clothing::from_index(0));
+        assert_eq!(t.len(), 6);
     }
 }

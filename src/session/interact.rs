@@ -625,6 +625,8 @@ impl Session {
                 for ((rx, ry, rz), b) in crate::minecart::placed(&self.server.world, (x + ox, y + oy, z + oz)) {
                     self.server.set_block(self.id, rx, ry, rz, b);
                 }
+                // A head on a finished body builds a golem or the wither.
+                mobs::summon_from_blocks(&self.server, (x + ox, y + oy, z + oz));
             }
             if let Some(c) = placed_chest {
                 announce_chest(&self.server, c);

@@ -1009,6 +1009,14 @@ impl Mobs {
         if m.kind == Kind::ChestMinecart {
             return m.home.map_or(Use::Nothing, |h| Use::OpenCart(cart_store(h)));
         }
+        if m.kind == Kind::WanderingTrader {
+            // Its offers are rolled the first time someone trades with it.
+            if m.job.is_none() {
+                let seed = self.rand() as i32;
+                m.job = Some(Box::new(crate::villagers::Job { profession: crate::trades::WANDERING, tier: 1, exp: 0, seed, clothing: crate::trades::Clothing::from_index(0), uses: vec![], site: None }));
+            }
+            return Use::Trade;
+        }
         if m.kind == Kind::Villager && m.baby == 0 && m.job.as_ref().is_some_and(|j| j.profession != 0) {
             return Use::Trade;
         }
@@ -1398,6 +1406,11 @@ impl Mobs {
         if m.health <= 0.0 {
             m.dying = 10;
             broadcast(server, event(id, ActorEvent::Death));
+            if m.kind == Kind::Wither {
+                for p in server.all() {
+                    crate::ui::remove_boss_bar(server, p.id);
+                }
+            }
             let (kind, pos, baby, slime, captain, home) = (m.kind, m.pos, m.baby > 0, m.color, m.captain, m.home);
             drop(mobs);
             // A broken chest minecart spills what's in it (rolling its loot first if never opened).
@@ -1578,6 +1591,24 @@ impl Mobs {
                     let nid = self.spawn(server, Kind::Villager, pos);
                     let _ = nid;
                     continue;
+                }
+            }
+            if m.kind == Kind::SnowGolem {
+                self.snow_golem(server, &mut m);
+            }
+            // Tadpoles grow into frogs after about 20 minutes (12000 ticks, vanilla).
+            if m.kind == Kind::Tadpole && m.dying == 0 && self.rand() % (12_000 / 2) == 0 {
+                self.mobs.lock().remove(&id);
+                out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
+                self.spawn(server, Kind::Frog, m.pos);
+                continue;
+            }
+            // The wither's boss bar for everyone within 64 blocks.
+            if m.kind == Kind::Wither && m.dying == 0 && self.rand().is_multiple_of(5) {
+                for p in server.all() {
+                    if dist2(p.pos, m.pos) < 64.0 * 64.0 {
+                        crate::ui::boss_bar(server, p.id, "Wither", (m.health / m.kind.max_health()).clamp(0.0, 1.0), 5);
+                    }
                 }
             }
             if m.kind.flies() {
@@ -1792,6 +1823,12 @@ impl Mobs {
     fn hostile(&self, server: &Server, m: &mut Mob, out: &mut Vec<Protocol>) -> bool {
         let w = &server.world;
         let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+        // The creaking can't move while any player is looking at it (vanilla).
+        if m.kind == Kind::Creaking && server.all().iter().any(|p| stares_at(p.pos, p.rot, (m.pos.0, m.pos.1 + 2.0, m.pos.2))) {
+            m.path.clear();
+            m.vel = (0.0, m.vel.1, 0.0);
+            return false;
+        }
         if m.kind == Kind::Creeper {
             // Lit with flint and steel (PNX EntityCreeper): the fuse runs out no matter what.
             if m.lit {
@@ -2161,6 +2198,36 @@ impl Mobs {
             .map(|(id, p, _)| (id, p))
     }
 
+    /// Snow golem (PNX EntitySnowGolem): leaves snow where it walks outside the Nether, and
+    /// every 2 seconds throws a snowball at the nearest hostile within 10 blocks.
+    fn snow_golem(&self, server: &Server, m: &mut Mob) {
+        let w = &server.world;
+        let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+        if crate::dims::of(feet.1) == crate::dims::OVERWORLD
+            && blocks::is_air(w.get(feet.0, feet.1, feet.2))
+            && blocks::is_full(w.get(feet.0, feet.1 - 1, feet.2))
+            && let Some(snow) = crate::blocks::any_state("minecraft:snow_layer")
+        {
+            server.set_block_quiet(0, feet.0, feet.1, feet.2, snow);
+        }
+        m.attack_cd = m.attack_cd.saturating_sub(1);
+        if m.attack_cd > 0 {
+            return;
+        }
+        if let Some((_, at)) = self.nearest(m, 10.0, |o| o.kind.hostile() && o.kind != Kind::Creeper) {
+            m.attack_cd = 2 * TPS;
+            let eye = (m.pos.0, m.pos.1 + 1.7, m.pos.2);
+            let (dx, dy, dz) = (at.0 - eye.0, at.1 + 1.0 - eye.1, at.2 - eye.2);
+            let h = (dx * dx + dz * dz).sqrt();
+            // Aim a bit high for the drop, like the golem does.
+            let pitch = -(dy + h * 0.2).atan2(h).to_degrees();
+            let yaw = (-dx).atan2(dz).to_degrees();
+            m.yaw = yaw;
+            m.head_yaw = yaw;
+            throw(server, Throw::Snowball, m.id, eye, (pitch, yaw));
+        }
+    }
+
     /// Walks to mob `prey` and hits it when in reach.
     fn chase_and_hit(&self, server: &Server, m: &mut Mob, prey: i64, at: (f32, f32, f32)) {
         let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
@@ -2424,7 +2491,7 @@ impl Mobs {
     /// Mobs vanish far from players (instantly past 128 blocks, now and then past 32), unless
     /// something made them persistent: tamed, named, bred, saddled, ridden, a villager...
     fn despawn(&self, server: &Server, m: &Mob) -> bool {
-        if m.owner.is_some() || m.kept || m.saddled || m.temper > 0 || m.rider.is_some() || m.home.is_some() || matches!(m.kind, Kind::Villager | Kind::IronGolem | Kind::EnderDragon | Kind::EndCrystal | Kind::Shulker) {
+        if m.owner.is_some() || m.kept || m.saddled || m.temper > 0 || m.rider.is_some() || m.home.is_some() || matches!(m.kind, Kind::Villager | Kind::IronGolem | Kind::EnderDragon | Kind::EndCrystal | Kind::Shulker | Kind::Wither) {
             return false;
         }
         let players = server.all();
@@ -2486,6 +2553,9 @@ impl Mobs {
                     p.id != t.owner && (next.0 - fx).abs() < 0.45 && (next.2 - fz).abs() < 0.45 && next.1 > fy && next.1 < fy + 1.85
                 });
                 let mob = self.mobs.lock().values().find(|m| {
+                    if m.id == t.owner || m.dying > 0 {
+                        return false; // not the snow golem that threw it
+                    }
                     let (w, h) = m.kind.size();
                     (next.0 - m.pos.0).abs() < w / 2.0 + 0.15 && (next.2 - m.pos.2).abs() < w / 2.0 + 0.15 && next.1 > m.pos.1 && next.1 < m.pos.1 + h
                 }).map(|m| m.id);
@@ -2520,7 +2590,9 @@ impl Mobs {
                 let _ = server.events.send(Event::Damage { to: p, damage: crate::health::Damage::Shot(0.0, "Snowball"), knock });
             }
             if let Some(m) = mob {
-                self.hurt(server, m, 0.0, pos, Some(owner));
+                // Snowballs only sting blazes (3 damage), vanilla.
+                let dmg = if kind == Throw::Snowball && self.kind_of(m) == Some(Kind::Blaze) { 3.0 } else { 0.0 };
+                self.hurt(server, m, dmg, pos, Some(owner));
             }
             match kind {
                 Throw::Snowball => {}
@@ -2710,6 +2782,7 @@ impl Mobs {
                         let dmg = match a.shooter {
                             Kind::Ghast => 6.0 * difficulty_scale(),
                             Kind::Blaze => 5.0 * difficulty_scale(),
+                            Kind::Wither => 8.0 * difficulty_scale(),
                             Kind::Witch => 0.0,
                             _ => dmg,
                         };
@@ -2722,6 +2795,7 @@ impl Mobs {
                             Kind::Stray => Some((2, 0, 600)),  // slowness 30 s
                             Kind::Bogged => Some((19, 0, 80)), // poison 4 s
                             Kind::Shulker => Some((24, 0, 200)), // levitation 10 s
+                            Kind::Wither => Some((20, 1, 200)),   // wither II 10 s from its skulls
                             Kind::Witch => Some([(7, 0, 1), (19, 0, 900), (2, 0, 1800), (18, 0, 1800)][(self.rand() % 4) as usize]),
                             _ => None,
                         };
@@ -4101,5 +4175,84 @@ mod explosion_tests {
             w.set(d.0, -42 + d.1, d.2, water);
         }
         assert!(explosion_rays(&w, (0.5, -41.5, 0.5), 4.0, 12345).is_empty(), "water soaks it up");
+    }
+}
+
+/// Built mobs (vanilla): a carved pumpkin on two snow blocks makes a snow golem; on a T of
+/// iron blocks an iron golem; three wither skeleton skulls on a T of soul sand or soul soil
+/// the wither. `p` is the block just placed; the blocks are used up.
+pub fn summon_from_blocks(server: &Server, p: (i32, i32, i32)) {
+    let w = &server.world;
+    let name = |q: (i32, i32, i32)| crate::blocks::entry(w.get(q.0, q.1, q.2)).map_or(String::new(), |e| e.name.trim_start_matches("minecraft:").to_string());
+    let head = name(p);
+    let pumpkin = |n: &str| n == "carved_pumpkin" || n == "lit_pumpkin";
+    let soul = |n: &str| n == "soul_sand" || n == "soul_soil";
+    let mut built: Option<(Kind, Vec<(i32, i32, i32)>, (i32, i32, i32))> = None;
+    if pumpkin(&head) {
+        let (b1, b2) = ((p.0, p.1 - 1, p.2), (p.0, p.1 - 2, p.2));
+        if name(b1) == "snow" && name(b2) == "snow" {
+            built = Some((Kind::SnowGolem, vec![p, b1, b2], b2));
+        }
+        for (ax, az) in [(1, 0), (0, 1)] {
+            let arms = [(b1.0 + ax, b1.1, b1.2 + az), (b1.0 - ax, b1.1, b1.2 - az)];
+            if built.is_none() && name(b1) == "iron_block" && name(b2) == "iron_block" && arms.iter().all(|a| name(*a) == "iron_block") {
+                built = Some((Kind::IronGolem, vec![p, b1, b2, arms[0], arms[1]], b2));
+            }
+        }
+    }
+    if head == "wither_skeleton_skull" {
+        'find: for (ax, az) in [(1, 0), (0, 1)] {
+            for o in -1..=1 {
+                let c = (p.0 - ax * o, p.1, p.2 - az * o);
+                let skulls = [(c.0 - ax, c.1, c.2 - az), c, (c.0 + ax, c.1, c.2 + az)];
+                let body = [(c.0, c.1 - 1, c.2), (c.0 - ax, c.1 - 1, c.2 - az), (c.0 + ax, c.1 - 1, c.2 + az), (c.0, c.1 - 2, c.2)];
+                if skulls.iter().all(|s| name(*s) == "wither_skeleton_skull") && body.iter().all(|b| soul(&name(*b))) {
+                    built = Some((Kind::Wither, skulls.iter().chain(body.iter()).copied().collect(), (c.0, c.1 - 2, c.2)));
+                    break 'find;
+                }
+            }
+        }
+    }
+    let Some((kind, blocks_used, feet)) = built else { return };
+    for q in blocks_used {
+        server.set_block(0, q.0, q.1, q.2, crate::world::AIR);
+    }
+    let at = (feet.0 as f32 + 0.5, feet.1 as f32, feet.2 as f32 + 0.5);
+    let id = server.mobs.spawn(server, kind, at);
+    if kind == Kind::IronGolem
+        && let Some(m) = server.mobs.mobs.lock().get_mut(&id)
+    {
+        m.kept = true; // player-built golems stay
+    }
+    if kind == Kind::Wither {
+        // It wakes with a bang (vanilla: power 7 blast once it's charged up).
+        let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(crate::packets::play_sound("mob.wither.spawn", at)) });
+        let s = server.clone();
+        server.scheduler.run_later(200, move |_| explode(&s, (at.0, at.1 + 1.5, at.2), 7.0, "Wither"));
+    }
+}
+
+#[cfg(test)]
+mod summon_tests {
+    use super::*;
+
+    #[test]
+    fn pumpkin_on_snow_and_skulls_on_soul_sand() {
+        crate::blocks::init();
+        let server = Server::new();
+        let b = |n: &str| crate::blocks::any_state(n).unwrap();
+        server.world.set(500, -60, 0, b("minecraft:snow"));
+        server.world.set(500, -59, 0, b("minecraft:snow"));
+        server.world.set(500, -58, 0, b("minecraft:carved_pumpkin"));
+        summon_from_blocks(&server, (500, -58, 0));
+        assert!(server.mobs.snapshot().iter().any(|(k, _)| *k == Kind::SnowGolem));
+        assert_eq!(server.world.get(500, -58, 0), crate::world::AIR, "blocks used up");
+        for x in 599..=601 {
+            server.world.set(x, -59, 0, b("minecraft:soul_sand"));
+            server.world.set(x, -58, 0, b("minecraft:wither_skeleton_skull"));
+        }
+        server.world.set(600, -60, 0, b("minecraft:soul_sand"));
+        summon_from_blocks(&server, (601, -58, 0));
+        assert!(server.mobs.snapshot().iter().any(|(k, _)| *k == Kind::Wither));
     }
 }
