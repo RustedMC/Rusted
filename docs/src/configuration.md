@@ -18,6 +18,8 @@ same `key=value` format as vanilla and PNX. Restart the server after editing.
 | `view-distance` | `16` | Max chunk radius sent to each player (2–96) |
 | `white-list` | `false` | Only players in `whitelist.txt` can join |
 | `spawn-protection` | `16` | Radius around the world spawn where only operators can build. `0` turns it off |
+| `pvp` | `true` | Players can hurt each other |
+| `plugins` | `false` | Loads the built-in plugins (lobby, economy, ranks, kits, homes, auction house, scoreboard...). Off so a fresh server is plain vanilla |
 | `backup-interval` | `60` | Minutes between world backups into `backups/`. `0` turns them off |
 | `backup-keep` | `5` | How many backups to keep; the oldest are deleted |
 | `player-idle-timeout` | `0` | Kick players who don't move for this many minutes. `0` = never. Operators are never kicked |

@@ -64,8 +64,9 @@ white-list=false
 spawn-protection=16
 # Players can hurt each other.
 pvp=true
-# Load the built-in plugins (lobby, economy, ranks, kits...). false = plain vanilla server.
-plugins=true
+# Load the built-in plugins (lobby, economy, ranks, kits, scoreboard...). Off by default so a
+# fresh server is plain vanilla; set to true to turn them on.
+plugins=false
 # Copy the world into backups/ every this many minutes (0 = never), keeping the newest few.
 backup-interval=60
 backup-keep=5
@@ -152,7 +153,7 @@ fn from_map(defaults: HashMap<String, String>, mut m: HashMap<String, String>) -
         white_list: s("white-list") == "true",
         spawn_protection: s("spawn-protection").parse().unwrap_or(16).max(0),
         pvp: s("pvp") != "false",
-        plugins: s("plugins") != "false",
+        plugins: s("plugins") == "true",
         backup_interval: s("backup-interval").parse().unwrap_or(60),
         backup_keep: s("backup-keep").parse().unwrap_or(5).max(1),
         player_idle_timeout: s("player-idle-timeout").parse().unwrap_or(0),

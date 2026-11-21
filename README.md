@@ -139,6 +139,10 @@ The full list of what's done and what isn't is in [ROADMAP.md](ROADMAP.md).
 
 ## Plugins, in Rust
 
+Rusted comes with plugins built in (a lobby, economy, ranks, kits, homes, auction house,
+scoreboard and more), **off by default** so a fresh server is plain vanilla. Turn them on with
+`plugins=true` in `server.properties`.
+
 Override only the events you need; leave the rest out.
 
 ```rust

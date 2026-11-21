@@ -3,6 +3,9 @@
 Plugins are Rust code compiled into the server. There's no separate plugin jar or loader
 yet: you add your plugin to the source and rebuild.
 
+Plugins only load when `plugins=true` is set in `server.properties` (it's off by default, so a
+fresh server is plain vanilla).
+
 ## 1. Write it
 
 Make a new file, `src/greeter.rs`:
