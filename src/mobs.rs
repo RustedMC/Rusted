@@ -507,6 +507,8 @@ struct PlayerShot {
     power: i16,
     punch: i16,
     flame: bool,
+    /// Fully drawn bow: a critical arrow (bonus damage).
+    critical: bool,
     /// Item it turns back into where it lands (arrow, the trident itself).
     drop: Option<bedrock::protocol::v2168::types::NetworkItemStackDescriptorV2>,
 }
@@ -1237,7 +1239,7 @@ impl Mobs {
         if m.kind.hostile() || m.kind.neutral() || matches!(m.kind, Kind::IronGolem) || m.kind == Kind::Wolf && m.owner.is_none() {
             m.aggro = attacker.or(m.aggro);
         }
-        let (victim_kind, victim_owner) = (m.kind, m.owner);
+        let (victim_kind, victim_owner, victim_pos) = (m.kind, m.owner, m.pos);
         // Tamed wolves join in on whatever their owner hits; golems defend villagers.
         if let Some(p) = attacker {
             for o in mobs.values_mut() {
@@ -1246,6 +1248,16 @@ impl Mobs {
                     o.sitting = false;
                 }
                 if o.kind == Kind::IronGolem && victim_kind == Kind::Villager {
+                    o.aggro = Some(p);
+                }
+                // Pack anger (vanilla): zombified piglins within 32 blocks, a wild wolf's pack
+                // within 16.
+                let pack = match victim_kind {
+                    Kind::ZombiePigman => 32.0,
+                    Kind::Wolf if victim_owner.is_none() && o.owner.is_none() => 16.0,
+                    _ => 0.0,
+                };
+                if o.kind == victim_kind && pack > 0.0 && dist2(o.pos, victim_pos) < pack * pack {
                     o.aggro = Some(p);
                 }
             }
@@ -1679,9 +1691,18 @@ impl Mobs {
         let aggressive = match m.kind {
             Kind::Spider => !day || !open_sky,
             Kind::Enderman => false,
+            Kind::Piglin => true, // only at players without gold armour, below
             k => !k.neutral(),
         };
         let players = server.all();
+        // Endermen turn on a player who looks them in the eye (no carved pumpkin on).
+        if m.kind == Kind::Enderman && m.aggro.is_none()
+            && let Some(p) = players.iter().find(|p| {
+                targets.contains(&p.id) && !wears(p.id, |n| n == "minecraft:carved_pumpkin") && stares_at(p.pos, p.rot, (m.pos.0, m.pos.1 + 2.55, m.pos.2))
+            })
+        {
+            m.aggro = Some(p.id);
+        }
         let target = m
             .aggro
             .and_then(|a| players.iter().find(|p| p.id == a && targets.contains(&a)))
@@ -1692,6 +1713,8 @@ impl Mobs {
                 players
                     .iter()
                     .filter(|p| targets.contains(&p.id))
+                    // Piglins leave players in any gold armour alone.
+                    .filter(|p| m.kind != Kind::Piglin || !wears(p.id, |n| n.starts_with("minecraft:golden_")))
                     .map(|p| (p, dist2(p.pos, m.pos)))
                     .filter(|(_, d)| *d < 16.0 * 16.0)
                     .min_by(|a, b| a.1.total_cmp(&b.1))
@@ -2387,7 +2410,7 @@ impl Mobs {
             passenger_of_block_data: None,
         })));
         broadcast(server, sound(if trident { "item.trident.throw" } else { "bow" }, from));
-        let by = PlayerShot { owner, damage: trident.then_some(8.0), power, punch, flame, drop };
+        let by = PlayerShot { owner, damage: trident.then_some(8.0), power, punch, flame, critical: !trident && force >= 1.0, drop };
         self.arrows.lock().push(Arrow { id, pos: from, vel, shooter: Kind::Skeleton, life: 60 * TPS, stuck: false, by: Some(by) });
     }
 
@@ -2412,8 +2435,7 @@ impl Mobs {
                 let next = (a.pos.0 + a.vel.0 / 4.0, a.pos.1 + a.vel.1 / 4.0, a.pos.2 + a.vel.2 / 4.0);
                 if let Some(by) = a.by.clone() {
                     let speed = (a.vel.0.powi(2) + a.vel.1.powi(2) + a.vel.2.powi(2)).sqrt() / 2.0; // per game tick
-                    // PNX EntityArrow: damage = speed * 2 (rounded up), +25% per Power level.
-                    let dmg = by.damage.unwrap_or_else(|| (speed * 2.0).ceil() * if by.power > 0 { 1.0 + 0.25 * (by.power + 1) as f32 } else { 1.0 });
+                    let dmg = by.damage.unwrap_or_else(|| arrow_damage(speed, by.power, by.critical.then(|| self.rand())));
                     let hit_mob = boxes.iter().find(|(_, mp, (w, h))| (next.0 - mp.0).abs() < w / 2.0 + 0.1 && (next.2 - mp.2).abs() < w / 2.0 + 0.1 && next.1 > mp.1 && next.1 < mp.1 + h);
                     let hit_player = players.iter().find(|p| {
                         let (fx, fy, fz) = (p.pos.0, p.pos.1 - 1.62, p.pos.2);
@@ -2887,6 +2909,36 @@ const CROSSBOW_CHARGED: u32 = 30;
 // travel), so the speed lost each tick is 2 x 2 x 0.05.
 const ARROW_GRAVITY: f32 = 0.2;
 
+/// Is player `id` wearing armour whose item name matches?
+fn wears(id: i64, f: impl Fn(&str) -> bool) -> bool {
+    crate::players::equipment(id).armor.iter().flatten().any(|st| crate::items::name_of(st.item.id).is_some_and(&f))
+}
+
+/// Looking at `head` from `eye` (vanilla EnderMan.isLookingAtMe: within 64 blocks, the view
+/// pointing within a narrow cone that tightens with distance).
+fn stares_at(eye: (f32, f32, f32), rot: (f32, f32), head: (f32, f32, f32)) -> bool {
+    let (dx, dy, dz) = (head.0 - eye.0, head.1 - eye.1, head.2 - eye.2);
+    let len = (dx * dx + dy * dy + dz * dz).sqrt();
+    if !(0.5..64.0).contains(&len) {
+        return false;
+    }
+    let (pitch, yaw) = (rot.0.to_radians(), rot.1.to_radians());
+    let look = (-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos());
+    let dot = (look.0 * dx + look.1 * dy + look.2 * dz) / len;
+    dot > 1.0 - 0.025 / len
+}
+
+/// PNX EntityArrow: ceil(speed per game tick x base), base 2 plus 0.5 per Power level + 0.5
+/// (ItemBow); a critical (fully drawn) arrow adds a random 0..base/2+1 on top.
+fn arrow_damage(speed: f32, power: i16, critical_roll: Option<u32>) -> f32 {
+    let base = 2.0 + if power > 0 { power as f32 * 0.5 + 0.5 } else { 0.0 };
+    let dmg = (speed * base).ceil();
+    match critical_roll {
+        Some(r) => dmg + (r % (dmg as u32 / 2 + 2)) as f32,
+        None => dmg,
+    }
+}
+
 fn dist2(a: (f32, f32, f32), b: (f32, f32, f32)) -> f32 {
     (a.0 - b.0).powi(2) + (a.1 - b.1).powi(2) + (a.2 - b.2).powi(2)
 }
@@ -3293,6 +3345,24 @@ mod tests {
     static SERIAL: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
     use super::*;
+
+    #[test]
+    fn endermen_notice_a_stare() {
+        // Looking straight east (yaw -90) at a head 10 blocks east: a stare.
+        assert!(stares_at((0.0, 0.0, 0.0), (0.0, -90.0), (10.0, 0.0, 0.0)));
+        // A few degrees off at that range isn't.
+        assert!(!stares_at((0.0, 0.0, 0.0), (0.0, -80.0), (10.0, 0.0, 0.0)));
+        assert!(!stares_at((0.0, 0.0, 0.0), (0.0, -90.0), (70.0, 0.0, 0.0)), "too far");
+    }
+
+    #[test]
+    fn arrow_damage_like_pnx() {
+        assert_eq!(arrow_damage(3.0, 0, None), 6.0, "full draw, no Power");
+        assert_eq!(arrow_damage(3.0, 1, None), 9.0, "Power I: base 3");
+        assert_eq!(arrow_damage(3.0, 5, None), 15.0, "Power V: base 5");
+        let crit = arrow_damage(3.0, 0, Some(4));
+        assert!((6.0..=10.0).contains(&crit), "critical adds 0..4: {crit}");
+    }
 
     #[test]
     fn mobs_jump_onto_a_step_instead_of_teleporting() {
