@@ -832,6 +832,11 @@ impl Mobs {
         (self.rand() % 10_000) as f32 / 10_000.0
     }
 
+    /// Every living mob's kind and position, for spawn caps.
+    pub fn snapshot(&self) -> Vec<(Kind, (f32, f32, f32))> {
+        self.mobs.lock().values().filter(|m| m.dying == 0).map(|m| (m.kind, m.pos)).collect()
+    }
+
     pub fn count(&self) -> usize {
         self.mobs.lock().len()
     }
@@ -2785,107 +2790,6 @@ impl Mobs {
         m.pos = (px, py, pz);
     }
 
-    /// Hostile spawns 24-48 blocks around each player: at night on the surface, anytime in caves.
-    fn spawn_hostiles(&self, server: &Server) {
-        if *crate::commands::DIFFICULTY.lock() == 0 {
-            return;
-        }
-        let hostiles = self.mobs.lock().values().filter(|m| m.kind.hostile()).count();
-        if hostiles >= HOSTILE_CAP {
-            return;
-        }
-        let w = &server.world;
-        let t = server.time().rem_euclid(24_000);
-        let night = (13_000..23_000).contains(&t);
-        for p in server.all() {
-            let dim = crate::dims::of_f(p.pos.1);
-            if dim != crate::dims::OVERWORLD {
-                self.spawn_other_dim(server, &p, dim);
-                continue;
-            }
-            for _ in 0..2 {
-                let a = self.randf() * std::f32::consts::TAU;
-                let r = 24.0 + self.randf() * 24.0;
-                let (x, z) = ((p.pos.0 + a.cos() * r).floor() as i32, (p.pos.2 + a.sin() * r).floor() as i32);
-                let mut top = (p.pos.1 as i32 + 40).min(318);
-                while top > -60 && !solid(w.get(x, top, z)) {
-                    top -= 1;
-                }
-                // Surface at night, or a random cave spot below it.
-                let y = if night && self.rand().is_multiple_of(2) {
-                    top + 1
-                } else {
-                    let lo = -58;
-                    let hi = top - 8;
-                    if hi <= lo {
-                        continue;
-                    }
-                    let mut y = lo + (self.rand() % (hi - lo) as u32) as i32;
-                    // Settle onto a floor.
-                    while y > lo && !solid(w.get(x, y - 1, z)) {
-                        y -= 1;
-                    }
-                    // Leaves let daylight through, so by day a spot needs real cover overhead.
-                    let covered = (y + 1..=(y + 64).min(319)).any(|q| crate::overworld::feature::blocks::is_full(w.get(x, q, z)));
-                    if sky(w, (x, y, z)) || (!night && !covered) {
-                        continue;
-                    }
-                    y
-                };
-                if blocks::is_water(w.get(x, y, z)) {
-                    // Drowned rise from water at night and in deep water.
-                    if self.rand().is_multiple_of(6) {
-                        self.spawn(server, Kind::Drowned, (x as f32 + 0.5, y as f32, z as f32 + 0.5));
-                    }
-                    continue;
-                }
-                if !standable(w, (x, y, z)) || !solid(w.get(x, y - 1, z)) {
-                    continue;
-                }
-                // Hostiles need darkness (vanilla: block light 0).
-                if w.block_light(x, y, z) > 0 {
-                    continue;
-                }
-                let biome = w.biome_at(x, y, z);
-                use crate::overworld::biome::id as b;
-                if biome == Some(b::MUSHROOM_ISLAND) || biome == Some(b::DEEP_DARK) {
-                    continue; // no hostile spawns
-                }
-                if !sky(w, (x, y + 1, z)) && y < 60 && self.rand().is_multiple_of(12) {
-                    self.spawn(server, Kind::Bat, (x as f32 + 0.5, y as f32 + 1.0, z as f32 + 0.5));
-                    continue;
-                }
-                let desert = matches!(biome, Some(b::DESERT));
-                let snowy = w.is_snowy(x, z);
-                let swamp = matches!(biome, Some(b::SWAMPLAND | b::MANGROVE_SWAMP));
-                let sub = self.rand() % 100;
-                // Vanilla monster weights: zombie 95 + zombie villager 5, skeleton 100, creeper
-                // 100, spider 100, enderman 10, witch 5 (slimes come from swamps and slime
-                // chunks, here 1 in 5 tries where they can).
-                let kind = match self.rand() % 415 {
-                    _ if (swamp || y < 40) && sub < 20 => Kind::Slime,
-                    0..95 if desert && sub < 80 => Kind::Husk,
-                    0..95 => Kind::Zombie,
-                    95..100 => Kind::ZombieVillager,
-                    100..200 if snowy && sub < 80 => Kind::Stray,
-                    100..200 if swamp && sub < 50 => Kind::Bogged,
-                    100..200 => Kind::Skeleton,
-                    200..300 => Kind::Creeper,
-                    300..400 => Kind::Spider,
-                    400..410 => Kind::Enderman,
-                    _ => Kind::Witch,
-                };
-                if kind == Kind::Enderman || kind == Kind::Spider {
-                    // Big mobs need room.
-                    if !walkable(w.get(x, y + 2, z)) {
-                        continue;
-                    }
-                }
-                self.spawn(server, kind, (x as f32 + 0.5, y as f32, z as f32 + 0.5));
-            }
-        }
-    }
-
     /// Nether and End spawns near a player, roughly by biome.
     fn spawn_other_dim(&self, server: &Server, p: &crate::players::PlayerInfo, dim: u8) {
         let w = &server.world;
@@ -2925,8 +2829,16 @@ impl Mobs {
     /// Each chunk near a player gets one roll for a herd on grass; hostiles via spawn_hostiles.
     // TODO: save mobs and rolled chunks, they reroll after a restart
     pub fn spawn_near_players(&self, server: &Server) {
-        self.spawn_hostiles(server);
-        self.spawn_water(server);
+        // Overworld: Bedrock's spawn rules (spawning.rs). Nether and End: the older spawner.
+        crate::spawning::tick(server, &mut || self.rand());
+        if *crate::commands::DIFFICULTY.lock() != 0 {
+            for p in server.all() {
+                let dim = crate::dims::of_f(p.pos.1);
+                if dim != crate::dims::OVERWORLD {
+                    self.spawn_other_dim(server, &p, dim);
+                }
+            }
+        }
         if self.count() >= CAP {
             return;
         }
@@ -2959,9 +2871,6 @@ impl Mobs {
     }
 }
 
-/// Java's monster cap (Bedrock's is lower and per-area; 70 server-wide keeps nights busy
-/// without crowding).
-const HOSTILE_CAP: usize = 70;
 /// Blocks from the nearest player beyond which mobs pause (Bedrock's default simulation
 /// distance is 4 chunks; a bit more so mobs at the edge of view still move).
 const SIMULATION: f32 = 96.0;
@@ -2993,7 +2902,7 @@ fn difficulty_scale() -> f32 {
 }
 
 /// Whether nothing solid is above `p` (64 blocks up): open sky.
-fn sky(w: &crate::world::World, p: (i32, i32, i32)) -> bool {
+pub(crate) fn sky(w: &crate::world::World, p: (i32, i32, i32)) -> bool {
     (p.1 + 1..=(p.1 + 64).min(319)).all(|y| !solid(w.get(p.0, y, p.2)) && !blocks::is_water(w.get(p.0, y, p.2)))
 }
 
@@ -3120,37 +3029,6 @@ pub fn explode(server: &Server, at: (f32, f32, f32), power: f32, by: &'static st
 }
 
 impl Mobs {
-    /// Fish schools and squid in deep-enough water near players.
-    fn spawn_water(&self, server: &Server) {
-        let aquatic = self.mobs.lock().values().filter(|m| m.kind.aquatic()).count();
-        if aquatic >= WATER_CAP {
-            return;
-        }
-        let w = &server.world;
-        for p in server.all() {
-            let a = self.randf() * std::f32::consts::TAU;
-            let r = 12.0 + self.randf() * 28.0;
-            let (x, z) = ((p.pos.0 + a.cos() * r).floor() as i32, (p.pos.2 + a.sin() * r).floor() as i32);
-            let mut y = (p.pos.1 as i32 + 30).min(318);
-            while y > -60 && blocks::is_air(w.get(x, y, z)) {
-                y -= 1;
-            }
-            if !(blocks::is_water(w.get(x, y, z)) && blocks::is_water(w.get(x, y - 3, z))) {
-                continue;
-            }
-            let (kind, n) = match self.rand() % 3 {
-                0 => (Kind::Squid, 1 + self.rand() % 2),
-                _ if w.is_snowy(x, z) => (Kind::Salmon, 3 + self.rand() % 3),
-                1 => (Kind::Cod, 3 + self.rand() % 3),
-                _ => (Kind::Salmon, 3 + self.rand() % 3),
-            };
-            for _ in 0..n {
-                let (ox, oz) = ((self.rand() % 3) as f32 - 1.0, (self.rand() % 3) as f32 - 1.0);
-                self.spawn(server, kind, (x as f32 + 0.5 + ox, (y - 2) as f32, z as f32 + 0.5 + oz));
-            }
-        }
-    }
-
     /// A chunk with village beds gets villagers (one per bed, up to 4), a cat now and then,
     /// and an iron golem if it has the bell. Returns true if it's a village chunk.
     fn populate_village(&self, server: &Server, cx: i32, cz: i32) -> bool {
@@ -3200,7 +3078,6 @@ impl Mobs {
     }
 }
 
-const WATER_CAP: usize = 40;
 
 impl Mobs {
     /// Saves only mobs players care about: villagers, iron golems, pets, saddled mounts and

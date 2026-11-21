@@ -2,6 +2,7 @@
 
 mod blocks;
 mod perf;
+mod spawning;
 mod login;
 mod chunks;
 mod ticks;

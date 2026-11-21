@@ -30,14 +30,15 @@ pub(crate) fn sleep_packet(id: i64, bed: Option<(i32, i32, i32)>) -> Protocol {
     use bedrock::protocol::v2168::enums::DataItemType;
     use bedrock::protocol::v662::types::{ActorRuntimeID, BlockPos, DataItem, PropertySyncData};
     use bedrock::protocol::v924::enums::ActorDataIDs;
-    let (x, y, z) = bed.unwrap_or((0, 0, 0));
+    // Player flag bit 1 = sleeping. Waking leaves the bed position out: sending 0,0,0 made the
+    // client put the player there.
+    let mut actor_data = vec![DataItem { data_item_id: ActorDataIDs::PlayerFlags, data_item_type: DataItemType::Byte(if bed.is_some() { 2 } else { 0 }) }];
+    if let Some((x, y, z)) = bed {
+        actor_data.push(DataItem { data_item_id: ActorDataIDs::BedPosition, data_item_type: DataItemType::Pos(BlockPos { x, y, z }) });
+    }
     Protocol::SetActorDataPacket(Box::new(bedrock::protocol::v662::packets::SetActorDataPacket {
         target_runtime_id: ActorRuntimeID(id as u64),
-        actor_data: vec![
-            // Player flag bit 1 = sleeping.
-            DataItem { data_item_id: ActorDataIDs::PlayerFlags, data_item_type: DataItemType::Byte(if bed.is_some() { 2 } else { 0 }) },
-            DataItem { data_item_id: ActorDataIDs::BedPosition, data_item_type: DataItemType::Pos(BlockPos { x, y, z }) },
-        ],
+        actor_data,
         synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
         tick: 0,
     }))
