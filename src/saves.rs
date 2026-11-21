@@ -25,6 +25,38 @@ pub(crate) fn save_xp(name: &str, xp: xp::Xp) {
     let _ = std::fs::create_dir_all("players").and_then(|()| std::fs::write(player_path(name).with_extension("xp"), xp.to_text()));
 }
 
+/// Health, hunger, air, burning, the held slot and active effects, as text lines:
+/// `health food saturation exhaustion air burning slot`, then `effect id amplifier ticks`.
+pub(crate) fn save_state(name: &str, hp: &health::Health, food: &hunger::Hunger, air: i16, burning: u32, slot: u32, fx: &effects::Effects) {
+    let mut t = format!("{} {} {} {} {air} {burning} {slot}
+", hp.health, food.food, food.saturation, food.exhaustion);
+    for (id, e) in &fx.active {
+        t.push_str(&format!("effect {id} {} {}
+", e.amplifier, e.ticks));
+    }
+    let _ = std::fs::create_dir_all("players").and_then(|()| std::fs::write(player_path(name).with_extension("state"), t));
+}
+
+/// What `save_state` wrote, if anything.
+pub(crate) fn load_state(name: &str) -> Option<(f32, hunger::Hunger, i16, u32, u32, Vec<(i32, effects::Effect)>)> {
+    let t = std::fs::read_to_string(player_path(name).with_extension("state")).ok()?;
+    let mut lines = t.lines();
+    let v: Vec<&str> = lines.next()?.split_whitespace().collect();
+    let f = |i: usize| v.get(i).and_then(|x| x.parse::<f32>().ok());
+    let mut food = hunger::Hunger::default();
+    (food.food, food.saturation, food.exhaustion) = (f(1)?, f(2)?, f(3)?);
+    let fx = lines
+        .filter_map(|l| {
+            let p: Vec<&str> = l.split_whitespace().collect();
+            match p.as_slice() {
+                ["effect", id, amp, ticks] => Some((id.parse().ok()?, effects::Effect { amplifier: amp.parse().ok()?, ticks: ticks.parse().ok()?, particles: true })),
+                _ => None,
+            }
+        })
+        .collect();
+    Some((f(0)?.clamp(0.0, 1024.0), food, f(4)? as i16, f(5)? as u32, f(6)? as u32, fx))
+}
+
 pub(crate) fn save_mode(name: &str, mode: &GameType) {
     let m = match mode {
         GameType::Creative => "creative",

@@ -43,13 +43,15 @@ pub struct Health {
     pub max: f32,
     /// Highest feet y while falling, reset once vertical movement stops.
     fall_from: Option<f32>,
+    /// How far the last landing fell (farmland tramples past 0.75).
+    pub landed: f32,
     last_y: Option<f32>,
     pub dead: bool,
 }
 
 impl Default for Health {
     fn default() -> Self {
-        Self { health: MAX_HEALTH, max: MAX_HEALTH, fall_from: None, last_y: None, dead: false }
+        Self { health: MAX_HEALTH, max: MAX_HEALTH, fall_from: None, landed: 0.0, last_y: None, dead: false }
     }
 }
 
@@ -80,6 +82,7 @@ impl Health {
         }
         // stopped going down, so we landed (or hit a ceiling)
         let fell = self.fall_from.take().map_or(0.0, |from| from - feet_y);
+        self.landed = fell;
         let damage = (fell - 3.0).ceil();
         (damage > 0.0).then_some(Damage::Fall(damage))
     }

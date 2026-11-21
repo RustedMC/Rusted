@@ -89,6 +89,18 @@ pub enum Kind {
     Boat,
     Minecart,
     ChestMinecart,
+    WanderingTrader,
+    TraderLlama,
+    Zoglin,
+    PiglinBrute,
+    SkeletonHorse,
+    ZombieHorse,
+    Endermite,
+    SnowGolem,
+    Wither,
+    Tadpole,
+    Creaking,
+    HappyGhast,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -142,7 +154,7 @@ impl Kind {
 
     /// Mobs a player can sit on. Pigs, striders and camels need a saddle first.
     pub fn rideable(self) -> bool {
-        self.horse_like() || matches!(self, Kind::Pig | Kind::Strider | Kind::Camel | Kind::Boat | Kind::Minecart)
+        self.horse_like() || matches!(self, Kind::Pig | Kind::Strider | Kind::Camel | Kind::Boat | Kind::Minecart | Kind::SkeletonHorse | Kind::ZombieHorse | Kind::HappyGhast)
     }
 
     /// Where the rider's position (their eye) sits above the mob's feet: the seat from the
@@ -151,7 +163,8 @@ impl Kind {
         const PLAYER: f32 = 1.8 * 0.9 * 0.753_086_4;
         PLAYER
             + match self {
-                Kind::Horse => 1.1,
+                Kind::Horse | Kind::SkeletonHorse | Kind::ZombieHorse => 1.1,
+                Kind::HappyGhast => 3.6,
                 Kind::Donkey => 0.925,
                 Kind::Mule => 0.975,
                 Kind::Pig => 0.63,
@@ -176,7 +189,7 @@ impl Kind {
     }
 
     pub const PASSIVE: [Kind; 4] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken];
-    pub const ALL: [Kind; 74] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken, Kind::Zombie, Kind::Skeleton, Kind::Creeper, Kind::Spider, Kind::Enderman, Kind::Villager, Kind::IronGolem, Kind::Wolf, Kind::Cat, Kind::Squid, Kind::Cod, Kind::Salmon, Kind::Drowned, Kind::Rabbit, Kind::Horse, Kind::Donkey, Kind::Mule, Kind::Llama, Kind::Goat, Kind::Fox, Kind::Panda, Kind::PolarBear, Kind::Mooshroom, Kind::Ocelot, Kind::Turtle, Kind::Armadillo, Kind::Camel, Kind::Sniffer, Kind::Frog, Kind::Axolotl, Kind::GlowSquid, Kind::TropicalFish, Kind::Pufferfish, Kind::Dolphin, Kind::Bat, Kind::Parrot, Kind::Bee, Kind::Allay, Kind::Husk, Kind::Stray, Kind::Bogged, Kind::ZombieVillager, Kind::CaveSpider, Kind::Silverfish, Kind::Witch, Kind::Slime, Kind::Phantom, Kind::Pillager, Kind::Vindicator, Kind::Evoker, Kind::Ravager, Kind::Vex, Kind::Guardian, Kind::ElderGuardian, Kind::Breeze, Kind::Warden, Kind::WitherSkeleton, Kind::Blaze, Kind::Ghast, Kind::MagmaCube, Kind::Piglin, Kind::ZombiePigman, Kind::Hoglin, Kind::Strider, Kind::EnderDragon, Kind::EndCrystal, Kind::Shulker, Kind::Boat, Kind::Minecart, Kind::ChestMinecart];
+    pub const ALL: [Kind; 86] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken, Kind::Zombie, Kind::Skeleton, Kind::Creeper, Kind::Spider, Kind::Enderman, Kind::Villager, Kind::IronGolem, Kind::Wolf, Kind::Cat, Kind::Squid, Kind::Cod, Kind::Salmon, Kind::Drowned, Kind::Rabbit, Kind::Horse, Kind::Donkey, Kind::Mule, Kind::Llama, Kind::Goat, Kind::Fox, Kind::Panda, Kind::PolarBear, Kind::Mooshroom, Kind::Ocelot, Kind::Turtle, Kind::Armadillo, Kind::Camel, Kind::Sniffer, Kind::Frog, Kind::Axolotl, Kind::GlowSquid, Kind::TropicalFish, Kind::Pufferfish, Kind::Dolphin, Kind::Bat, Kind::Parrot, Kind::Bee, Kind::Allay, Kind::Husk, Kind::Stray, Kind::Bogged, Kind::ZombieVillager, Kind::CaveSpider, Kind::Silverfish, Kind::Witch, Kind::Slime, Kind::Phantom, Kind::Pillager, Kind::Vindicator, Kind::Evoker, Kind::Ravager, Kind::Vex, Kind::Guardian, Kind::ElderGuardian, Kind::Breeze, Kind::Warden, Kind::WitherSkeleton, Kind::Blaze, Kind::Ghast, Kind::MagmaCube, Kind::Piglin, Kind::ZombiePigman, Kind::Hoglin, Kind::Strider, Kind::EnderDragon, Kind::EndCrystal, Kind::Shulker, Kind::Boat, Kind::Minecart, Kind::ChestMinecart, Kind::WanderingTrader, Kind::TraderLlama, Kind::Zoglin, Kind::PiglinBrute, Kind::SkeletonHorse, Kind::ZombieHorse, Kind::Endermite, Kind::SnowGolem, Kind::Wither, Kind::Tadpole, Kind::Creaking, Kind::HappyGhast];
 
     pub fn spec(self) -> &'static Spec {
         match self {
@@ -253,6 +266,19 @@ impl Kind {
             Kind::Strider => &Spec { id: "minecraft:strider", display: "Strider", health: 20.0, size: (0.9, 1.7), speed: 0.1, melee: 0.0, class: Class::Passive, food: &["minecraft:warped_fungus"], drops: &[("minecraft:string", 0, 5)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
             Kind::Boat => &Spec { id: "minecraft:boat", display: "Boat", health: 4.0, size: (1.4, 0.455), speed: 0.0, melee: 0.0, class: Class::Passive, food: &[], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
             Kind::ChestMinecart => &Spec { id: "minecraft:chest_minecart", display: "Minecart with Chest", health: 3.0, size: (0.98, 0.7), speed: 0.0, melee: 0.0, class: Class::Passive, food: &[], drops: &[("minecraft:minecart", 1, 1), ("minecraft:chest", 1, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            // Vanilla Bedrock stats; AI from the closest existing class (from PNX's entity list).
+            Kind::WanderingTrader => &Spec { id: "minecraft:wandering_trader", display: "Wandering Trader", health: 20.0, size: (0.6, 1.9), speed: 0.25, melee: 0.0, class: Class::Passive, food: &[], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::TraderLlama => &Spec { id: "minecraft:trader_llama", display: "Trader Llama", health: 22.0, size: (0.9, 1.87), speed: 0.25, melee: 1.0, class: Class::Neutral, food: &["minecraft:wheat", "minecraft:hay_block"], drops: &[("minecraft:leather", 0, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: Some("minecraft:llama_spit"), hit_effect: None },
+            Kind::Zoglin => &Spec { id: "minecraft:zoglin", display: "Zoglin", health: 40.0, size: (1.4, 1.4), speed: 0.3, melee: 8.0, class: Class::Hostile, food: &[], drops: &[("minecraft:rotten_flesh", 1, 3)], undead: true, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::PiglinBrute => &Spec { id: "minecraft:piglin_brute", display: "Piglin Brute", health: 50.0, size: (0.6, 1.9), speed: 0.35, melee: 13.0, class: Class::Hostile, food: &[], drops: &[("minecraft:golden_axe", 0, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::SkeletonHorse => &Spec { id: "minecraft:skeleton_horse", display: "Skeleton Horse", health: 15.0, size: (1.4, 1.6), speed: 0.3, melee: 0.0, class: Class::Passive, food: &[], drops: &[("minecraft:bone", 0, 2)], undead: true, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::ZombieHorse => &Spec { id: "minecraft:zombie_horse", display: "Zombie Horse", health: 15.0, size: (1.4, 1.6), speed: 0.25, melee: 0.0, class: Class::Passive, food: &[], drops: &[("minecraft:rotten_flesh", 0, 2)], undead: true, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Endermite => &Spec { id: "minecraft:endermite", display: "Endermite", health: 8.0, size: (0.4, 0.3), speed: 0.3, melee: 2.0, class: Class::Hostile, food: &[], drops: &[], undead: false, arthropod: true, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::SnowGolem => &Spec { id: "minecraft:snow_golem", display: "Snow Golem", health: 4.0, size: (0.7, 1.9), speed: 0.2, melee: 0.0, class: Class::Passive, food: &[], drops: &[("minecraft:snowball", 0, 15)], undead: false, arthropod: false, burns: false, splits: false, ranged: Some("minecraft:snowball"), hit_effect: None },
+            Kind::Wither => &Spec { id: "minecraft:wither", display: "Wither", health: 600.0, size: (1.0, 3.0), speed: 0.3, melee: 8.0, class: Class::FlyingHostile, food: &[], drops: &[("minecraft:nether_star", 1, 1)], undead: true, arthropod: false, burns: false, splits: false, ranged: Some("minecraft:wither_skull"), hit_effect: Some((20, 10)) },
+            Kind::Tadpole => &Spec { id: "minecraft:tadpole", display: "Tadpole", health: 6.0, size: (0.4, 0.3), speed: 0.2, melee: 0.0, class: Class::Aquatic, food: &["minecraft:slime_ball"], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::Creaking => &Spec { id: "minecraft:creaking", display: "Creaking", health: 1.0, size: (0.9, 2.7), speed: 0.3, melee: 3.0, class: Class::Hostile, food: &[], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            Kind::HappyGhast => &Spec { id: "minecraft:happy_ghast", display: "Happy Ghast", health: 20.0, size: (4.0, 4.0), speed: 0.15, melee: 0.0, class: Class::Flying, food: &["minecraft:snowball"], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
             Kind::Minecart => &Spec { id: "minecraft:minecart", display: "Minecart", health: 3.0, size: (0.98, 0.7), speed: 0.0, melee: 0.0, class: Class::Passive, food: &[], drops: &[("minecraft:minecart", 1, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
         }
     }
@@ -392,9 +418,15 @@ pub struct Mob {
     pub captain: bool,
     /// Player riding it.
     pub rider: Option<i64>,
+    /// Second seat (boats, camels): rides along, doesn't steer.
+    passenger: Option<i64>,
+    /// When the driver's client last sent this vehicle's position (it steers boats and horses).
+    steered: Option<std::time::Instant>,
     saddled: bool,
     /// A player fed or bred it (or it was born from breeding): saved across restarts.
     kept: bool,
+    /// A creeper lit with flint and steel: blows up whatever happens.
+    lit: bool,
     /// Ticks into drawing a bow / charging a crossbow (0 = not drawing), and who at.
     draw: u32,
     aim: i64,
@@ -573,6 +605,12 @@ const JUMP: f32 = 0.55;
 
 fn broadcast(server: &Server, p: Protocol) {
     let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(p) });
+}
+
+/// (pitch, yaw) in degrees for something flying with `vel` (PNX EntityProjectile.updateRotation).
+fn projectile_rotation(vel: (f32, f32, f32)) -> (f32, f32) {
+    let f = (vel.0 * vel.0 + vel.2 * vel.2).sqrt();
+    (vel.1.atan2(f).to_degrees(), vel.0.atan2(vel.2).to_degrees())
 }
 
 fn angle(deg: f32) -> i8 {
@@ -773,6 +811,11 @@ fn held_packet(m: &Mob) -> Option<Protocol> {
 
 /// Puts `rider` on `vehicle`, or takes them off.
 fn link_packet(vehicle: i64, rider: i64, on: bool) -> Protocol {
+    link_packet_as(vehicle, rider, on, true)
+}
+
+/// `driver` false links a passenger (second seat).
+fn link_packet_as(vehicle: i64, rider: i64, on: bool, driver: bool) -> Protocol {
     use bedrock::protocol::v662::enums::ActorLinkType;
     use bedrock::protocol::v662::packets::SetActorLinkPacket;
     use bedrock::protocol::v712::types::ActorLink;
@@ -780,7 +823,7 @@ fn link_packet(vehicle: i64, rider: i64, on: bool) -> Protocol {
         link: ActorLink {
             actor_unique_id_a: ActorUniqueID(vehicle),
             actor_unique_id_b: ActorUniqueID(rider),
-            link_type: if on { ActorLinkType::Riding } else { ActorLinkType::None },
+            link_type: if !on { ActorLinkType::None } else if driver { ActorLinkType::Riding } else { ActorLinkType::Passenger },
             immediate: !on,
             passenger_initiated: true,
             vehicle_angular_velocity: 0.0,
@@ -791,13 +834,25 @@ fn link_packet(vehicle: i64, rider: i64, on: bool) -> Protocol {
 /// The player's RIDING flag (bit 2), so they sit instead of stand, and their seat: where the
 /// client draws them on the mob, and for boats how far they can turn (PNX applySeatOffsets).
 fn rider_flag(player: i64, on: bool, kind: Kind) -> Protocol {
+    seat_flag(player, on, kind, false)
+}
+
+/// Same for either seat: the passenger sits behind (boat -0.6 along it, camel z -0.5; the
+/// camel's driver sits forward at +0.5), PNX EntityBoat/EntityCamel seats.
+fn seat_flag(player: i64, on: bool, kind: Kind, passenger: bool) -> Protocol {
     let item = |id, t| DataItem { data_item_id: id, data_item_type: t };
     let boat = on && kind == Kind::Boat;
+    let (sx, sz) = match (kind, passenger) {
+        (Kind::Boat, true) => (-0.6, 0.0),
+        (Kind::Camel, false) => (0.0, 0.5),
+        (Kind::Camel, true) => (0.0, -0.5),
+        _ => (0.0, 0.0),
+    };
     Protocol::SetActorDataPacket(Box::new(bedrock::protocol::v662::packets::SetActorDataPacket {
         target_runtime_id: ActorRuntimeID(player as u64),
         actor_data: vec![
             item(ActorDataIDs::Reserved0, DataItemType::Int64(crate::spawn::FLAGS | (on as i64) << 2)),
-            item(ActorDataIDs::Reserved056, DataItemType::Vec3((0.0, if on { kind.seat_offset() } else { 0.0 }, 0.0))),
+            item(ActorDataIDs::Reserved056, DataItemType::Vec3(if on { (sx, kind.seat_offset(), sz) } else { (0.0, 0.0, 0.0) })),
             item(ActorDataIDs::SeatLockPassengerRotation, DataItemType::Byte(boat as i8)),
             item(ActorDataIDs::SeatLockPassengerRotationDegrees, DataItemType::Float(if boat { 90.0 } else { 0.0 })),
             item(ActorDataIDs::SeatRotationOffset, DataItemType::Byte(boat as i8)),
@@ -878,7 +933,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: kind.max_health(), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: if baby { GROW } else { 0 }, baby: if baby { GROW } else { 0 },
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, kept: false, draw: 0, aim: 0, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
+            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, passenger: None, steered: None, saddled: false, kept: false, lit: false, draw: 0, aim: 0, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
         };
         let size = [1u8, 2, 4][(self.rand() % 3) as usize];
         if kind.spec().splits {
@@ -906,7 +961,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: (size as f32).powi(2), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: 0,
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, saddled: false, kept: false, draw: 0, aim: 0, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
+            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, passenger: None, steered: None, saddled: false, kept: false, lit: false, draw: 0, aim: 0, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
         };
         broadcast(server, add_packet(&m));
         if let Some(p) = held_packet(&m) {
@@ -947,6 +1002,10 @@ impl Mobs {
             return Use::Nothing;
         }
         use bedrock::protocol::v975::enums::ActorEvent;
+        if m.kind == Kind::Creeper && held == "minecraft:flint_and_steel" {
+            m.lit = true;
+            return Use::Wear;
+        }
         if m.kind == Kind::ChestMinecart {
             return m.home.map_or(Use::Nothing, |h| Use::OpenCart(cart_store(h)));
         }
@@ -988,7 +1047,17 @@ impl Mobs {
                 broadcast(server, event(id, ActorEvent::Feed));
                 return Use::Consume;
             }
-            let can_ride = m.kind.horse_like() || m.saddled || matches!(m.kind, Kind::Boat | Kind::Minecart);
+            let can_ride = m.kind.horse_like() || m.saddled || matches!(m.kind, Kind::Boat | Kind::Minecart | Kind::SkeletonHorse | Kind::ZombieHorse);
+            // Boats and camels take a second rider behind the driver (PNX RideableComponent seats).
+            if can_ride && m.rider.is_some_and(|r| r != player) && m.passenger.is_none() && matches!(m.kind, Kind::Boat | Kind::Camel) && !m.kind.food(held) {
+                m.passenger = Some(player);
+                let packets = [link_packet_as(id, player, true, false), seat_flag(player, true, m.kind, true), data_packet(m)];
+                drop(mobs);
+                for p in packets {
+                    broadcast(server, p);
+                }
+                return Use::Mount;
+            }
             if can_ride && m.rider.is_none() && !m.kind.food(held) {
                 m.rider = Some(player);
                 m.path.clear();
@@ -1057,8 +1126,20 @@ impl Mobs {
         self.mobs.lock().contains_key(&id)
     }
 
-    pub fn rider_of(&self, id: i64) -> Option<i64> {
-        self.mobs.lock().get(&id).and_then(|m| m.rider)
+    /// Whether `player` sits on mob `id`, driving or as the passenger.
+    pub fn carries(&self, id: i64, player: i64) -> bool {
+        self.mobs.lock().get(&id).is_some_and(|m| m.rider == Some(player) || m.passenger == Some(player))
+    }
+
+    /// The driver's client moved the vehicle it steers (boats, horses, camels): that's where it is.
+    pub fn client_move(&self, id: i64, player: i64, pos: (f32, f32, f32), yaw: f32) {
+        if let Some(m) = self.mobs.lock().get_mut(&id).filter(|m| m.rider == Some(player) && !m.kind.cart()) {
+            m.pos = pos;
+            m.yaw = yaw;
+            m.head_yaw = yaw;
+            m.vel = (0.0, 0.0, 0.0);
+            m.steered = Some(std::time::Instant::now());
+        }
     }
 
     /// The rider moved: the client steers ridden mobs, so the mob follows its rider.
@@ -1068,6 +1149,10 @@ impl Mobs {
             if m.kind == Kind::Minecart {
                 // The server drives minecarts; holding forward only gives them a push.
                 m.push = forward.then_some(yaw);
+                return;
+            }
+            // The client's own vehicle moves win; the rider's eye is only a fallback (pigs, striders).
+            if m.steered.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1)) {
                 return;
             }
             m.pos = (eye.0, eye.1 - m.kind.seat_offset(), eye.2);
@@ -1082,10 +1167,26 @@ impl Mobs {
     /// Takes `player` off whatever they're riding.
     pub fn dismount(&self, server: &Server, player: i64) {
         let mut mobs = self.mobs.lock();
+        if let Some(m) = mobs.values_mut().find(|m| m.passenger == Some(player)) {
+            m.passenger = None;
+            let packets = [link_packet(m.id, player, false), rider_flag(player, false, m.kind), data_packet(m)];
+            drop(mobs);
+            for p in packets {
+                broadcast(server, p);
+            }
+            return;
+        }
         let Some(m) = mobs.values_mut().find(|m| m.rider == Some(player)) else { return };
         m.rider = None;
         m.buck = 0;
-        let packets = [link_packet(m.id, player, false), rider_flag(player, false, m.kind), data_packet(m)];
+        m.steered = None;
+        let mut packets = vec![link_packet(m.id, player, false), rider_flag(player, false, m.kind)];
+        // The passenger moves up to the driver's seat.
+        if let Some(p) = m.passenger.take() {
+            m.rider = Some(p);
+            packets.extend([link_packet(m.id, p, true), rider_flag(p, true, m.kind)]);
+        }
+        packets.push(data_packet(m));
         drop(mobs);
         for p in packets {
             broadcast(server, p);
@@ -1293,6 +1394,7 @@ impl Mobs {
         m.target = None;
         use bedrock::protocol::v975::enums::ActorEvent;
         broadcast(server, event(id, ActorEvent::Hurt));
+        broadcast(server, mob_sound(if m.health <= 0.0 { "death" } else { "hurt" }, m.kind, m.pos, m.baby > 0));
         if m.health <= 0.0 {
             m.dying = 10;
             broadcast(server, event(id, ActorEvent::Death));
@@ -1379,6 +1481,10 @@ impl Mobs {
                 out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
                 continue;
             }
+            // Idle sounds now and then (vanilla: about every 8 seconds on average).
+            if m.dying == 0 && !matches!(m.kind, Kind::Boat | Kind::Minecart | Kind::ChestMinecart | Kind::EndCrystal) && self.rand().is_multiple_of(80) {
+                out.push(mob_sound("ambient", m.kind, m.pos, m.baby > 0));
+            }
             if m.dying > 0 {
                 m.dying -= 1;
                 if m.dying == 0 {
@@ -1396,6 +1502,12 @@ impl Mobs {
                 }
             }
             m.cooldown = m.cooldown.saturating_sub(1);
+            if let Some(p) = m.passenger
+                && (server.get(p).is_none() || m.health <= 0.0)
+            {
+                m.passenger = None;
+                out.extend([link_packet(id, p, false), rider_flag(p, false, m.kind)]);
+            }
             if let Some(r) = m.rider {
                 use bedrock::protocol::v975::enums::ActorEvent;
                 if server.get(r).is_none() || m.health <= 0.0 {
@@ -1680,6 +1792,36 @@ impl Mobs {
     fn hostile(&self, server: &Server, m: &mut Mob, out: &mut Vec<Protocol>) -> bool {
         let w = &server.world;
         let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
+        if m.kind == Kind::Creeper {
+            // Lit with flint and steel (PNX EntityCreeper): the fuse runs out no matter what.
+            if m.lit {
+                if m.fuse == 0 {
+                    out.push(data_packet(&Mob { fuse: 1, ..m.clone() }));
+                    out.push(crate::packets::play_sound("random.fuse", m.pos));
+                }
+                m.fuse += 1;
+                if m.fuse >= 15 {
+                    explode(server, m.pos, 3.0, Kind::Creeper.display());
+                    return true;
+                }
+                return false;
+            }
+            // Creepers run from cats and ocelots within 6 blocks (vanilla AvoidEntityGoal).
+            if let Some((_, c)) = self.snapshot().into_iter().find(|(k, p)| matches!(k, Kind::Cat | Kind::Ocelot) && dist2(*p, m.pos) < 36.0) {
+                if m.fuse > 0 {
+                    m.fuse = 0;
+                    out.push(data_packet(m));
+                }
+                let (dx, dz) = (m.pos.0 - c.0, m.pos.2 - c.2);
+                let len = (dx * dx + dz * dz).sqrt().max(0.01);
+                let away = ((m.pos.0 + dx / len * 8.0).floor() as i32, feet.1, (m.pos.2 + dz / len * 8.0).floor() as i32);
+                if m.path.is_empty() || self.rand().is_multiple_of(10) {
+                    m.path = path(w, feet, away, 80);
+                }
+                self.steer(m);
+                return false;
+            }
+        }
         let t = server.time().rem_euclid(24_000);
         let day = !(12_500..23_500).contains(&t);
         let open_sky = sky(w, feet);
@@ -1848,7 +1990,7 @@ impl Mobs {
                     m.path.clear();
                     if m.fuse == 0 {
                         out.push(data_packet(&Mob { fuse: 1, ..m.clone() }));
-                        out.push(sound("fuse", m.pos));
+                        out.push(crate::packets::play_sound("random.fuse", m.pos));
                     }
                     m.fuse += 1;
                     if m.fuse >= 15 {
@@ -2440,9 +2582,10 @@ impl Mobs {
             actor_type: if trident { "minecraft:thrown_trident" } else { "minecraft:arrow" }.into(),
             position: from,
             velocity: (vel.0 / 2.0, vel.1 / 2.0, vel.2 / 2.0),
-            rotation: (0.0, 0.0),
+            // Pointing along its flight from the start (PNX EntityProjectile.updateRotation).
+            rotation: projectile_rotation(vel),
             y_head_rotation: 0.0,
-            y_body_rotation: 0.0,
+            y_body_rotation: projectile_rotation(vel).1,
             attributes: vec![],
             actor_data: vec![],
             synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
@@ -2470,6 +2613,15 @@ impl Mobs {
                 return false;
             }
             if a.stuck {
+                // A landed player arrow or trident waits to be picked up by walking into it.
+                if let Some(by) = &a.by
+                    && let Some(d) = &by.drop
+                    && let Some(p) = players.iter().find(|p| dist2((p.pos.0, p.pos.1 - 1.0, p.pos.2), a.pos) < 2.25)
+                {
+                    drops.push((d.clone(), (p.pos.0, p.pos.1 - 1.2, p.pos.2)));
+                    out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(a.id) })));
+                    return false;
+                }
                 return true;
             }
             // Move in small steps so fast arrows don't skip through blocks or players.
@@ -2506,23 +2658,43 @@ impl Mobs {
                                 let _ = server.events.send(Event::Ignite { to: p.id, secs: 5 });
                             }
                         }
-                        // Tridents drop where they hit (Loyalty: back at the thrower's feet);
-                        // arrows that hit something are gone.
+                        // Tridents bounce off what they hit and fall (PNX EntityThrownTrident:
+                        // motion x -0.01, y -0.1), to be picked up where they land; Loyalty brings
+                        // them straight back. Arrows that hit something are gone.
                         if by.damage.is_some() && let Some(d) = by.drop.clone() {
-                            let back = (crate::enchant::level(&by.weapon, crate::enchant::LOYALTY) > 0).then(|| server.get(by.owner)).flatten();
-                            drops.push((d, back.map_or(next, |o| (o.pos.0, o.pos.1 - 1.2, o.pos.2))));
+                            if crate::enchant::level(&by.weapon, crate::enchant::LOYALTY) > 0
+                                && let Some(o) = server.get(by.owner)
+                            {
+                                drops.push((d, (o.pos.0, o.pos.1 - 1.2, o.pos.2)));
+                            } else {
+                                if let Some(&(mid, ..)) = hit_mob {
+                                    by.pierced.push(mid);
+                                }
+                                by.damage = Some(0.0);
+                                a.by = Some(by);
+                                a.vel = (a.vel.0 * -0.01, a.vel.1 * -0.1, a.vel.2 * -0.01);
+                                break;
+                            }
                         }
                         out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(a.id) })));
                         return false;
                     }
                     if solid(server.world.get(next.0.floor() as i32, next.1.floor() as i32, next.2.floor() as i32)) {
-                        // TODO: arrows land as items right away, should stick and get picked up by touch
-                        if let Some(d) = by.drop.clone() {
-                            let back = (by.damage.is_some() && crate::enchant::level(&by.weapon, crate::enchant::LOYALTY) > 0).then(|| server.get(by.owner)).flatten();
-                            drops.push((d, back.map_or(a.pos, |o| (o.pos.0, o.pos.1 - 1.2, o.pos.2))));
+                        // Loyalty tridents come back; everything else sticks where it landed for a
+                        // minute (PNX despawns arrows after 1200 ticks) until someone picks it up.
+                        if by.damage.is_some()
+                            && crate::enchant::level(&by.weapon, crate::enchant::LOYALTY) > 0
+                            && let (Some(d), Some(o)) = (by.drop.clone(), server.get(by.owner))
+                        {
+                            drops.push((d, (o.pos.0, o.pos.1 - 1.2, o.pos.2)));
+                            out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(a.id) })));
+                            return false;
                         }
-                        out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(a.id) })));
-                        return false;
+                        a.by = Some(by);
+                        a.stuck = true;
+                        a.life = a.life.max(60 * TPS);
+                        a.vel = (0.0, 0.0, 0.0);
+                        break;
                     }
                     a.pos = next;
                     continue;
@@ -2580,8 +2752,8 @@ impl Mobs {
                     actor_runtime_id: ActorRuntimeID(a.id as u64),
                     header: 0,
                     position: a.pos,
-                    rotation_x: angle((-a.vel.1).atan2((a.vel.0.powi(2) + a.vel.2.powi(2)).sqrt()).to_degrees()),
-                    rotation_y: angle((-a.vel.0).atan2(a.vel.2).to_degrees()),
+                    rotation_x: angle(projectile_rotation(a.vel).0),
+                    rotation_y: angle(projectile_rotation(a.vel).1),
                     rotation_y_head: 0,
                 },
             })));
@@ -3022,6 +3194,20 @@ pub(crate) fn sky(w: &crate::world::World, p: (i32, i32, i32)) -> bool {
     (p.1 + 1..=(p.1 + 64).min(319)).all(|y| !solid(w.get(p.0, y, p.2)) && !blocks::is_water(w.get(p.0, y, p.2)))
 }
 
+/// A mob's own sound (ambient, hurt, death...): the client picks the clip from the mob type.
+pub fn mob_sound(name: &str, kind: Kind, at: (f32, f32, f32), baby: bool) -> Protocol {
+    Protocol::LevelSoundEventPacket(Box::new(bedrock::protocol::v1001::packets::LevelSoundEventPacket {
+        event_name: name.into(),
+        position: at,
+        data: -1,
+        actor_identifier: kind.identifier().into(),
+        is_baby_mob: baby,
+        is_global: false,
+        entity_unique_id: u64::MAX,
+        fire_at_position: None,
+    }))
+}
+
 fn sound(name: &str, at: (f32, f32, f32)) -> Protocol {
     Protocol::LevelSoundEventPacket(Box::new(bedrock::protocol::v1001::packets::LevelSoundEventPacket {
         event_name: name.into(),
@@ -3375,7 +3561,7 @@ impl Mobs {
                         id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health, on_ground: false, target: None, panic: 0, dying: 0,
                         sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: baby.parse().unwrap_or(0),
                         aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner, sitting: *sitting == "1",
-                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false, rider: None, saddled, kept, draw: 0, aim: 0, temper, buck: 0, push: None, home, brain: Default::default(),
+                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false, rider: None, passenger: None, steered: None, saddled, kept, lit: false, draw: 0, aim: 0, temper, buck: 0, push: None, home, brain: Default::default(),
                     });
                     if let Some(site) = job.and_then(|j| j.site) {
                         crate::villagers::claim(site, id);
@@ -3425,6 +3611,8 @@ pub enum Use {
     Milk,
     /// The player is now riding it.
     Mount,
+    /// Used a tool on it (flint and steel on a creeper): one durability.
+    Wear,
     /// A chest minecart: open the chest kept at this container-store key.
     OpenCart((i32, i32, i32)),
 }
@@ -3623,7 +3811,7 @@ mod tests {
         assert!((2..=4).contains(&kids), "split into {kids}");
         assert!(server.mobs.count() >= before + 3);
         assert_eq!(Kind::from_name("cave_spider").map(|k| k.spec().hit_effect), Some(Some((19, 7))));
-        assert_eq!(Kind::ALL.len(), 74);
+        assert_eq!(Kind::ALL.len(), 86);
 
         // An ender pearl thrown straight down lands and teleports its thrower.
         let mut rx = server.events.subscribe();
@@ -3748,14 +3936,24 @@ mod tests {
         assert!(matches!(server.mobs.interact(&server, pig, None, 7), Use::Nothing));
         assert!(matches!(server.mobs.interact(&server, pig, Some("minecraft:saddle"), 7), Use::Consume));
         assert!(matches!(server.mobs.interact(&server, pig, None, 7), Use::Mount));
-        assert_eq!(server.mobs.rider_of(pig), Some(7));
+        assert!(server.mobs.carries(pig, 7));
+        // Boats seat two; the passenger moves up when the driver gets off.
+        server.join(crate::players::tests::sample(8));
+        server.join(crate::players::tests::sample(9));
+        let boat = server.mobs.spawn(&server, Kind::Boat, at(20.5));
+        assert!(matches!(server.mobs.interact(&server, boat, None, 9), Use::Mount));
+        assert!(matches!(server.mobs.interact(&server, boat, None, 8), Use::Mount));
+        assert!(server.mobs.carries(boat, 8));
+        server.mobs.dismount(&server, 9);
+        assert_eq!(server.mobs.mobs.lock()[&boat].rider, Some(8), "passenger drives now");
+        server.mobs.dismount(&server, 8);
         // The ridden pig follows its rider and doesn't wander off on its own.
         server.mobs.ride(pig, 7, (10.0, -57.0, 3.0), 90.0, false);
         server.mobs.tick(&server);
         let p = server.mobs.mobs.lock()[&pig].pos;
         assert!((p.0 - 10.0).abs() < 1e-3 && (p.2 - 3.0).abs() < 1e-3, "{p:?}");
         server.mobs.dismount(&server, 7);
-        assert_eq!(server.mobs.rider_of(pig), None);
+        assert!(!server.mobs.carries(pig, 7));
 
         // An untamed horse takes no saddle, but can be ridden to tame it.
         let horse = server.mobs.spawn(&server, Kind::Horse, at(20.5));
@@ -3774,7 +3972,7 @@ mod tests {
             server.mobs.tick(&server);
         }
         assert_eq!(server.mobs.mobs.lock()[&horse].owner, Some(7), "tamed after riding it");
-        assert_eq!(server.mobs.rider_of(horse), Some(7), "and still riding");
+        assert!(server.mobs.carries(horse, 7), "and still riding");
         server.mobs.dismount(&server, 7);
         assert!(matches!(server.mobs.interact(&server, horse, Some("minecraft:saddle"), 7), Use::Consume));
 

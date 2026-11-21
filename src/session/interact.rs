@@ -56,6 +56,28 @@ impl Session {
             let _ = self.conn.send(&[self.inv.content_packet()]).await;
             return;
         }
+        // Use in the air with armor (or an elytra, a carved pumpkin, a head): put it on, swapping
+        // with what's worn, with the equip sound (Nukkit ItemArmor.onClickAir).
+        if let InventoryTransactionData::ItemUse(u) = &t.data
+            && u.action_type == 1
+            && !matches!(self.mode, GameType::Spectator)
+            && let Some(name) = self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id))
+            && let Some(piece) = armor_slot(name)
+        {
+            let sound = armor_sound(name);
+            let (held, worn) = (self.selected_slot as usize, inventory::ARMOR + piece);
+            // Curse of Binding keeps the worn piece on.
+            let bound = !matches!(self.mode, GameType::Creative) && self.inv.slots[worn].as_ref().is_some_and(|s| enchant::level(&s.item.user_data_buffer, enchant::BINDING) > 0);
+            if !bound {
+                self.inv.slots.swap(held, worn);
+                let _ = self.conn.send(&[self.inv.content_packet()]).await;
+                if let Some(me) = self.server.get(self.id) {
+                    let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(level_sound(sound, me.pos, -1)) });
+                    save_player(&self.name, me.pos, &self.inv);
+                }
+            }
+            return;
+        }
         // Use in the air (action 1) with a bow or trident: start drawing it.
         if let InventoryTransactionData::ItemUse(u) = &t.data
             && u.action_type == 1
@@ -369,15 +391,23 @@ impl Session {
                     } else if !n.contains("repeater") && !n.contains("comparator") {
                         let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(level_event(1003, (p.x, p.y, p.z))) });
                     }
-                    // Fence gates swing away from the player: opening one from its far side turns it.
+                    // PNX BlockFenceGate.setOpen: every toggle re-faces the gate from the player's yaw,
+                    // so it swings away from them.
                     let yaw = self.server.get(self.id).map_or(0.0, |me| me.rot.1);
-                    let look = (((yaw.rem_euclid(360.0) + 45.0) / 90.0) as i32) % 4; // 0 S, 1 W, 2 N, 3 E
+                    let rotation = (yaw - 90.0).rem_euclid(360.0);
                     for ((bx, by, bz), mut b) in changes {
                         if blocks::entry(b).is_some_and(|e| e.name.ends_with("fence_gate"))
-                            && matches!(blocks::state(b, "open_bit"), Some(blocks::State::Bool(true)))
-                            && matches!(blocks::state(b, "direction"), Some(blocks::State::Int(d)) if *d == (look + 2) % 4)
+                            && let Some(blocks::State::Str(d)) = blocks::state(b, "minecraft:cardinal_direction")
                         {
-                            b = blocks::with(b, &[("direction", blocks::State::Int(look))]);
+                            let z_axis = matches!(d.as_str(), "north" | "south");
+                            let face = if z_axis {
+                                if rotation < 180.0 { "north" } else { "south" }
+                            } else if (90.0..270.0).contains(&rotation) {
+                                "east"
+                            } else {
+                                "west"
+                            };
+                            b = blocks::with(b, &[("minecraft:cardinal_direction", blocks::State::Str(face.into()))]);
                         }
                         self.server.set_block_quiet(self.id, bx, by, bz, b);
                     }
@@ -451,6 +481,7 @@ impl Session {
             if !matches!(self.mode, GameType::Spectator) && !commands::spawn_protected(&self.server, &self.name, (p.x, p.y, p.z)) {
                 let at = (p.x as f32 + dx as f32 + 0.5, (p.y + dy) as f32, p.z as f32 + dz as f32 + 0.5);
                 self.server.mobs.spawn(&self.server, kind, at);
+                let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(mobs::mob_sound("ambient", kind, at, false)) });
                 if survival_like(&self.mode) {
                     self.inv.use_one(self.selected_slot as usize);
                     let _ = self.conn.send(&[self.inv.content_packet()]).await;
@@ -518,10 +549,25 @@ impl Session {
         let (x, y, z) = if replaceable(self.server.world.get(p.x, p.y, p.z)) { (p.x, p.y, p.z) } else { (p.x + dx, p.y + dy, p.z + dz) };
         let (pitch, yaw) = self.server.get(self.id).map(|me| me.rot).unwrap_or_default();
         let click = placement::Click { face: u.block_face, click_y: u.click_position.1, yaw, pitch };
-        let parts: Vec<_> = placement::orient(block_id, &click)
+        let mut parts: Vec<_> = placement::orient(block_id, &click)
             .into_iter()
             .map(|(o, b)| (o, if blocks::has_state(b, "persistent_bit") { blocks::with(b, &[("persistent_bit", blocks::State::Bool(true))]) } else { b }))
             .collect();
+        // PNX BlockDoor.place: hinge on the right when a door is already on the left, or the
+        // left is open and the right is solid (so double doors pair up).
+        if blocks::has_state(block_id, "door_hinge_bit") {
+            let look = (((yaw.rem_euclid(360.0) + 45.0) / 90.0) as i32) % 4; // 0 S, 1 W, 2 N, 3 E
+            let (lx, lz) = [(1, 0), (0, 1), (-1, 0), (0, -1)][look as usize]; // rotateYCCW of the facing
+            let left = self.server.world.get(x + lx, y, z + lz);
+            let right = self.server.world.get(x - lx, y, z - lz);
+            let same = blocks::entry(left).map(|e| &e.name) == blocks::entry(block_id).map(|e| &e.name);
+            let open = |b: i32| !crate::overworld::feature::blocks::is_solid(b);
+            if same || (!open(right) && open(left)) {
+                for (_, b) in parts.iter_mut() {
+                    *b = blocks::with(*b, &[("door_hinge_bit", blocks::State::Bool(true))]);
+                }
+            }
+        }
         // All parts (both door halves, both bed halves) need free space.
         let fits = spawn::can_build(&self.mode) && !commands::spawn_protected(&self.server, &self.name, (x, y, z)) && !parts.is_empty() && parts.iter().all(|((ox, oy, oz), b)| {
             let (bx, by, bz) = (x + ox, y + oy, z + oz);
@@ -660,5 +706,37 @@ impl Session {
                 _ => {}
             }
         }
+    }
+}
+
+/// Which armor slot (0 helmet .. 3 boots) an item goes in when used.
+fn armor_slot(name: &str) -> Option<usize> {
+    let n = name.trim_start_matches("minecraft:");
+    if n.ends_with("_helmet") || n == "carved_pumpkin" || n.ends_with("_head") || n.ends_with("_skull") {
+        Some(0)
+    } else if n.ends_with("_chestplate") || n == "elytra" {
+        Some(1)
+    } else if n.ends_with("_leggings") {
+        Some(2)
+    } else if n.ends_with("_boots") {
+        Some(3)
+    } else {
+        None
+    }
+}
+
+/// The vanilla equip sound for this armor's material.
+fn armor_sound(name: &str) -> &'static str {
+    let n = name.trim_start_matches("minecraft:");
+    match n.split('_').next() {
+        Some("leather") => "armor.equip_leather",
+        Some("chainmail") => "armor.equip_chain",
+        Some("iron") => "armor.equip_iron",
+        Some("golden") => "armor.equip_gold",
+        Some("diamond") => "armor.equip_diamond",
+        Some("netherite") => "armor.equip_netherite",
+        Some("turtle") => "armor.equip_generic",
+        _ if n == "elytra" => "armor.equip_elytra",
+        _ => "armor.equip_generic",
     }
 }

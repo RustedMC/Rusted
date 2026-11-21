@@ -233,6 +233,7 @@ impl Session {
             Ok(Event::SaveAll) => {
                 if let Some(me) = self.server.get(self.id) {
                     save_player(&self.name, me.pos, &self.inv);
+                    save_state(&self.name, &self.hp, &self.food, self.air, self.burning, self.selected_slot, &self.effects);
                 }
                 return GO;
             }

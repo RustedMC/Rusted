@@ -185,6 +185,7 @@ fn shift_in(mut p: Protocol, d: f32) -> Option<Protocol> {
         }
         Protocol::LevelSoundEventPacket(l) => l.position.1 += d,
         Protocol::MovePlayerPacket(m) => m.position.1 += d,
+        Protocol::MoveActorAbsolutePacket(m) => m.move_data.position.1 += d,
         Protocol::InventoryTransactionPacket(t) => match &mut t.data {
             T::ItemUse(u) => {
                 u.block_position.y += di;

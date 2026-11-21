@@ -147,7 +147,16 @@ pub fn random_tick(world: &World, p: (i32, i32, i32), roll: u32, raining: bool, 
         // PNX BlockFarmland: stays wet with water within 4 blocks, otherwise dries and turns
         // back to dirt if nothing's planted
         "minecraft:farmland" => {
-            let wet = (-4..=4).any(|dx| (0..=1).any(|dy| (-4..=4).any(|dz| name(world.get(x + dx, y + dy, z + dz)).ends_with("water"))));
+            // PNX BlockFarmland.onUpdate: crops on top keep it as it is; rain or water (also in
+            // a waterlogged block, or frosted ice) within 4 blocks and up to 1 above wets it.
+            if matches!(name(above), "minecraft:wheat" | "minecraft:carrots" | "minecraft:potatoes" | "minecraft:beetroot" | "minecraft:pumpkin_stem" | "minecraft:melon_stem" | "minecraft:torchflower_crop" | "minecraft:pitcher_crop") {
+                return vec![];
+            }
+            let wetting = |q: (i32, i32, i32)| {
+                let n = name(world.get(q.0, q.1, q.2));
+                n.ends_with("water") || n == "minecraft:frosted_ice" || world.waterlogged(q.0, q.1, q.2)
+            };
+            let wet = raining || (-4..=4).any(|dx| (0..=1).any(|dy| (-4..=4).any(|dz| (dx, dy, dz) != (0, 0, 0) && wetting((x + dx, y + dy, z + dz)))));
             let m = int(b, "moisturized_amount");
             if wet {
                 return if m < 7 { vec![(p, blocks::with(b, &[("moisturized_amount", State::Int(7))]))] } else { vec![] };

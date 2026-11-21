@@ -223,6 +223,11 @@ impl Session {
                 self.on_attack(&t).await;
             }
             Protocol::InventoryTransactionPacket(t) => self.on_item_use(t).await,
+            // The client steers the boat or horse it drives and reports where it went.
+            Protocol::MoveActorAbsolutePacket(m) if self.riding == Some(m.move_data.actor_runtime_id.0 as i64) => {
+                let yaw = m.move_data.rotation_y as u8 as f32 * 360.0 / 256.0;
+                self.server.mobs.client_move(m.move_data.actor_runtime_id.0 as i64, self.id, m.move_data.position, yaw);
+            }
             Protocol::BlockActorDataPacket(b) => {
                 let p = (b.block_position.x, b.block_position.y, b.block_position.z);
                 let me = self.server.get(self.id);
@@ -241,6 +246,29 @@ impl Session {
             Protocol::SetLocalPlayerAsInitializedPacket(_) => {
                 // Physics flags (gravity, collision), attributes, abilities, inventory.
                 let _ = self.conn.send(&spawn::after_load(self.id, &self.name, self.inv.all_packets(), &self.mode)).await;
+                // Back to how they left: health, hunger, air, fire, held slot and effects.
+                if let Some((health, food, air, burning, slot, fx)) = load_state(&self.name) {
+                    if health > 0.0 {
+                        self.hp.health = health.min(self.hp.max);
+                    }
+                    self.food = food;
+                    self.air = air;
+                    self.burning = burning;
+                    self.selected_slot = slot.min(8);
+                    let mut out = vec![spawn::health_packet(self.id, self.hp.health), self.food.packet(self.id), spawn::air_packet(self.id, self.air.max(0))];
+                    for (id, e) in fx {
+                        if self.effects.add(id, e) {
+                            out.push(effect_packet(self.id, id, Some(e)));
+                        }
+                    }
+                    out.push(movement_packet(self.id, self.effects.speed()));
+                    out.push(Protocol::PlayerHotbarPacket(Box::new(bedrock::protocol::v662::packets::PlayerHotbarPacket {
+                        selected_slot: self.selected_slot,
+                        container_id: bedrock::protocol::v662::enums::ContainerID(0),
+                        should_select_slot: true,
+                    })));
+                    let _ = self.conn.send(&out).await;
+                }
             }
             Protocol::InteractPacket(i) if matches!(i.action, InteractAction::OpenInventory) => self.on_open_inventory().await,
             Protocol::InteractPacket(i) if matches!(i.action, InteractAction::StopRiding) => self.get_off(),
@@ -293,6 +321,7 @@ impl Session {
         }
         if let Some(me) = self.server.get(self.id) {
             save_player(&self.name, me.pos, &self.inv);
+            save_state(&self.name, &self.hp, &self.food, self.air, self.burning, self.selected_slot, &self.effects);
             self.server.plugins.leave(&self.server, &me);
             ui::left(self.id);
         }

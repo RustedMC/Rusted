@@ -55,6 +55,13 @@ impl Session {
                 self.riding = Some(e.actor_runtime_id as i64);
                 false
             }
+            mobs::Use::Wear => {
+                if let Some(me) = self.server.get(self.id) {
+                    let _ = self.server.events.send(crate::players::Event::Relay { from: 0, packet: Box::new(play_sound("fire.ignite", me.pos)) });
+                }
+                wear(&mut self.conn, &self.server, self.id, &mut self.inv, slot, 1, &self.mode).await;
+                false
+            }
             _ => false,
         };
         if changed {

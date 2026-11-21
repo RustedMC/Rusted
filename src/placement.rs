@@ -212,9 +212,20 @@ pub fn orient(block: i32, click: &Click) -> Vec<((i32, i32, i32), i32)> {
         b = with(b, &[("torch_facing_direction", State::Str(dir.into()))]);
     }
 
+    if bname.ends_with("fence_gate") {
+        // PNX BlockFenceGate.place: faces the way the player looks.
+        return vec![((0, 0, 0), with(b, &[("minecraft:cardinal_direction", State::Str(look.name().into())), ("open_bit", State::Bool(false))]))];
+    }
     if has_state(b, "upper_block_bit") {
-        // door: bottom here, top above
-        let dir = State::Str(look.name().into());
+        // door: bottom here, top above. PNX DOOR_DIRECTION stores the player's facing one step
+        // round: east -> south, south -> west, west -> north, north -> east.
+        let stored = match look {
+            Facing::East => "south",
+            Facing::South => "west",
+            Facing::West => "north",
+            Facing::North => "east",
+        };
+        let dir = State::Str(stored.into());
         let lower = with(b, &[("minecraft:cardinal_direction", dir.clone()), ("upper_block_bit", State::Bool(false))]);
         let upper = with(b, &[("minecraft:cardinal_direction", dir), ("upper_block_bit", State::Bool(true))]);
         return vec![((0, 0, 0), lower), ((0, 1, 0), upper)];
@@ -228,15 +239,10 @@ pub fn orient(block: i32, click: &Click) -> Vec<((i32, i32, i32), i32)> {
         return vec![((0, 0, 0), foot), ((dx, 0, dz), head)];
     }
     if bname.ends_with("trapdoor") {
-        // Hinged on the clicked block's side; on a top/bottom face, on the side away from the
-        // player. direction: 0 east, 1 west, 2 south, 3 north. Upper half click = top trapdoor.
-        let face = match click.face {
-            2 => Facing::North,
-            3 => Facing::South,
-            4 => Facing::West,
-            5 => Facing::East,
-            _ => look.opposite(),
-        };
+        // PNX BlockTrapdoor.place: faces away from the player (direction: 0 east, 1 west,
+        // 2 south, 3 north); top half when clicking a side's upper half or a block's underside.
+        let top_half = if click.face >= 2 { click.click_y > 0.5 } else { click.face != 1 };
+        let face = look.opposite();
         let d = match face {
             Facing::East => 0,
             Facing::West => 1,
@@ -337,13 +343,24 @@ mod tests {
     }
 
     #[test]
-    fn trapdoors_hinge_on_the_clicked_block() {
+    fn trapdoors_face_away_from_the_player() {
         let t = id_of("minecraft:trapdoor");
-        let north = orient(t, &click(2, 0.2, 0.0))[0].1;
-        assert_eq!(state(north, "direction"), Some(&State::Int(3)));
-        assert_eq!(state(north, "upside_down_bit"), Some(&State::Bool(false)));
+        // yaw 0 looks south: the trapdoor faces north (3), whatever face was clicked
+        let low = orient(t, &click(2, 0.2, 0.0))[0].1;
+        assert_eq!(state(low, "direction"), Some(&State::Int(3)));
+        assert_eq!(state(low, "upside_down_bit"), Some(&State::Bool(false)));
         let high = orient(t, &click(5, 0.8, 0.0))[0].1;
-        assert_eq!(state(high, "direction"), Some(&State::Int(0)));
+        assert_eq!(state(high, "direction"), Some(&State::Int(3)));
         assert_eq!(state(high, "upside_down_bit"), Some(&State::Bool(true)));
+        assert_eq!(state(orient(t, &click(0, 0.5, 0.0))[0].1, "upside_down_bit"), Some(&State::Bool(true)), "under a block");
+    }
+
+    #[test]
+    fn doors_and_gates_face_like_pnx() {
+        let door = id_of("minecraft:wooden_door");
+        // looking east (yaw 270): PNX stores "south"
+        assert_eq!(state(orient(door, &click(1, 0.0, 270.0))[0].1, "minecraft:cardinal_direction"), Some(&State::Str("south".into())));
+        let gate = id_of("minecraft:fence_gate");
+        assert_eq!(state(orient(gate, &click(1, 0.0, 270.0))[0].1, "minecraft:cardinal_direction"), Some(&State::Str("east".into())));
     }
 }

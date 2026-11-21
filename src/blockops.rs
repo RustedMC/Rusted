@@ -219,6 +219,15 @@ pub(crate) fn set_lit(server: &players::Server, (x, y, z): (i32, i32, i32), lit:
     if !matches!(base, "furnace" | "smoker" | "blast_furnace") {
         return;
     }
+    // PNX BlockEntityFurnace: a burning furnace crackles every 1-5 seconds.
+    if lit && std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos()) % 3 == 0 {
+        let sound = match base {
+            "smoker" => "block.smoker.smoke",
+            "blast_furnace" => "block.blastfurnace.fire_crackle",
+            _ => "block.furnace.lit",
+        };
+        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(play_sound(sound, (x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5))) });
+    }
     let want = if lit { format!("minecraft:lit_{base}") } else { format!("minecraft:{base}") };
     if e.name == want {
         return;

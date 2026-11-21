@@ -90,6 +90,16 @@ impl Session {
         if let Some(damage) = self.hp.on_move(pos.1 - 1.62, takes_damage, in_water) {
             hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, damage, &mut self.inv, &self.effects, &self.mode).await;
         }
+        // PNX Entity.fall: landing on farmland from more than 0.75 blocks tramples it to dirt.
+        if std::mem::take(&mut self.hp.landed) > 0.75 {
+            let under = (feet.0, (pos.1 - 1.62 - 0.1).floor() as i32, feet.2);
+            if blocks::entry(self.server.world.get(under.0, under.1, under.2)).is_some_and(|e| e.name == "minecraft:farmland")
+                && let Some(dirt) = blocks::any_state("minecraft:dirt")
+            {
+                self.server.set_block(self.id, under.0, under.1, under.2, dirt);
+                crate::pop_unsupported(&self.server, self.id, under);
+            }
+        }
         // Frost Walker: still water under the player's feet freezes for a while.
         let fw = self.inv.held(inventory::ARMOR + 3).map_or(0, |s| enchant::level(&s.item.user_data_buffer, enchant::FROST_WALKER));
         if fw > 0 && !self.flying && self.last_pos.is_some_and(|l| (pos.1 - l.1).abs() < 0.01) {
@@ -134,7 +144,7 @@ impl Session {
             crate::sculk::footstep(&self.server, self.id, (pos.0, pos.1 - 1.62, pos.2), self.sneaking);
         }
         if let Some(mount) = self.riding {
-            if self.hp.dead || self.server.mobs.rider_of(mount) != Some(self.id) {
+            if self.hp.dead || !self.server.mobs.carries(mount, self.id) {
                 // bucked off, the mount died, or we died
                 self.riding = None;
                 self.server.mobs.dismount(&self.server, self.id);
