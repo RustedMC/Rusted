@@ -21,6 +21,43 @@ pub const LUCK_OF_THE_SEA: i16 = 23;
 pub const LURE: i16 = 24;
 pub const MULTISHOT: i16 = 33;
 pub const QUICK_CHARGE: i16 = 35;
+pub const EFFICIENCY: i16 = 15;
+pub const THORNS: i16 = 5;
+pub const RESPIRATION: i16 = 6;
+pub const FROST_WALKER: i16 = 25;
+pub const MENDING: i16 = 26;
+pub const BINDING: i16 = 27;
+pub const VANISHING: i16 = 28;
+pub const IMPALING: i16 = 29;
+pub const LOYALTY: i16 = 31;
+pub const CHANNELING: i16 = 32;
+pub const PIERCING: i16 = 34;
+pub const WIND_BURST: i16 = 38;
+pub const DENSITY: i16 = 39;
+pub const BREACH: i16 = 40;
+
+/// Thorns on a player's armor: damage reflected at whoever hit them (vanilla: each piece has a
+/// 15% x level chance to deal 1-4). `roll` gives numbers in 0..1.
+pub fn thorns(armor: &[&[u8]], mut roll: impl FnMut() -> f32) -> f32 {
+    let mut total = 0.0;
+    for a in armor {
+        let l = level(a, THORNS);
+        if l > 0 && roll() < 0.15 * l as f32 {
+            total += 1.0 + (roll() * 4.0).floor().min(3.0);
+        }
+    }
+    total
+}
+
+/// Mace smash bonus for a hit after falling `fell` blocks (vanilla: +4 a block for the first
+/// 3, +2 for the next 5, +1 after that), plus Density's 0.5 a block per level.
+pub fn smash(fell: f32, density: i16) -> f32 {
+    if fell <= 1.5 {
+        return 0.0;
+    }
+    let base = 4.0 * fell.min(3.0) + 2.0 * (fell - 3.0).clamp(0.0, 5.0) + (fell - 8.0).max(0.0);
+    base + 0.5 * density as f32 * fell
+}
 
 /// (name, id, max level, applies to)
 const ALL: [(&str, i16, i16, Slot); 41] = [
@@ -228,5 +265,24 @@ mod tests {
         assert_eq!(protection(&[&boots], Hit::Fire), 1.0);
         assert!(wears(0, false, 0.99) && !wears(3, false, 0.5));
         assert_eq!(fortune(3, 4), 4);
+    }
+}
+
+#[cfg(test)]
+mod new_enchant_tests {
+    use super::*;
+
+    #[test]
+    fn mace_smash_follows_vanilla_steps() {
+        assert_eq!(smash(1.0, 0), 0.0, "too short a fall");
+        assert_eq!(smash(3.0, 0), 12.0);
+        assert_eq!(smash(8.0, 0), 22.0);
+        assert_eq!(smash(10.0, 0), 24.0);
+        assert_eq!(smash(4.0, 2), 14.0 + 4.0, "density 0.5 a block a level");
+    }
+
+    #[test]
+    fn thorns_only_with_the_enchant() {
+        assert_eq!(thorns(&[&[], &[]], || 0.0), 0.0);
     }
 }

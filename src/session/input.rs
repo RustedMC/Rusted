@@ -90,6 +90,30 @@ impl Session {
         if let Some(damage) = self.hp.on_move(pos.1 - 1.62, takes_damage, in_water) {
             hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, damage, &mut self.inv, &self.effects, &self.mode).await;
         }
+        // Frost Walker: still water under the player's feet freezes for a while.
+        let fw = self.inv.held(inventory::ARMOR + 3).map_or(0, |s| enchant::level(&s.item.user_data_buffer, enchant::FROST_WALKER));
+        if fw > 0 && !self.flying && self.last_pos.is_some_and(|l| (pos.1 - l.1).abs() < 0.01) {
+            let r = 2 + fw as i32;
+            let below = feet.1 - 1;
+            if let Some(ice) = blocks::any_state("minecraft:frosted_ice") {
+                for dx in -r..=r {
+                    for dz in -r..=r {
+                        let (x, z) = (feet.0 + dx, feet.2 + dz);
+                        if dx * dx + dz * dz > r * r || self.server.world.get(x, below, z) != fluids::Kind::Water.source() || self.server.world.get(x, below + 1, z) != world::AIR {
+                            continue;
+                        }
+                        self.server.set_block_quiet(self.id, x, below, z, ice);
+                        // Melts back after 3-6 seconds (vanilla frosted ice ages away).
+                        let delay = 60 + ((x * 31 + z * 17).rem_euclid(60)) as u64;
+                        self.server.scheduler.run_later(delay, move |s| {
+                            if s.world.get(x, below, z) == ice {
+                                s.set_block_quiet(0, x, below, z, fluids::Kind::Water.source());
+                            }
+                        });
+                    }
+                }
+            }
+        }
         self.falling = self.last_pos.is_some_and(|l| pos.1 < l.1 - 0.01) && !in_water && !self.flying && !self.gliding && self.riding.is_none();
         if let Some(last) = self.last_pos.replace(pos) && survival_like(&self.mode) && !self.flying {
             let walked = ((pos.0 - last.0).powi(2) + (pos.2 - last.2).powi(2)).sqrt().min(10.0);
@@ -221,7 +245,7 @@ impl Session {
         GO
     }
 
-    /// Swimming or crawling: the SWIMMING (56) / CRAWLING (114) flags and a 0.6-high hitbox, which is what lets
+    /// Also the burning flames. Swimming or crawling: the SWIMMING (56) / CRAWLING (114) flags and a 0.6-high hitbox, which is what lets
     /// the client fit through 1x1 gaps (PNX Player.setSwimming / setCrawling).
     pub(super) async fn update_pose(&mut self) {
         use bedrock::protocol::v662::types::{ActorRuntimeID, DataItem, PropertySyncData};
@@ -231,7 +255,8 @@ impl Session {
         let packet = Protocol::SetActorDataPacket(Box::new(bedrock::protocol::v662::packets::SetActorDataPacket {
             target_runtime_id: ActorRuntimeID(self.id as u64),
             actor_data: vec![
-                DataItem { data_item_id: D::Reserved0, data_item_type: T::Int64(spawn::FLAGS | (self.swimming as i64) << 56) },
+                // ON_FIRE (0) shows the flames.
+                DataItem { data_item_id: D::Reserved0, data_item_type: T::Int64(spawn::FLAGS | (self.swimming as i64) << 56 | (self.burning > 0) as i64) },
                 DataItem { data_item_id: D::Reserved054, data_item_type: T::Float(if low { 0.6 } else { 1.8 }) },
                 // CRAWLING (114) sits in the extended flags with BLOCKING (72, a raised shield).
                 DataItem { data_item_id: D::Reserved092, data_item_type: T::Int64(spawn::FLAGS_EXTENDED | (self.inv.shield().is_some() as i64) << (72 - 64) | (self.crawling as i64) << (114 - 64)) },

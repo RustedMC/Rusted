@@ -474,6 +474,28 @@ impl Inventory {
         Some(false)
     }
 
+    /// Mending: picked-up XP repairs worn mending items in hand, offhand and armor first,
+    /// 2 durability a point. Returns the points left over for the XP bar.
+    pub fn mend(&mut self, mut points: i32, selected: usize) -> i32 {
+        for slot in [selected, OFFHAND, ARMOR, ARMOR + 1, ARMOR + 2, ARMOR + 3] {
+            if points <= 0 {
+                break;
+            }
+            let Some(st) = self.slots.get_mut(slot).and_then(|s| s.as_mut()) else { continue };
+            if crate::enchant::level(&st.item.user_data_buffer, crate::enchant::MENDING) == 0 {
+                continue;
+            }
+            let worn = crate::items::damage(&st.item);
+            if worn <= 0 {
+                continue;
+            }
+            let fix = (points * 2).min(worn);
+            crate::items::set_damage(&mut st.item, worn - fix);
+            points -= (fix + 1) / 2;
+        }
+        points
+    }
+
     /// Eating or placing in survival. Returns the new stack.
     pub fn use_one(&mut self, slot: usize) -> Option<Option<&Stack>> {
         let s = self.slots.get_mut(slot)?;
@@ -516,6 +538,14 @@ impl Inventory {
     /// Merges into a matching stack if there is one.
     fn transfer(&mut self, from: Place, to: Place, amount: i8) -> bool {
         let Some(src) = self.at(from).clone() else { return false };
+        // Curse of Binding: survival players can't take it off.
+        if let Place::Main(i) = from
+            && (ARMOR..ARMOR + 4).contains(&i)
+            && !self.creative
+            && crate::enchant::level(&src.item.user_data_buffer, crate::enchant::BINDING) > 0
+        {
+            return false;
+        }
         if amount <= 0 || amount > src.count {
             return false;
         }

@@ -56,6 +56,11 @@ impl Default for Health {
 impl Health {
     /// Feed one movement report. `takes_damage` is off in creative/spectator or when flying,
     /// landing in water cancels fall damage. Returns damage to apply.
+    /// How far the player has fallen so far (mace smash), and forget it (no fall damage after).
+    pub fn take_fall(&mut self, feet_y: f32) -> f32 {
+        self.fall_from.take().map_or(0.0, |f| (f - feet_y).max(0.0))
+    }
+
     pub fn on_move(&mut self, feet_y: f32, takes_damage: bool, in_liquid: bool) -> Option<Damage> {
         let last = self.last_y.replace(feet_y);
         if self.dead {

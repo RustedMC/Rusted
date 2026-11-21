@@ -265,6 +265,10 @@ pub(crate) async fn hurt(conn: &mut dims::DimConn, server: &players::Server, id:
         if !game_rule_on(server, "keepInventory", false) {
             let at = server.get(id).map_or(server.world.spawn(), |p| (p.pos.0, p.pos.1 - 1.0, p.pos.2));
             for s in inv.take_all() {
+                // Curse of Vanishing: gone instead of dropped.
+                if enchant::level(&s.item.user_data_buffer, enchant::VANISHING) > 0 {
+                    continue;
+                }
                 server.entities.drop_item(server, s.item, s.count, at);
             }
             out.extend(inv.all_packets());

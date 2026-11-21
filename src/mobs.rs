@@ -515,6 +515,10 @@ struct PlayerShot {
     critical: bool,
     /// Item it turns back into where it lands (arrow, the trident itself).
     drop: Option<bedrock::protocol::v2168::types::NetworkItemStackDescriptorV2>,
+    /// The bow/crossbow/trident's enchantments (piercing, loyalty, channeling, impaling).
+    weapon: Vec<u8>,
+    /// Mobs a piercing arrow already went through.
+    pierced: Vec<i64>,
 }
 
 /// Mob AI ticks per second.
@@ -1362,11 +1366,17 @@ impl Mobs {
             // don't pathfind into chunks nobody needs). Tests run without players, so not there.
             let near = players.iter().any(|p| (p.0 - m.pos.0).powi(2) + (p.1 - m.pos.2).powi(2) < SIMULATION * SIMULATION);
             if !near && m.dying == 0 && !cfg!(test) {
-                // Still despawn like vanilla (hostiles, water mobs and bats past 128 blocks).
-                if (m.kind.hostile() || m.kind.aquatic() || m.kind == Kind::Bat) && self.despawn(server, &m) {
+                // Still despawn like vanilla past 128 blocks.
+                if self.despawn(server, &m) {
                     self.mobs.lock().remove(&id);
                     out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
                 }
+                continue;
+            }
+            // Animals too (Bedrock despawns natural passive mobs), not just hostiles.
+            if m.dying == 0 && !m.kind.hostile() && !m.kind.aquatic() && !m.kind.flies() && !cfg!(test) && self.despawn(server, &m) {
+                self.mobs.lock().remove(&id);
+                out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
                 continue;
             }
             if m.dying > 0 {
@@ -1868,6 +1878,7 @@ impl Mobs {
                             damage: crate::health::Damage::Mob(dmg, m.kind.display()),
                             knock: (dx / len * 0.3, 0.3, dz / len * 0.3), // PNX default knockback 0.3
                         });
+                        self.thorns(m, p.id, out);
                         if let Some((effect, secs)) = m.kind.spec().hit_effect {
                             let _ = server.events.send(Event::Effect { to: p.id, effect, amplifier: 0, ticks: secs * 20 });
                         }
@@ -2076,6 +2087,11 @@ impl Mobs {
                             damage: crate::health::Damage::Mob(m.kind.melee() * difficulty_scale().max(0.5), m.kind.display()),
                             knock: (dx / len * 0.4, fling, dz / len * 0.4),
                         });
+                        let mut fx = Vec::new();
+                        self.thorns(m, pid, &mut fx);
+                        for f in fx {
+                            let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(f) });
+                        }
                     }
                 } else if m.path.is_empty() || self.rand().is_multiple_of(8) {
                     m.path = path(&server.world, feet, (feet_p.0.floor() as i32, feet_p.1.floor() as i32, feet_p.2.floor() as i32), 160);
@@ -2251,9 +2267,22 @@ impl Mobs {
         }
     }
 
-    /// Hostiles vanish far from players (instantly past 128 blocks, now and then past 32).
+    /// Thorns on the player `m` just hit: the damage comes straight back at the mob.
+    fn thorns(&self, m: &mut Mob, player: i64, out: &mut Vec<Protocol>) {
+        let armor: Vec<Vec<u8>> = crate::players::EQUIPMENT.lock().as_ref().and_then(|e| e.get(&player)).map(|e| e.armor.iter().flatten().map(|s| s.item.user_data_buffer.clone()).collect()).unwrap_or_default();
+        let refs: Vec<&[u8]> = armor.iter().map(|a| a.as_slice()).collect();
+        let d = crate::enchant::thorns(&refs, || self.randf());
+        if d > 0.0 {
+            use bedrock::protocol::v975::enums::ActorEvent;
+            m.health -= d;
+            out.push(event(m.id, ActorEvent::Hurt));
+        }
+    }
+
+    /// Mobs vanish far from players (instantly past 128 blocks, now and then past 32), unless
+    /// something made them persistent: tamed, named, bred, saddled, ridden, a villager...
     fn despawn(&self, server: &Server, m: &Mob) -> bool {
-        if m.owner.is_some() || matches!(m.kind, Kind::Villager | Kind::IronGolem | Kind::EnderDragon | Kind::EndCrystal | Kind::Shulker) {
+        if m.owner.is_some() || m.kept || m.saddled || m.temper > 0 || m.rider.is_some() || m.home.is_some() || matches!(m.kind, Kind::Villager | Kind::IronGolem | Kind::EnderDragon | Kind::EndCrystal | Kind::Shulker) {
             return false;
         }
         let players = server.all();
@@ -2398,7 +2427,7 @@ impl Mobs {
 
     /// Bow/trident release (PNX ItemBow/ItemTrident). Arrows do 3 blocks a game tick at full draw.
     #[allow(clippy::too_many_arguments)]
-    pub fn player_shoot(&self, server: &Server, owner: i64, eye: (f32, f32, f32), rot: (f32, f32), force: f32, trident: bool, power: i16, punch: i16, flame: bool, drop: Option<bedrock::protocol::v2168::types::NetworkItemStackDescriptorV2>) {
+    pub fn player_shoot(&self, server: &Server, owner: i64, eye: (f32, f32, f32), rot: (f32, f32), force: f32, trident: bool, power: i16, punch: i16, flame: bool, drop: Option<bedrock::protocol::v2168::types::NetworkItemStackDescriptorV2>, weapon: &[u8]) {
         let (pitch, yaw) = (rot.0.to_radians(), rot.1.to_radians());
         let dir = (-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos());
         let speed = if trident { 5.0 } else { 6.0 * force }; // per 10 Hz tick
@@ -2421,7 +2450,7 @@ impl Mobs {
             passenger_of_block_data: None,
         })));
         broadcast(server, sound(if trident { "item.trident.throw" } else { "bow" }, from));
-        let by = PlayerShot { owner, damage: trident.then_some(8.0), power, punch, flame, critical: !trident && force >= 1.0, drop };
+        let by = PlayerShot { owner, damage: trident.then_some(8.0), power, punch, flame, critical: !trident && force >= 1.0, drop, weapon: weapon.to_vec(), pierced: vec![] };
         self.arrows.lock().push(Arrow { id, pos: from, vel, shooter: Kind::Skeleton, life: 60 * TPS, stuck: false, by: Some(by) });
     }
 
@@ -2430,6 +2459,8 @@ impl Mobs {
         let targets = self.targetable.lock().clone();
         let mut mob_hits: Vec<(i64, f32, (f32, f32, f32), PlayerShot)> = Vec::new();
         let mut drops = Vec::new();
+        let mut strikes = Vec::new();
+        let thunder = *crate::commands::WEATHER.lock() == crate::commands::Weather::Thunder;
         let boxes: Vec<(i64, (f32, f32, f32), (f32, f32))> = self.mobs.lock().values().filter(|m| m.dying == 0).map(|m| (m.id, m.pos, m.kind.size())).collect();
         let mut arrows = self.arrows.lock();
         arrows.retain_mut(|a| {
@@ -2444,10 +2475,10 @@ impl Mobs {
             // Move in small steps so fast arrows don't skip through blocks or players.
             for _ in 0..4 {
                 let next = (a.pos.0 + a.vel.0 / 4.0, a.pos.1 + a.vel.1 / 4.0, a.pos.2 + a.vel.2 / 4.0);
-                if let Some(by) = a.by.clone() {
+                if let Some(mut by) = a.by.clone() {
                     let speed = (a.vel.0.powi(2) + a.vel.1.powi(2) + a.vel.2.powi(2)).sqrt() / 2.0; // per game tick
                     let dmg = by.damage.unwrap_or_else(|| arrow_damage(speed, by.power, by.critical.then(|| self.rand())));
-                    let hit_mob = boxes.iter().find(|(_, mp, (w, h))| (next.0 - mp.0).abs() < w / 2.0 + 0.1 && (next.2 - mp.2).abs() < w / 2.0 + 0.1 && next.1 > mp.1 && next.1 < mp.1 + h);
+                    let hit_mob = boxes.iter().find(|(mid, mp, (w, h))| !by.pierced.contains(mid) && (next.0 - mp.0).abs() < w / 2.0 + 0.1 && (next.2 - mp.2).abs() < w / 2.0 + 0.1 && next.1 > mp.1 && next.1 < mp.1 + h);
                     let hit_player = players.iter().find(|p| {
                         let (fx, fy, fz) = (p.pos.0, p.pos.1 - 1.62, p.pos.2);
                         p.id != by.owner && (next.0 - fx).abs() < 0.45 && (next.2 - fz).abs() < 0.45 && next.1 > fy && next.1 < fy + 1.85
@@ -2456,14 +2487,30 @@ impl Mobs {
                     let hit_mob = hit_mob.filter(|(mid, ..)| allowed(crate::plugin::Target::Mob(*mid)));
                     let hit_player = hit_player.filter(|p| allowed(crate::plugin::Target::Player(p.id)));
                     if hit_mob.is_some() || hit_player.is_some() {
+                        // Channeling: a trident hit in a thunderstorm calls lightning down.
+                        if thunder && by.damage.is_some() && crate::enchant::level(&by.weapon, crate::enchant::CHANNELING) > 0 {
+                            strikes.push(next);
+                        }
                         if let Some(&(mid, ..)) = hit_mob {
                             mob_hits.push((mid, dmg, a.pos, by.clone()));
+                            // Piercing: the arrow goes on through up to `level` more mobs.
+                            if by.damage.is_none() && (by.pierced.len() as i16) < crate::enchant::level(&by.weapon, crate::enchant::PIERCING) {
+                                by.pierced.push(mid);
+                                a.by = Some(by);
+                                a.pos = next;
+                                continue;
+                            }
                         } else if let Some(p) = hit_player && targets.contains(&p.id) {
                             let _ = server.events.send(Event::Damage { to: p.id, damage: crate::health::Damage::Shot(dmg, "a player"), knock: (a.vel.0 * 0.1, 0.2, a.vel.2 * 0.1) });
+                            if by.flame {
+                                let _ = server.events.send(Event::Ignite { to: p.id, secs: 5 });
+                            }
                         }
-                        // Tridents drop where they hit; arrows that hit something are gone.
+                        // Tridents drop where they hit (Loyalty: back at the thrower's feet);
+                        // arrows that hit something are gone.
                         if by.damage.is_some() && let Some(d) = by.drop.clone() {
-                            drops.push((d, next));
+                            let back = (crate::enchant::level(&by.weapon, crate::enchant::LOYALTY) > 0).then(|| server.get(by.owner)).flatten();
+                            drops.push((d, back.map_or(next, |o| (o.pos.0, o.pos.1 - 1.2, o.pos.2))));
                         }
                         out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(a.id) })));
                         return false;
@@ -2471,7 +2518,8 @@ impl Mobs {
                     if solid(server.world.get(next.0.floor() as i32, next.1.floor() as i32, next.2.floor() as i32)) {
                         // TODO: arrows land as items right away, should stick and get picked up by touch
                         if let Some(d) = by.drop.clone() {
-                            drops.push((d, a.pos));
+                            let back = (by.damage.is_some() && crate::enchant::level(&by.weapon, crate::enchant::LOYALTY) > 0).then(|| server.get(by.owner)).flatten();
+                            drops.push((d, back.map_or(a.pos, |o| (o.pos.0, o.pos.1 - 1.2, o.pos.2))));
                         }
                         out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(a.id) })));
                         return false;
@@ -2542,7 +2590,12 @@ impl Mobs {
         drop(arrows);
         for (mid, dmg, from, by) in mob_hits {
             let hit = Hit { knockback: by.punch, fire: if by.flame { 50 } else { 0 }, looting: 0 };
-            self.hurt_with(server, mid, dmg, from, Some(by.owner), hit);
+            // Impaling: +2.5 a level against water mobs (tridents).
+            let impaling = if by.damage.is_some() && self.kind_of(mid).is_some_and(|k| k.aquatic()) { 2.5 * crate::enchant::level(&by.weapon, crate::enchant::IMPALING) as f32 } else { 0.0 };
+            self.hurt_with(server, mid, dmg + impaling, from, Some(by.owner), hit);
+        }
+        for at in strikes {
+            crate::ticks::strike(server, at);
         }
         for (item, at) in drops {
             server.entities.drop_item(server, item, 1, at);
@@ -2982,8 +3035,8 @@ fn sound(name: &str, at: (f32, f32, f32)) -> Protocol {
     }))
 }
 
-/// Lit TNT: (entity id, position, 10 Hz ticks left).
-static PRIMED: Mutex<Vec<(i64, (f32, f32, f32), u32)>> = Mutex::new(Vec::new());
+/// Lit TNT: (entity id, position, velocity per game tick, 10 Hz ticks left).
+static PRIMED: Mutex<Vec<(i64, (f32, f32, f32), (f32, f32, f32), u32)>> = Mutex::new(Vec::new());
 
 /// Primes the TNT at `p` (PNX BlockTNT.prime), going off with power 4 after `fuse` 10 Hz ticks.
 /// TODO: primed TNT should fall and get pushed
@@ -2991,12 +3044,15 @@ pub fn ignite_tnt(server: &Server, p: (i32, i32, i32), fuse: u32) {
     server.set_block_quiet(0, p.0, p.1, p.2, crate::world::AIR);
     let id = crate::players::next_id();
     let pos = (p.0 as f32 + 0.5, p.1 as f32, p.2 as f32 + 0.5);
+    // Vanilla hop: 0.2 up and a random 0.02 sideways.
+    let a = ((p.0 * 73 + p.2 * 31 + fuse as i32) as f32).sin() * std::f32::consts::TAU;
+    let vel = (a.cos() * 0.02, 0.2, a.sin() * 0.02);
     let packet = Protocol::AddActorPacket(Box::new(bedrock::protocol::v2225::packets::AddActorPacket {
         target_actor_id: ActorUniqueID(id),
         target_runtime_id: ActorRuntimeID(id as u64),
         actor_type: "minecraft:tnt".into(),
         position: pos,
-        velocity: (0.0, 0.2, 0.0),
+        velocity: vel,
         rotation: (0.0, 0.0),
         y_head_rotation: 0.0,
         y_body_rotation: 0.0,
@@ -3008,20 +3064,58 @@ pub fn ignite_tnt(server: &Server, p: (i32, i32, i32), fuse: u32) {
         passenger_of_block_data: None,
     }));
     let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(packet) });
-    let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(sound("fuse", pos)) });
-    PRIMED.lock().push((id, pos, fuse));
+    let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(crate::packets::play_sound("random.fuse", pos)) });
+    PRIMED.lock().push((id, pos, vel, fuse));
 }
 
 /// Counts down lit TNT and sets it off.
 fn tick_tnt(server: &Server) {
     let mut due = Vec::new();
-    PRIMED.lock().retain_mut(|(id, pos, fuse)| {
+    let mut moves = Vec::new();
+    let w = &server.world;
+    let solid = |p: (f32, f32, f32)| crate::overworld::feature::blocks::is_solid(w.get(p.0.floor() as i32, p.1.floor() as i32, p.2.floor() as i32));
+    PRIMED.lock().retain_mut(|(id, pos, vel, fuse)| {
+        // Falls, slides and gets thrown around like vanilla primed TNT (two game ticks).
+        let before = *pos;
+        for _ in 0..2 {
+            vel.1 -= 0.04;
+            let next = (pos.0 + vel.0, pos.1, pos.2 + vel.2);
+            if solid(next) || solid((next.0, next.1 + 0.9, next.2)) {
+                vel.0 = 0.0;
+                vel.2 = 0.0;
+            } else {
+                pos.0 = next.0;
+                pos.2 = next.2;
+            }
+            let ny = pos.1 + vel.1;
+            let ground = vel.1 < 0.0 && solid((pos.0, ny, pos.2));
+            if ground {
+                pos.1 = ny.floor() + 1.0;
+                vel.1 *= -0.5;
+                vel.0 *= 0.7;
+                vel.2 *= 0.7;
+            } else if vel.1 > 0.0 && solid((pos.0, ny + 0.98, pos.2)) {
+                vel.1 = 0.0;
+            } else {
+                pos.1 = ny;
+            }
+            *vel = (vel.0 * 0.98, vel.1 * 0.98, vel.2 * 0.98);
+        }
+        if *pos != before {
+            moves.push((*id, *pos));
+        }
         *fuse = fuse.saturating_sub(1);
         if *fuse == 0 {
             due.push((*id, *pos));
         }
         *fuse > 0
     });
+    for (id, pos) in moves {
+        let mv = Protocol::MoveActorAbsolutePacket(Box::new(bedrock::protocol::v662::packets::MoveActorAbsolutePacket {
+            move_data: bedrock::protocol::v662::types::MoveActorAbsoluteData { actor_runtime_id: ActorRuntimeID(id as u64), header: 0, position: pos, rotation_x: 0, rotation_y: 0, rotation_y_head: 0 },
+        }));
+        let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(mv) });
+    }
     for (id, pos) in due {
         let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) }))) });
         explode(server, (pos.0, pos.1 + 0.06, pos.2), 4.0, "TNT");
@@ -3115,8 +3209,8 @@ pub fn explode(server: &Server, at: (f32, f32, f32), power: f32, by: &'static st
     for &(x, y, z) in &blown {
         let b = w.get(x, y, z);
         server.set_block_quiet(0, x, y, z, crate::world::AIR);
-        // Vanilla yield: TNT drops everything it breaks, other blasts 1 in `power`.
-        if by == "TNT" || (x * 31 + y * 17 + z * 7).rem_euclid(power.round().max(1.0) as i32) == 0 {
+        // Vanilla yield: each broken block drops with a 1 in `power` chance.
+        if (x * 31 + y * 17 + z * 7).rem_euclid(power.round().max(1.0) as i32) == 0 {
             for (item, n) in crate::drops::drops(b, (x, y, z), Some("minecraft:diamond_pickaxe")) {
                 server.entities.drop_item(server, item, n, (x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5));
             }
@@ -3128,6 +3222,15 @@ pub fn explode(server: &Server, at: (f32, f32, f32), power: f32, by: &'static st
     let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(sound("explode", at)) });
     // Mobs in range take the same vanilla damage (and get knocked away from the blast).
     let reach = power * 2.0;
+    // Lit TNT nearby gets thrown (TNT cannons).
+    for (_, pos, vel, _) in PRIMED.lock().iter_mut() {
+        let (dx, dy, dz) = (pos.0 - at.0, pos.1 - at.1, pos.2 - at.2);
+        let d = (dx * dx + dy * dy + dz * dz).sqrt();
+        if d < reach && d > 0.01 {
+            let impact = 1.0 - d / reach;
+            *vel = (vel.0 + dx / d * impact, vel.1 + dy / d * impact, vel.2 + dz / d * impact);
+        }
+    }
     let near: Vec<(i64, f32)> = server.mobs.mobs.lock().values().filter(|m| m.dying == 0).map(|m| (m.id, dist2(m.pos, at).sqrt())).filter(|(_, d)| *d < reach).collect();
     for (id, d) in near {
         let impact = 1.0 - d / reach;
@@ -3406,6 +3509,7 @@ pub fn attack_damage(held: Option<&str>) -> f32 {
         "diamond_axe" => 7.0,
         "netherite_axe" => 8.0,
         "trident" => 9.0,
+        "mace" => 6.0,
         n if n.ends_with("_pickaxe") => 3.0,
         n if n.ends_with("_shovel") => 2.5,
         _ => 1.0,

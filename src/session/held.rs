@@ -18,7 +18,7 @@ impl Session {
         if held == "minecraft:trident" && ticks >= 10.0 {
             let mut item = st.item.clone();
             item.stack_size = 1;
-            self.server.mobs.player_shoot(&self.server, self.id, me.pos, me.rot, 1.0, true, 0, 0, false, Some(item));
+            self.server.mobs.player_shoot(&self.server, self.id, me.pos, me.rot, 1.0, true, 0, 0, false, Some(item), &data);
             if survival_like(&self.mode) {
                 self.inv.use_one(slot);
                 let _ = self.conn.send(&[self.inv.content_packet()]).await;
@@ -69,7 +69,7 @@ impl Session {
                 self.inv.use_one(a);
             }
             let drop = (!keep).then(|| items::item_by_name("minecraft:arrow")).flatten();
-            self.server.mobs.player_shoot(&self.server, self.id, me.pos, me.rot, force, false, enchant::level(&data, 19), enchant::level(&data, 20), enchant::level(&data, 21) > 0, drop);
+            self.server.mobs.player_shoot(&self.server, self.id, me.pos, me.rot, force, false, enchant::level(&data, 19), enchant::level(&data, 20), enchant::level(&data, 21) > 0, drop, &data);
             wear(&mut self.conn, &self.server, self.id, &mut self.inv, slot, 1, &self.mode).await;
             let _ = self.conn.send(&[self.inv.content_packet()]).await;
         }
@@ -110,7 +110,7 @@ impl Session {
             }
             // Only the middle arrow can be picked back up, like vanilla.
             let drop = (i == 0 && survival_like(&self.mode)).then(|| items::item_by_name("minecraft:arrow")).flatten();
-            self.server.mobs.player_shoot(&self.server, self.id, me.pos, (me.rot.0, me.rot.1 + d), 1.0, false, 0, 0, false, drop);
+            self.server.mobs.player_shoot(&self.server, self.id, me.pos, (me.rot.0, me.rot.1 + d), 1.0, false, 0, 0, false, drop, &data);
         }
         let mut item = st.item.clone();
         item.user_data_buffer = crossbow_loaded(&data, None);

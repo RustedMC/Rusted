@@ -87,7 +87,7 @@ impl Session {
                 fire: 40 * enchant::level(&data, enchant::FIRE_ASPECT) as u32, // 4 s per level
                 looting: enchant::level(&data, enchant::LOOTING),
             };
-            let dmg = self.crit(target, self.effects.melee(mobs::attack_damage(held) + bonus));
+            let dmg = self.crit(target, self.effects.melee(mobs::attack_damage(held) + bonus)) + self.mace_smash(held, &data, me.pos).await;
             if kind.is_none_or(|k| self.server.plugins.entity_damage(&self.server, &me, target, k.identifier(), dmg)) {
                 self.server.mobs.hurt_with(&self.server, target, dmg, me.pos, Some(self.id), hit);
             }
@@ -97,6 +97,31 @@ impl Session {
                 self.food.exhaust(0.1);
             }
         }
+    }
+
+    /// Mace smash: falling onto the target adds damage (Density adds more), cancels our fall
+    /// damage, and Wind Burst bounces us back up.
+    async fn mace_smash(&mut self, held: Option<&str>, data: &[u8], eye: (f32, f32, f32)) -> f32 {
+        if held != Some("minecraft:mace") {
+            return 0.0;
+        }
+        let fell = self.hp.take_fall(eye.1 - 1.62);
+        let bonus = enchant::smash(fell, enchant::level(data, enchant::DENSITY));
+        if bonus <= 0.0 {
+            return 0.0;
+        }
+        let _ = self.server.events.send(crate::players::Event::Relay { from: 0, packet: Box::new(play_sound("mace.heavy_smash_ground", eye)) });
+        let burst = enchant::level(data, enchant::WIND_BURST);
+        if burst > 0 {
+            let up = Protocol::SetActorMotionPacket(Box::new(bedrock::protocol::v662::packets::SetActorMotionPacket {
+                target_runtime_id: bedrock::protocol::v662::types::ActorRuntimeID(self.id as u64),
+                motion: (0.0, 0.6 + 0.35 * burst as f32, 0.0),
+                server_tick: 0,
+            }));
+            let _ = self.conn.send(&[up]).await;
+            let _ = self.server.events.send(crate::players::Event::Relay { from: 0, packet: Box::new(play_sound("wind_charge.burst", eye)) });
+        }
+        bonus
     }
 
     /// A hit while falling is critical: 1.5x damage and the star particles on the target.
@@ -134,7 +159,10 @@ impl Session {
         }
         let held = self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id));
         let data = self.inv.held(self.selected_slot as usize).map(|s| s.item.user_data_buffer.clone()).unwrap_or_default();
-        let dmg = self.crit(target, self.effects.melee(mobs::attack_damage(held) + enchant::melee_bonus(&data, false, false)));
+        let mut dmg = self.crit(target, self.effects.melee(mobs::attack_damage(held) + enchant::melee_bonus(&data, false, false)));
+        let smash = self.mace_smash(held, &data, me.pos).await;
+        // Breach: the mace ignores 15% of the victim's armor a level (here as extra damage).
+        dmg += smash + if smash > 0.0 { dmg * 0.15 * enchant::level(&data, enchant::BREACH) as f32 * 0.5 } else { 0.0 };
         let (dx, dz) = (them.pos.0 - me.pos.0, them.pos.2 - me.pos.2);
         let len = (dx * dx + dz * dz).sqrt().max(0.01);
         // PNX: knockback 0.3, +0.5 a Knockback level; up is the same, capped at 0.4.
@@ -142,7 +170,24 @@ impl Session {
         let push = 0.3 + 0.5 * (enchant::level(&data, enchant::KNOCKBACK) + self.sprinting as i16) as f32;
         let knock = (dx / len * push, push.min(0.4), dz / len * push);
         let _ = self.server.events.send(crate::players::Event::Damage { to: target, damage: crate::health::Damage::Mob(dmg, intern(&me.name)), knock });
-        // shortcut: fire aspect doesn't set players alight yet; add it with player burning.
+        // Thorns on their armor hurt us back.
+        let armor: Vec<Vec<u8>> = crate::players::EQUIPMENT.lock().as_ref().and_then(|e| e.get(&target)).map(|e| e.armor.iter().flatten().map(|s| s.item.user_data_buffer.clone()).collect()).unwrap_or_default();
+        let refs: Vec<&[u8]> = armor.iter().map(|a| a.as_slice()).collect();
+        let mut seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(7, |d| d.subsec_nanos()) | 1;
+        let thorns = enchant::thorns(&refs, || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed as f32 / u32::MAX as f32
+        });
+        if thorns > 0.0 {
+            let _ = self.server.events.send(crate::players::Event::Damage { to: self.id, damage: crate::health::Damage::Mob(thorns, "Thorns"), knock: (0.0, 0.0, 0.0) });
+        }
+        // Fire Aspect: 4 seconds alight a level.
+        let fire = enchant::level(&data, enchant::FIRE_ASPECT);
+        if fire > 0 {
+            let _ = self.server.events.send(crate::players::Event::Ignite { to: target, secs: 4 * fire as u32 });
+        }
         let uses = attack_wear(held);
         wear(&mut self.conn, &self.server, self.id, &mut self.inv, self.selected_slot as usize, uses, &self.mode).await;
         if survival_like(&self.mode) {

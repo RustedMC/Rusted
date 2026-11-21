@@ -78,6 +78,8 @@ pub(crate) struct Session {
     /// Swimming, crawling: either shrinks the hitbox to 0.6 so 1x1 gaps fit.
     pub swimming: bool,
     pub crawling: bool,
+    /// Seconds left burning (fire aspect, flame, after leaving lava or fire).
+    pub burning: u32,
 }
 
 impl Session {
@@ -182,6 +184,7 @@ impl Session {
             falling: false,
             swimming: false,
             crawling: false,
+            burning: 0,
         })
     }
 

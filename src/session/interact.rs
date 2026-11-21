@@ -614,6 +614,9 @@ impl Session {
             let uses = mining_wear(held);
             wear(&mut self.conn, &self.server, self.id, &mut self.inv, self.selected_slot as usize, uses, &self.mode).await;
         } else {
+            if self.server.world.get(p.0, p.1, p.2) != world::AIR {
+                println!("{}: break at {p:?} refused ({:?}, spawn protected: {})", self.name, self.mode, commands::spawn_protected(&self.server, &self.name, p));
+            }
             let _ = self.conn.send(&[update_block(p.0, p.1, p.2, self.server.world.get(p.0, p.1, p.2))]).await;
         }
     }
@@ -632,13 +635,12 @@ impl Session {
                 || (matches!(a.action_type, PlayerActionType::CrackBlock | PlayerActionType::ContinueDestroyBlock) && self.mining != Some(p));
             if start && survival_like(&self.mode) && block != world::AIR {
                 self.mining = Some(p);
-                // LevelEvent 3600 starts the crack animation; data is 65535 / break ticks (PNX: everyone, us too).
+                // LevelEvent 3600 starts the crack animation for everyone else; data is 65535 / break
+                // ticks. Not to the miner: their client cracks it itself, and a 3600 restarts its timer.
                 let held = self.inv.held(self.selected_slot as usize);
-                let eff = held.map_or(0, |s| enchant::level(&s.item.user_data_buffer, 15)); // 15 = efficiency
+                let eff = held.map_or(0, |s| enchant::level(&s.item.user_data_buffer, enchant::EFFICIENCY));
                 let ticks = crate::drops::break_ticks(block, held.and_then(|s| items::name_of(s.item.id)), eff, self.effects.level(3)).max(1); // 3 = haste
-                let crack = event(3600, 65535 / ticks);
-                let _ = self.conn.send(&[crack.clone()]).await;
-                let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(crack) });
+                let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(event(3600, 65535 / ticks)) });
             }
             match a.action_type {
                 PlayerActionType::CrackBlock | PlayerActionType::ContinueDestroyBlock => {
@@ -648,8 +650,6 @@ impl Session {
                 }
                 PlayerActionType::AbortDestroyBlock => {
                     self.mining = None;
-                    let stop = event(3601, 0);
-                    let _ = self.conn.send(&[stop]).await;
                     let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(event(3601, 0)) });
                 }
                 PlayerActionType::PredictDestroyBlock | PlayerActionType::CreativeDestroyBlock => {

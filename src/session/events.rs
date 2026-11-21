@@ -175,7 +175,9 @@ impl Session {
         // Drowning: 15s of air, then 2 damage a second. Lava 4/s, fire 1/s.
         if survival_like(&self.mode) && !self.hp.dead {
             let was = self.air;
-            self.air = if self.head_in_water { (self.air - 20).max(-20) } else { 300 };
+            // Respiration: each level makes air last one more time as long.
+            let resp = self.inv.held(inventory::ARMOR).map_or(0, |s| enchant::level(&s.item.user_data_buffer, enchant::RESPIRATION));
+            self.air = if self.head_in_water { (self.air - 20 / (resp as i16 + 1)).max(-20) } else { 300 };
             if self.air != was {
                 let _ = self.conn.send(&[spawn::air_packet(self.id, self.air.max(0))]).await;
             }
@@ -187,6 +189,24 @@ impl Session {
                 hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Lava, &mut self.inv, &self.effects, &self.mode).await;
             } else if self.in_fire && !self.hp.dead {
                 hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Fire, &mut self.inv, &self.effects, &self.mode).await;
+            }
+            // Burning: lava and fire leave you alight a while (vanilla 15 s / 8 s); water puts it out.
+            let was = self.burning > 0;
+            if self.in_lava {
+                self.burning = self.burning.max(15);
+            } else if self.in_fire {
+                self.burning = self.burning.max(8);
+            }
+            if self.head_in_water || self.hp.dead || self.effects.level(effects::FIRE_RESISTANCE).is_some() {
+                self.burning = 0;
+            } else if self.burning > 0 {
+                self.burning -= 1;
+                if !self.in_lava && !self.in_fire {
+                    hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Fire, &mut self.inv, &self.effects, &self.mode).await;
+                }
+            }
+            if was != (self.burning > 0) {
+                self.update_pose().await;
             }
         }
         if survival_like(&self.mode) && !self.hp.dead {
@@ -265,6 +285,16 @@ impl Session {
                 }
                 vec![self.inv.content_packet()]
             }
+            Ok(Event::Ignite { to, secs }) if to == self.id => {
+                if survival_like(&self.mode) && self.effects.level(effects::FIRE_RESISTANCE).is_none() {
+                    let was = self.burning > 0;
+                    self.burning = self.burning.max(secs);
+                    if !was {
+                        self.update_pose().await;
+                    }
+                }
+                return GO;
+            }
             Ok(Event::SignInput { to }) if to == self.id => {
                 let Some(me) = self.server.get(self.id) else { return GO };
                 let at = (me.pos.0.floor() as i32, (me.pos.1 - 1.62).floor() as i32 - 2, me.pos.2.floor() as i32);
@@ -288,6 +318,13 @@ impl Session {
                 let mut points = points;
                 if let Some(me) = self.server.get(self.id) {
                     self.server.plugins.xp_change(&self.server, &me, &mut points);
+                }
+                if points > 0 && survival_like(&self.mode) {
+                    let left = self.inv.mend(points, self.selected_slot as usize);
+                    if left != points {
+                        let _ = self.conn.send(&[self.inv.content_packet()]).await;
+                    }
+                    points = left;
                 }
                 if points == 0 {
                     return GO;

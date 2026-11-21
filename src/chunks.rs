@@ -15,6 +15,11 @@ pub(crate) struct ChunkTracker {
     pub(crate) last_batch: Option<std::time::Instant>,
     /// Chunks the last `update` sent, for the chunk-load plugin event.
     pub(crate) just_sent: Vec<(i32, i32)>,
+    /// A streaming batch is being generated in the background; its packets arrive on `ready`
+    /// so the player's connection keeps running meanwhile (fast elytra flight froze it).
+    pub(crate) inflight: bool,
+    pub(crate) ready_tx: tokio::sync::mpsc::UnboundedSender<Vec<Protocol>>,
+    pub(crate) ready: tokio::sync::mpsc::UnboundedReceiver<Vec<Protocol>>,
 }
 
 impl ChunkTracker {
@@ -59,7 +64,8 @@ impl ChunkTracker {
             new.dedup();
             self.pending = new.into();
         }
-        let paced = limit != usize::MAX && self.last_batch.is_some_and(|t| t.elapsed() < BATCH_GAP);
+        let background = limit == CHUNK_BATCH;
+        let paced = limit != usize::MAX && (self.last_batch.is_some_and(|t| t.elapsed() < BATCH_GAP) || (background && self.inflight));
         if self.pending.is_empty() || paced {
             return if packets.is_empty() { Ok(()) } else { conn.send(&packets).await };
         }
@@ -72,8 +78,9 @@ impl ChunkTracker {
         sign_data.extend(chest_pairs_in(world, &coords));
         let world = world.clone();
         let dim = conn.dim;
-        let encoded = tokio::task::spawn_blocking(move || {
-            let threads = std::thread::available_parallelism().map_or(2, |n| n.get()).min(coords.len().max(1));
+        let generate = move || {
+            // Leave a core for the game tick and the other players.
+            let threads = std::thread::available_parallelism().map_or(2, |n| n.get()).saturating_sub(1).max(1).min(coords.len().max(1));
             let per = coords.len().div_ceil(threads.max(1)).max(1);
             std::thread::scope(|scope| {
                 coords
@@ -84,9 +91,28 @@ impl ChunkTracker {
                     .flat_map(|h| h.join().unwrap_or_default())
                     .collect::<Vec<_>>()
             })
-        })
-        .await
-        .unwrap_or_default();
+        };
+        if background {
+            // Publisher update now; the chunks follow on `ready` when they're built.
+            self.inflight = true;
+            let tx = self.ready_tx.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut out = chunk_packets(generate(), dim);
+                out.extend(sign_data);
+                let _ = tx.send(out);
+            });
+            return if packets.is_empty() { Ok(()) } else { conn.send(&packets).await };
+        }
+        let encoded = tokio::task::spawn_blocking(generate).await.unwrap_or_default();
+        packets.extend(chunk_packets(encoded, dim));
+        packets.extend(sign_data);
+        conn.send(&packets).await
+    }
+}
+
+fn chunk_packets(encoded: Vec<((i32, i32), (Vec<u8>, u32))>, dim: u8) -> Vec<Protocol> {
+    let mut packets = Vec::new();
+    {
         for ((x, z), (payload, sub_chunk_count)) in encoded {
             packets.push(Protocol::LevelChunkPacket(Box::new(LevelChunkPacket {
                 chunk_position: ChunkPos { x, z },
@@ -99,9 +125,8 @@ impl ChunkTracker {
                 is_client_biome_update: false,
             })));
         }
-        packets.extend(sign_data);
-        conn.send(&packets).await
     }
+    packets
 }
 
 /// At most 160 chunks/s. At ~1000/s the client froze and timed out.

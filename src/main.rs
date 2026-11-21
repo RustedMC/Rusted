@@ -546,7 +546,8 @@ fn strip_colors(s: &str) -> String {
 
 impl Default for ChunkTracker {
     fn default() -> Self {
-        Self { sent: Default::default(), center: None, radius: VIEW_RADIUS.min(config::get().view_distance), pending: Default::default(), last_batch: None, just_sent: vec![] }
+        let (ready_tx, ready) = tokio::sync::mpsc::unbounded_channel();
+        Self { sent: Default::default(), center: None, radius: VIEW_RADIUS.min(config::get().view_distance), pending: Default::default(), last_batch: None, just_sent: vec![], inflight: false, ready_tx, ready }
     }
 }
 
@@ -571,6 +572,14 @@ async fn play(
             _ = s.regen.tick() => {
                 s.every_second().await;
                 GO
+            }
+            Some(packets) = s.chunks.ready.recv() => {
+                s.chunks.inflight = false;
+                if s.conn.send(&packets).await.is_err() {
+                    END
+                } else {
+                    GO
+                }
             }
             Some((line, reply_to)) = s.cmd_rx.recv() => {
                 s.run_command(line, reply_to).await;

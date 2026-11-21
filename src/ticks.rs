@@ -267,7 +267,7 @@ pub(crate) fn dispense(server: &players::Server, p: (i32, i32, i32)) {
         }
     };
     match name {
-        "minecraft:arrow" => server.mobs.player_shoot(server, 0, eye, fire_dir(dx, dy, dz), 1.0, false, 0, 0, false, items::item_by_name("minecraft:arrow")),
+        "minecraft:arrow" => server.mobs.player_shoot(server, 0, eye, fire_dir(dx, dy, dz), 1.0, false, 0, 0, false, items::item_by_name("minecraft:arrow"), &[]),
         "minecraft:snowball" | "minecraft:egg" => mobs::throw(server, mobs::Throw::from_item(name).unwrap(), 0, eye, fire_dir(dx, dy, dz)),
         "minecraft:splash_potion" | "minecraft:lingering_potion" => mobs::throw(server, mobs::Throw::Potion(st.item.aux_value), 0, eye, fire_dir(dx, dy, dz)),
         "minecraft:water_bucket" | "minecraft:lava_bucket" if server.world.get(front.0, front.1, front.2) == world::AIR => {
@@ -331,6 +331,37 @@ pub(crate) fn hopper_ticks(server: &players::Server) {
 
 /// Lightning near players, ~1 strike per 100000 ticks per chunk (PNX Level.updateWeather).
 /// Hurts anyone within 3 blocks and starts a fire.
+/// A lightning bolt at `at`: the flash, thunder, and damage to players within 3 blocks.
+pub(crate) fn strike(server: &players::Server, at: (f32, f32, f32)) {
+    let bolt = players::next_id();
+    let add = Protocol::AddActorPacket(Box::new(bedrock::protocol::v2225::packets::AddActorPacket {
+        target_actor_id: ActorUniqueID(bolt),
+        target_runtime_id: ActorRuntimeID(bolt as u64),
+        actor_type: "minecraft:lightning_bolt".into(),
+        position: at,
+        velocity: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0),
+        y_head_rotation: 0.0,
+        y_body_rotation: 0.0,
+        attributes: vec![],
+        actor_data: vec![],
+        synced_properties: bedrock::protocol::v662::types::PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
+        actor_links: vec![],
+        passenger_of_block_data: None,
+    }));
+    let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(add) });
+    let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(play_sound("ambient.weather.thunder", at)) });
+    server.scheduler.run_later(20, move |s| {
+        let _ = s.events.send(players::Event::Relay { from: 0, packet: Box::new(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(bolt) }))) });
+    });
+    for q in server.all() {
+        let d = ((q.pos.0 - at.0).powi(2) + (q.pos.1 - 1.62 - at.1).powi(2) + (q.pos.2 - at.2).powi(2)).sqrt();
+        if d < 3.0 {
+            let _ = server.events.send(players::Event::Damage { to: q.id, damage: health::Damage::Explosion(5.0, "Lightning"), knock: (0.0, 0.1, 0.0) });
+        }
+    }
+}
+
 pub(crate) fn lightning(server: &players::Server, rng: &mut u64) {
     let mut next = || {
         *rng ^= *rng << 13;
@@ -349,33 +380,7 @@ pub(crate) fn lightning(server: &players::Server, rng: &mut u64) {
             y -= 1;
         }
         let at = (x as f32 + 0.5, (y + 1) as f32, z as f32 + 0.5);
-        let bolt = players::next_id();
-        let add = Protocol::AddActorPacket(Box::new(bedrock::protocol::v2225::packets::AddActorPacket {
-            target_actor_id: ActorUniqueID(bolt),
-            target_runtime_id: ActorRuntimeID(bolt as u64),
-            actor_type: "minecraft:lightning_bolt".into(),
-            position: at,
-            velocity: (0.0, 0.0, 0.0),
-            rotation: (0.0, 0.0),
-            y_head_rotation: 0.0,
-            y_body_rotation: 0.0,
-            attributes: vec![],
-            actor_data: vec![],
-            synced_properties: bedrock::protocol::v662::types::PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
-            actor_links: vec![],
-            passenger_of_block_data: None,
-        }));
-        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(add) });
-        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(play_sound("ambient.weather.thunder", at)) });
-        server.scheduler.run_later(20, move |s| {
-            let _ = s.events.send(players::Event::Relay { from: 0, packet: Box::new(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(bolt) }))) });
-        });
-        for q in server.all() {
-            let d = ((q.pos.0 - at.0).powi(2) + (q.pos.1 - 1.62 - at.1).powi(2) + (q.pos.2 - at.2).powi(2)).sqrt();
-            if d < 3.0 {
-                let _ = server.events.send(players::Event::Damage { to: q.id, damage: health::Damage::Explosion(5.0, "Lightning"), knock: (0.0, 0.1, 0.0) });
-            }
-        }
+        strike(server, at);
         if game_rule_on(server, "doFireTick", true)
             && server.world.get(x, y + 1, z) == world::AIR
             && let Some(fire) = blocks::any_state("minecraft:fire")
