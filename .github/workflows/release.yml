@@ -26,14 +26,14 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           New-Item -ItemType Directory -Force pkg/data | Out-Null
-          Copy-Item target/release/rusted.exe, deploy/start.bat, README.md, LICENSE, LICENSE-APACHE, NOTICE.md pkg/
+          Copy-Item target/release/rusted.exe, deploy/start.bat, README.md, LICENSE, LICENSE-GPL, LICENSE-APACHE, NOTICE.md pkg/
           Copy-Item data/structures.nbt pkg/data/
           Compress-Archive -Path pkg/* -DestinationPath ${{ matrix.file }}
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |
           mkdir -p pkg/data
-          cp target/release/rusted deploy/start.sh deploy/rusted.service README.md LICENSE LICENSE-APACHE NOTICE.md pkg/
+          cp target/release/rusted deploy/start.sh deploy/rusted.service README.md LICENSE LICENSE-GPL LICENSE-APACHE NOTICE.md pkg/
           cp data/structures.nbt pkg/data/
           chmod +x pkg/rusted pkg/start.sh
           tar -czf ${{ matrix.file }} -C pkg .

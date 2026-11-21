@@ -188,7 +188,9 @@ Found a bug or have an idea? Open an issue, or come say hi on the
 
 ---
 
-<sub>By SXCULPZ and Claude, under the [LGPL-3.0](LICENSE) like PowerNukkitX. Credits in [NOTICE.md](NOTICE.md).
+<sub>By SXCULPZ and Claude. Rusted is a modified Rust port of [PowerNukkitX](https://github.com/PowerNukkitX/PowerNukkitX)
+by its contributors, under the same [LGPL-3.0](LICENSE) (which builds on the [GPL-3.0](LICENSE-GPL)); it is not
+made or endorsed by the PowerNukkitX team. Credits in [NOTICE.md](NOTICE.md).
 Rusted is independent server software and is not an official Minecraft product. It is not
 approved by or associated with Mojang or Microsoft. Minecraft is a trademark of Microsoft
 Corporation.</sub>

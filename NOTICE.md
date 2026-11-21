@@ -19,9 +19,16 @@ Rusted builds on the work of others. Thank you.
 - All of this data describes Minecraft: Bedrock Edition, which belongs to Mojang Studios /
   Microsoft. Rusted is not affiliated with or endorsed by Mojang or Microsoft.
 
-## Reference
-- **PowerNukkitX** (LGPL-3.0, https://github.com/PowerNukkitX/PowerNukkitX): Rusted is a
-  Rust port of PowerNukkitX. Ported code credits its PNX source class in a comment, and
-  Rusted as a whole is licensed **LGPL-3.0** (see LICENSE), like PowerNukkitX.
+## PowerNukkitX
+- **PowerNukkitX** (LGPL-3.0, https://github.com/PowerNukkitX/PowerNukkitX), by the
+  PowerNukkitX contributors (https://github.com/PowerNukkitX/PowerNukkitX/graphs/contributors).
+  PowerNukkitX itself continues the work of PowerNukkit and Nukkit.
+- **Rusted is a modified version of PowerNukkitX**: its code was translated from Java to Rust
+  and changed by SXCULPZ and Rusted's contributors, starting in 2026. Ported code names its
+  PowerNukkitX source class in a `// from PNX <Class>` comment.
+- Rusted is licensed under the **LGPL-3.0**, the same license as PowerNukkitX: see `LICENSE`.
+  The LGPL-3.0 builds on the GNU GPL-3.0, whose text is in `LICENSE-GPL`.
+- Rusted is an independent project. It is not made, approved or endorsed by the PowerNukkitX
+  team.
 - **bedrock-rs** code Rusted started from (`src/main.rs`, from `examples/server.rs`) is
   Apache-2.0 (LICENSE-APACHE), which is compatible with LGPL-3.0; its notice is kept.
