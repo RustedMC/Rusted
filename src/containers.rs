@@ -217,6 +217,7 @@ impl Containers {
         if left == 0 {
             v.remove(&pos);
         }
+        crate::redstone::set_viewers(pos, left);
         left
     }
 

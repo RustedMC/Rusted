@@ -119,7 +119,7 @@ fn wire_joins(o: i32, d: (i32, i32)) -> bool {
 fn redstone_part(n: &str) -> bool {
     n == "redstone_wire" || n.contains("redstone_torch") || n == "lever" || n.ends_with("_button") || n.ends_with("pressure_plate") || n == "redstone_block"
         || n.contains("repeater") || n.contains("comparator") || n == "observer" || n.starts_with("daylight_detector") || n == "target" || n.ends_with("sculk_sensor")
-        || n == "trapped_chest" || n == "lectern" || n == "detector_rail"
+        || n == "trapped_chest" || n == "lectern" || n == "detector_rail" || n == "tripwire_hook" || n.ends_with("copper_bulb")
 }
 
 /// The block at `p` with its connections worked out, or None if it doesn't change.
@@ -186,6 +186,11 @@ pub fn shape(get: &dyn Fn(i32, i32, i32) -> i32, p: Pos) -> Option<i32> {
         }
         for (i, (side, _)) in SIDES.iter().enumerate() {
             st.push((format!("redstone_{side}"), State::Str(link[i].into())));
+        }
+    } else if n == "trip_wire" {
+        for (side, (dx, dz)) in SIDES {
+            let on = name(get(p.0 + dx, p.1, p.2 + dz));
+            st.push((format!("minecraft:connection_{side}"), State::Bool(on == "trip_wire" || on == "tripwire_hook")));
         }
     } else if n == "fire" || n == "soul_fire" {
         return None; // the client draws fire from its own neighbours
@@ -299,4 +304,5 @@ mod wire_tests {
         }
     }
 }
+
 

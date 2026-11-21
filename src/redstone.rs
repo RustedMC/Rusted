@@ -54,6 +54,9 @@ struct Engine {
     comparators: HashMap<Pos, u8>,
     /// pistons mid-move
     moving: HashMap<Pos, Move>,
+    /// recent flips of each redstone torch (game ticks), and torches burnt out until a tick
+    flips: HashMap<Pos, Vec<u64>>,
+    burnt: HashMap<Pos, u64>,
 }
 
 /// A piston move in progress (PNX BlockEntityPistonArm): blocks sit as moving_block at their
@@ -110,7 +113,7 @@ fn solid(b: i32) -> bool {
 
 fn is_component(b: i32) -> bool {
     let n = name(b);
-    n == "redstone_block" || n == "detector_rail" || n.contains("repeater") || n.contains("comparator") || n == "observer" || n.contains("piston") || n.starts_with("daylight_detector") || n.ends_with("sculk_sensor")
+    n == "redstone_block" || n == "target" || n == "tripwire_hook" || n == "trapped_chest" || n == "detector_rail" || n.contains("repeater") || n.contains("comparator") || n == "observer" || n.contains("piston") || n.starts_with("daylight_detector") || n.ends_with("sculk_sensor")
 }
 
 /// Output side of a repeater/comparator. Its facing (south, west, north, east) is the input
@@ -130,6 +133,49 @@ fn diode_out(b: i32) -> Pos {
         2 => (0, 0, 1),
         _ => (-1, 0, 0),
     }
+}
+
+/// Which way a tripwire hook points (its string runs this way): direction 0 south, 1 west,
+/// 2 north, 3 east.
+fn hook_out(b: i32) -> Pos {
+    match int(b, "direction") {
+        0 => (0, 0, 1),
+        1 => (-1, 0, 0),
+        2 => (0, 0, -1),
+        _ => (1, 0, 0),
+    }
+}
+
+/// Players looking into each trapped chest.
+static TRAPPED: Mutex<Option<HashMap<Pos, u8>>> = Mutex::new(None);
+
+/// Target blocks hit: (level, game tick it ends).
+static TARGETS: Mutex<Option<HashMap<Pos, (u8, u64)>>> = Mutex::new(None);
+
+/// A container's viewer count changed (trapped chests power redstone with it).
+pub fn set_viewers(p: Pos, n: u32) {
+    let mut t = TRAPPED.lock();
+    let t = t.get_or_insert_with(HashMap::new);
+    if n == 0 {
+        t.remove(&p);
+    } else {
+        t.insert(p, n.min(15) as u8);
+    }
+    mark(p);
+}
+
+/// A projectile stuck in a target block at `hit` (block-relative 0..1 on each axis): the
+/// closer to the middle of the face, the stronger, for `ticks` game ticks (vanilla: arrows 20,
+/// other projectiles 8).
+pub fn hit_target(p: Pos, hit: (f32, f32, f32), ticks: u64) {
+    // Distance from the centre on the two axes the face spans; the face is the one nearest.
+    let d = [(hit.0 - 0.5).abs(), (hit.1 - 0.5).abs(), (hit.2 - 0.5).abs()];
+    let face = (0..3).max_by(|&a, &b| d[a].total_cmp(&d[b])).unwrap_or(0);
+    let off = (0..3).filter(|&i| i != face).map(|i| d[i]).fold(0.0f32, f32::max);
+    let level = ((1.0 - off / 0.5).clamp(0.0, 1.0) * 15.0).ceil().max(1.0) as u8;
+    let now = ENGINE.lock().as_ref().map_or(0, |e| e.tick);
+    TARGETS.lock().get_or_insert_with(HashMap::new).insert(p, (level, now + ticks));
+    mark(p);
 }
 
 /// Observers look at this face and output out the back.
@@ -165,6 +211,14 @@ fn emits(w: &World, src: Pos, to: Pos, comparators: &HashMap<Pos, u8>) -> (u8, b
     let attached = crate::physics::support_of(b).map(|o| add(src, o));
     match n {
         "redstone_block" => (15, false),
+        // Trapped chests: one level per player looking in, strong into the block below.
+        "trapped_chest" => {
+            let n = TRAPPED.lock().as_ref().and_then(|t| t.get(&src).copied()).unwrap_or(0);
+            (n, n > 0 && dir == DIRS[0])
+        }
+        "target" => (TARGETS.lock().as_ref().and_then(|t| t.get(&src).map(|x| x.0)).unwrap_or(0), false),
+        // A pulled hook powers everything around it and strongly the block it hangs on.
+        "tripwire_hook" if int(b, "powered_bit") == 1 => (15, dir == neg(hook_out(b))),
         "sculk_sensor" | "calibrated_sculk_sensor" => (crate::sculk::power(src), false),
         "lever" if int(b, "open_bit") == 1 => (15, attached == Some(to)),
         n if n.ends_with("_button") && int(b, "button_pressed_bit") == 1 => (15, attached == Some(to)),
@@ -700,6 +754,24 @@ fn evaluate(w: &World, e: &mut Engine, p: Pos, wired: &mut HashSet<Pos>, step: &
                 sched(e, p, Job::Diode, 2);
             }
         }
+        "tripwire_hook" => tripwire(w, p, b, step),
+        "trip_wire" => {
+            // Re-check the hooks at either end of this string.
+            for d in [DIRS[2], DIRS[3], DIRS[4], DIRS[5]] {
+                let mut q = add(p, d);
+                for _ in 0..42 {
+                    let qb = w.get(q.0, q.1, q.2);
+                    match name(qb) {
+                        "trip_wire" => q = add(q, d),
+                        "tripwire_hook" => {
+                            tripwire(w, q, qb, step);
+                            break;
+                        }
+                        _ => break,
+                    }
+                }
+            }
+        }
         "daylight_detector" | "daylight_detector_inverted" => {
             detectors().insert(p);
         }
@@ -727,7 +799,7 @@ fn evaluate(w: &World, e: &mut Engine, p: Pos, wired: &mut HashSet<Pos>, step: &
                 step.blocks.push((p, with(b, &[("toggle_bit", State::Bool(on))])));
             }
         }
-        n if n == "tnt" || n == "noteblock" || n == "dispenser" || n == "dropper" || n == "crafter" || n.ends_with("_door") || n.ends_with("trapdoor") || n.ends_with("fence_gate") || n == "wooden_door" => {
+        n if n == "tnt" || n == "noteblock" || n == "dispenser" || n == "dropper" || n == "crafter" || n.ends_with("copper_bulb") || n.ends_with("_door") || n.ends_with("trapdoor") || n.ends_with("fence_gate") || n == "wooden_door" => {
             // edge-triggered, only a change does anything (so players can still use doors)
             let key = if n.ends_with("_door") || n == "wooden_door" {
                 if int(b, "upper_block_bit") == 1 { (p.0, p.1 - 1, p.2) } else { p }
@@ -746,6 +818,15 @@ fn evaluate(w: &World, e: &mut Engine, p: Pos, wired: &mut HashSet<Pos>, step: &
                 "noteblock" if on => step.notes.push(p),
                 "dispenser" | "dropper" | "crafter" if on => sched(e, p, Job::Dispense, 4),
                 "tnt" | "noteblock" | "dispenser" | "dropper" | "crafter" => {}
+                // Copper bulbs flip on each new pulse and remember being powered.
+                n if n.ends_with("copper_bulb") => {
+                    let lit = int(b, "lit") == 1;
+                    let flipped = if on { !lit } else { lit };
+                    step.blocks.push((p, with(b, &[("lit", State::Bool(flipped)), ("powered_bit", State::Bool(on))])));
+                    if on {
+                        step.sounds.push((p, if flipped { "copper_bulb.turn_on" } else { "copper_bulb.turn_off" }));
+                    }
+                }
                 _ => {
                     let lower = w.get(key.0, key.1, key.2);
                     if int(lower, "open_bit") == on as i32 {
@@ -764,6 +845,44 @@ fn evaluate(w: &World, e: &mut Engine, p: Pos, wired: &mut HashSet<Pos>, step: &
             }
         }
         _ => {}
+    }
+}
+
+/// A tripwire hook: attached when a string of up to 40 tripwire runs straight to a hook
+/// facing back; powered while anything stands on that string (PNX BlockTripWireHook).
+fn tripwire(w: &World, p: Pos, b: i32, step: &mut Step) {
+    let d = hook_out(b);
+    let mut wires = vec![];
+    let mut q = add(p, d);
+    let mut other = None;
+    for _ in 0..41 {
+        let qb = w.get(q.0, q.1, q.2);
+        match name(qb) {
+            "trip_wire" => wires.push((q, qb)),
+            "tripwire_hook" if hook_out(qb) == neg(d) => {
+                other = Some((q, qb));
+                break;
+            }
+            _ => break,
+        }
+        q = add(q, d);
+    }
+    let attached = other.is_some() && !wires.is_empty();
+    let powered = attached && wires.iter().any(|&(_, wb)| int(wb, "powered_bit") == 1 && int(wb, "disarmed_bit") == 0);
+    for (hp, hb) in std::iter::once((p, b)).chain(other) {
+        let nb = with(hb, &[("attached_bit", State::Bool(attached)), ("powered_bit", State::Bool(powered))]);
+        if nb != hb {
+            step.blocks.push((hp, nb));
+            if int(hb, "powered_bit") != powered as i32 {
+                step.sounds.push((hp, "random.click"));
+            }
+        }
+    }
+    for (wp, wb) in wires {
+        let nb = with(wb, &[("attached_bit", State::Bool(attached))]);
+        if nb != wb {
+            step.blocks.push((wp, nb));
+        }
     }
 }
 
@@ -815,7 +934,8 @@ fn relevant(b: i32) -> bool {
     SET.get_or_init(|| {
         crate::blocks::ids().iter().copied().filter(|&b| {
             let n = name(b);
-            matches!(n, "redstone_wire" | "redstone_torch" | "unlit_redstone_torch" | "redstone_lamp" | "lit_redstone_lamp" | "piston" | "sticky_piston" | "hopper" | "tnt" | "noteblock" | "dispenser" | "dropper" | "crafter" | "wooden_door")
+            matches!(n, "redstone_wire" | "redstone_torch" | "unlit_redstone_torch" | "redstone_lamp" | "lit_redstone_lamp" | "piston" | "sticky_piston" | "hopper" | "tnt" | "noteblock" | "dispenser" | "dropper" | "crafter" | "wooden_door" | "tripwire_hook" | "trip_wire")
+                || n.ends_with("copper_bulb")
                 || n.contains("repeater")
                 || n.contains("comparator")
                 || n.starts_with("daylight_detector")
@@ -844,9 +964,28 @@ pub fn tick(w: &World, fill: &dyn Fn(Pos) -> Option<u8>) -> Step {
         let b = w.get(p.0, p.1, p.2);
         match job {
             Job::Diode => {
+                // A burnt-out torch stays off until its time is up (vanilla: 8 flips in 60
+                // ticks burns it out for 160).
+                if e.burnt.get(&p).is_some_and(|&until| e.tick < until) {
+                    continue;
+                }
+                e.burnt.remove(&p);
                 let mut c = e.comparators.clone();
                 if let Some(nb) = diode_target(w, p, b, &mut c, fill) {
                     e.comparators = c;
+                    if name(b).ends_with("redstone_torch") {
+                        let now = e.tick;
+                        let flips = e.flips.entry(p).or_default();
+                        flips.retain(|&t| now - t < 60);
+                        flips.push(now);
+                        if flips.len() >= 8 && name(nb) == "redstone_torch" {
+                            e.flips.remove(&p);
+                            e.burnt.insert(p, now + 160);
+                            sched(e, p, Job::Diode, 161);
+                            step.sounds.push((p, "random.fizz"));
+                            continue;
+                        }
+                    }
                     step.blocks.push((p, nb));
                 }
             }
@@ -888,6 +1027,17 @@ pub fn tick(w: &World, fill: &dyn Fn(Pos) -> Option<u8>) -> Step {
         }
     }
 
+    // Target blocks whose hit wore off.
+    if let Some(t) = TARGETS.lock().as_mut() {
+        let now = e.tick;
+        t.retain(|&p, &mut (_, until)| {
+            let keep = now < until;
+            if !keep {
+                mark(p);
+            }
+            keep
+        });
+    }
     let mut dirty: Vec<Pos> = std::mem::take(&mut *DIRTY.lock());
     dirty.sort_unstable();
     dirty.dedup();
@@ -1160,5 +1310,74 @@ mod tests {
         mark((99, y, 0));
         run(&w, 2);
         assert_eq!(name(w.get(101, y, 0)), "stone", "13 is too many, nothing moved");
+    }
+
+    #[test]
+    fn copper_bulb_trapped_chest_target_and_tripwire() {
+        let _serial = SERIAL.lock();
+        crate::blocks::init();
+        let w = World::default();
+        let y = -60;
+        // Copper bulb: a pulse turns it on, the next pulse off.
+        w.set(150, y, 0, block("copper_bulb"));
+        for (i, want) in [(0, true), (1, false)] {
+            w.set(149, y, 0, block("redstone_block"));
+            mark((149, y, 0));
+            run(&w, 2);
+            assert_eq!(int(w.get(150, y, 0), "lit") == 1, want, "pulse {i}");
+            w.set(149, y, 0, AIR);
+            mark((149, y, 0));
+            run(&w, 2);
+        }
+        // Trapped chest with a viewer lights a lamp next to it.
+        w.set(160, y, 0, block("trapped_chest"));
+        w.set(161, y, 0, block("redstone_lamp"));
+        set_viewers((160, y, 0), 1);
+        run(&w, 2);
+        assert_eq!(name(w.get(161, y, 0)), "lit_redstone_lamp", "chest open");
+        set_viewers((160, y, 0), 0);
+        run(&w, 2);
+        assert_eq!(name(w.get(161, y, 0)), "redstone_lamp", "chest closed");
+        // A dead-centre hit is level 15, an edge hit is weak.
+        hit_target((170, y, 0), (0.5, 0.5, 1.0), 20);
+        assert_eq!(TARGETS.lock().as_ref().unwrap()[&(170, y, 0)].0, 15);
+        hit_target((171, y, 0), (0.95, 0.5, 1.0), 20);
+        assert!(TARGETS.lock().as_ref().unwrap()[&(171, y, 0)].0 <= 2);
+        // Two hooks facing each other with string between: attached; stepping in powers them.
+        let hook = |d: i32| with(block("tripwire_hook"), &[("direction", State::Int(d))]);
+        w.set(180, y, 0, hook(3)); // points east
+        w.set(181, y, 0, block("trip_wire"));
+        w.set(182, y, 0, block("trip_wire"));
+        w.set(183, y, 0, hook(1)); // points west
+        mark((181, y, 0));
+        run(&w, 2);
+        assert_eq!(int(w.get(180, y, 0), "attached_bit"), 1, "attached");
+        assert_eq!(int(w.get(180, y, 0), "powered_bit"), 0);
+        w.set(182, y, 0, with(w.get(182, y, 0), &[("powered_bit", State::Bool(true))]));
+        mark((182, y, 0));
+        run(&w, 2);
+        assert_eq!(int(w.get(183, y, 0), "powered_bit"), 1, "something on the string");
+    }
+
+    #[test]
+    fn torches_burn_out() {
+        let _serial = SERIAL.lock();
+        crate::blocks::init();
+        let w = World::default();
+        let y = -60;
+        // Torch on a block; power the block on and off fast.
+        w.set(200, y, 0, block("stone"));
+        w.set(200, y + 1, 0, block("redstone_torch"));
+        let mut lit_after = vec![];
+        for _ in 0..12 {
+            w.set(199, y, 0, block("redstone_block"));
+            mark((199, y, 0));
+            run(&w, 3);
+            w.set(199, y, 0, AIR);
+            mark((199, y, 0));
+            run(&w, 3);
+            lit_after.push(name(w.get(200, y + 1, 0)) == "redstone_torch");
+        }
+        assert!(!*lit_after.last().unwrap(), "burnt out and stays off: {lit_after:?}");
     }
 }

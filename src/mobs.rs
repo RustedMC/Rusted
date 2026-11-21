@@ -2474,7 +2474,12 @@ impl Mobs {
                     out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(a.id) })));
                     return false;
                 }
-                if solid(server.world.get(next.0.floor() as i32, next.1.floor() as i32, next.2.floor() as i32)) {
+                let hit = (next.0.floor() as i32, next.1.floor() as i32, next.2.floor() as i32);
+                if solid(server.world.get(hit.0, hit.1, hit.2)) {
+                    if crate::blocks::entry(server.world.get(hit.0, hit.1, hit.2)).is_some_and(|e| e.name == "minecraft:target") {
+                        let rel = (next.0 - hit.0 as f32, next.1 - hit.1 as f32, next.2 - hit.2 as f32);
+                        crate::redstone::hit_target(hit, rel, 20);
+                    }
                     a.stuck = true;
                     a.life = a.life.min(5 * TPS); // stays stuck a few seconds
                     a.vel = (0.0, 0.0, 0.0);

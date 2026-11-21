@@ -15,10 +15,10 @@ See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands
   cap, rarer patrols
 - ✅ **0.4.2** Pistons slide like vanilla (moving blocks), crushed blocks drop, mobs ride
   along
-- 🔨 **0.4.3** Missing redstone: tripwire, target block, trapped chest, powered and activator
-  rails, copper bulb, torch burnout; buttons on pistons
-- ⏳ **0.4.4** Mob spawning: PNX's per-mob Bedrock spawn rules (biome, light, surface or cave,
-  herds)
+- ✅ **0.4.3** Tripwire and hooks, target blocks, trapped chests, copper bulbs, redstone
+  torch burnout
+- 🔨 **0.4.4** Mob spawning: PNX's per-mob Bedrock spawn rules (biome, light, surface or cave,
+  herds); buttons on pistons
 - ⏳ **0.4.5** Mob AI: the rest of PNX's behaviours for neutrals, villagers, fish and flyers;
   arrows and tridents checked against PNX
 

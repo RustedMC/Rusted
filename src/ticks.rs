@@ -80,6 +80,14 @@ fn game_tick(server: &players::Server, plates: &mut HashMap<(i32, i32, i32), Ins
     }
     for (feet, (beings, items)) in on {
         let b = server.world.get(feet.0, feet.1, feet.2);
+        // Anything in tripwire string pulls it (released 10 ticks after it leaves).
+        if blocks::entry(b).is_some_and(|e| e.name == "minecraft:trip_wire") && beings + items > 0 {
+            plates.insert(feet, Instant::now());
+            if !matches!(blocks::state(b, "powered_bit"), Some(blocks::State::Bool(true))) {
+                server.set_block_quiet(0, feet.0, feet.1, feet.2, blocks::with(b, &[("powered_bit", blocks::State::Bool(true))]));
+            }
+            continue;
+        }
         let Some(name) = blocks::entry(b).map(|e| e.name.trim_start_matches("minecraft:")).filter(|n| n.ends_with("pressure_plate")) else { continue };
         let signal = match name {
             "light_weighted_pressure_plate" => (beings + items).min(15) as i32,
@@ -100,6 +108,13 @@ fn game_tick(server: &players::Server, plates: &mut HashMap<(i32, i32, i32), Ins
     plates.retain(|&q, t| {
         // Vanilla: weighted plates release after 10 game ticks, the rest after 20.
         let b = server.world.get(q.0, q.1, q.2);
+        if blocks::entry(b).is_some_and(|e| e.name == "minecraft:trip_wire") {
+            if t.elapsed() < std::time::Duration::from_millis(500) {
+                return true;
+            }
+            server.set_block_quiet(0, q.0, q.1, q.2, blocks::with(b, &[("powered_bit", blocks::State::Bool(false))]));
+            return false;
+        }
         let weighted = blocks::entry(b).is_some_and(|e| e.name.contains("weighted"));
         if t.elapsed() < std::time::Duration::from_millis(if weighted { 500 } else { 1000 }) {
             return true;
