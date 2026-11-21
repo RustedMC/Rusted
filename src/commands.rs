@@ -241,6 +241,16 @@ fn target_index(cmd: &str, args: &[&str]) -> Option<usize> {
     }
 }
 
+/// Which argument is a player name the sender's own command acts on.
+fn name_index(cmd: &str, args: &[&str]) -> Option<usize> {
+    match cmd {
+        "op" | "deop" | "kick" | "ban" | "ban-ip" | "pardon" | "unban" | "msg" | "tell" | "w" | "tag" | "invsee" | "heal" | "feed" | "fly" | "mute" | "unmute" => Some(1),
+        "whitelist" if matches!(args.get(1), Some(&"add" | &"remove")) => Some(2),
+        "scoreboard" if args.get(1) == Some(&"players") => Some(3),
+        _ => None,
+    }
+}
+
 /// Expands a target selector into one run per player, rewriting the target as `@s`.
 /// Commands without a target just run here.
 pub fn expand(server: &crate::players::Server, me: i64, line: &str) -> Result<Vec<(i64, String)>, String> {
@@ -294,6 +304,23 @@ pub fn expand(server: &crate::players::Server, me: i64, line: &str) -> Result<Ve
         let ids = select(server, me, t)?;
         let names: Vec<String> = ids.iter().filter_map(|i| server.get(*i)).map(|p| p.name).collect();
         return Err(if names.is_empty() { "§cNo targets matched selector".into() } else { format!("Found {}", names.join(", ")) });
+    }
+    // Commands that take a player's name but run here (op, kick, msg...): one run per name.
+    if let Some(i) = name_index(cmd, &args)
+        && let Some(sel) = args.get(i).filter(|a| a.starts_with('@'))
+    {
+        let names: Vec<String> = select(server, me, sel)?.into_iter().filter_map(|id| server.get(id)).map(|p| p.name).collect();
+        if names.is_empty() {
+            return Err("§cNo targets matched selector".into());
+        }
+        return Ok(names
+            .iter()
+            .map(|n| {
+                let mut a = args.clone();
+                a[i] = n;
+                (me, a.join(" "))
+            })
+            .collect());
     }
     let Some(i) = target_index(cmd, &args) else { return Ok(vec![(me, line.to_string())]) };
     let Some(target) = args.get(i) else { return Ok(vec![(me, line.to_string())]) };

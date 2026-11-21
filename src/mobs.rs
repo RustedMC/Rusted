@@ -3028,41 +3028,95 @@ fn tick_tnt(server: &Server) {
     }
 }
 
+/// Blast resistance (Java-scale values, Bedrock's / 5), what eats an explosion ray.
+fn blast_resistance(b: i32) -> f32 {
+    let n = blocks::short(b);
+    match n {
+        "bedrock" | "barrier" | "end_portal_frame" | "end_portal" | "reinforced_deepslate" | "command_block" | "structure_block" | "jigsaw" | "light_block" => 3_600_000.0,
+        "obsidian" | "crying_obsidian" | "anvil" | "chipped_anvil" | "damaged_anvil" | "ancient_debris" | "netherite_block" | "respawn_anchor" | "enchanting_table" => 1200.0,
+        "ender_chest" => 600.0,
+        "water" | "flowing_water" | "lava" | "flowing_lava" => 100.0,
+        "end_stone" | "end_bricks" => 9.0,
+        "iron_block" | "gold_block" | "diamond_block" | "emerald_block" | "copper_block" | "iron_bars" | "iron_door" | "iron_trapdoor" | "mob_spawner" | "lodestone" => 6.0,
+        n if n.ends_with("_ore") => 3.0,
+        n if n.contains("deepslate") || n.contains("blackstone") || n == "cobblestone" || n == "mossy_cobblestone" || n == "stone" || n.contains("brick") && n != "nether_brick_fence"
+            || matches!(n, "andesite" | "diorite" | "granite" | "polished_andesite" | "polished_diorite" | "polished_granite" | "tuff" | "furnace" | "lit_furnace" | "smoker" | "blast_furnace" | "stonecutter_block" | "dispenser" | "dropper" | "observer") => 6.0,
+        n if n.contains("stone") && !n.contains("sandstone") && !n.contains("glowstone") && !n.contains("redstone") => 6.0,
+        n if n.contains("planks") || n.contains("fence") || n.ends_with("_door") || n.ends_with("_slab") || n.ends_with("_stairs") => 3.0,
+        n if n.ends_with("_log") || n.ends_with("_wood") || n.ends_with("_stem") || n.ends_with("_hyphae") || n.contains("chest") || n == "crafting_table" || n == "barrel" => 2.5,
+        n if n.contains("terracotta") || n.ends_with("_concrete") => 4.2,
+        n if n.contains("sandstone") || n.contains("wool") => 0.8,
+        n if n.contains("glass") || n == "glowstone" || n == "sea_lantern" => 0.3,
+        n if n.contains("leaves") => 0.2,
+        "netherrack" => 0.4,
+        "gravel" | "clay" | "grass_block" | "farmland" | "mycelium" | "podzol" | "dirt_path" | "grass_path" => 0.6,
+        n if n.contains("dirt") || n.contains("sand") || n.contains("mud") || n.starts_with("soul_") || n.contains("concrete_powder") => 0.5,
+        n if n.contains("torch") || n.contains("flower") || n.contains("sapling") || n.ends_with("grass") || n == "redstone_wire" || n.contains("carpet") || n == "fire" => 0.0,
+        _ => 1.0,
+    }
+}
+
+/// Vanilla explosion (Java/PNX Explosion.explodeA): rays from a 16x16x16 grid's surface, each
+/// starting at power x 0.7-1.3 and losing (resistance + 0.3) x 0.3 per 0.3-block step, plus
+/// 0.225; every solid block a ray reaches with strength left breaks. Water stops it.
+pub(crate) fn explosion_rays(w: &crate::world::World, at: (f32, f32, f32), power: f32, mut seed: u64) -> Vec<(i32, i32, i32)> {
+    let mut rand = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        (seed >> 11) as f32 / (1u64 << 53) as f32
+    };
+    let mut out = std::collections::HashSet::new();
+    for i in 0..16 {
+        for j in 0..16 {
+            for k in 0..16 {
+                if !(i == 0 || i == 15 || j == 0 || j == 15 || k == 0 || k == 15) {
+                    continue;
+                }
+                let (dx, dy, dz) = (i as f32 / 15.0 * 2.0 - 1.0, j as f32 / 15.0 * 2.0 - 1.0, k as f32 / 15.0 * 2.0 - 1.0);
+                let len = (dx * dx + dy * dy + dz * dz).sqrt();
+                let (dx, dy, dz) = (dx / len * 0.3, dy / len * 0.3, dz / len * 0.3);
+                let mut f = power * (0.7 + rand() * 0.6);
+                let mut p = at;
+                while f > 0.0 {
+                    let c = (p.0.floor() as i32, p.1.floor() as i32, p.2.floor() as i32);
+                    let b = w.get(c.0, c.1, c.2);
+                    if !blocks::is_air(b) {
+                        f -= (blast_resistance(b) + 0.3) * 0.3;
+                        if f > 0.0 && !blocks::is_liquid(b) {
+                            out.insert(c);
+                        }
+                    }
+                    p = (p.0 + dx, p.1 + dy, p.2 + dz);
+                    f -= 0.225;
+                }
+            }
+        }
+    }
+    out.into_iter().collect()
+}
+
 pub fn explode(server: &Server, at: (f32, f32, f32), power: f32, by: &'static str) {
     if !server.plugins.explosion(server, at, power) {
         return;
     }
     let w = &server.world;
-    let r = power.ceil() as i32;
-    let (cx, cy, cz) = (at.0.floor() as i32, (at.1 + 0.5).floor() as i32, at.2.floor() as i32);
-    let mut blown = Vec::new();
-    for x in cx - r..=cx + r {
-        for y in cy - r..=cy + r {
-            for z in cz - r..=cz + r {
-                let d = ((x - cx).pow(2) + (y - cy).pow(2) + (z - cz).pow(2)) as f32;
-                if d > power * power {
-                    continue;
-                }
-                let b = w.get(x, y, z);
-                let n = blocks::short(b);
-                if blocks::is_air(b) || blocks::is_liquid(b) || matches!(n, "bedrock" | "obsidian" | "crying_obsidian" | "barrier" | "end_portal_frame" | "reinforced_deepslate") {
-                    continue;
-                }
-                if n == "tnt" {
-                    // PNX: TNT caught in a blast gets a random short fuse (10-30 ticks).
-                    ignite_tnt(server, (x, y, z), 5 + ((x ^ y ^ z) & 7) as u32 * 2);
-                    continue;
-                }
-                blown.push((x, y, z));
-            }
+    let mut blown = explosion_rays(w, at, power, (at.0.to_bits() ^ at.2.to_bits().rotate_left(13)) as u64 | 1 ^ std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64));
+    blown.retain(|&(x, y, z)| {
+        if blocks::short(w.get(x, y, z)) == "tnt" {
+            // PNX: TNT caught in a blast gets a random short fuse (10-30 ticks).
+            ignite_tnt(server, (x, y, z), 5 + ((x ^ y ^ z) & 7) as u32 * 2);
+            false
+        } else {
+            true
         }
-    }
+    });
     server.plugins.explosion_blocks(server, at, &mut blown);
     for &(x, y, z) in &blown {
         let b = w.get(x, y, z);
         server.set_block_quiet(0, x, y, z, crate::world::AIR);
-        // A third of blown-up blocks drop (vanilla creeper yield), as if mined.
-        if (x * 31 + y * 17 + z * 7).rem_euclid(3) == 0 {
+        // Vanilla yield: TNT drops everything it breaks, other blasts 1 in `power`.
+        if by == "TNT" || (x * 31 + y * 17 + z * 7).rem_euclid(power.round().max(1.0) as i32) == 0 {
             for (item, n) in crate::drops::drops(b, (x, y, z), Some("minecraft:diamond_pickaxe")) {
                 server.entities.drop_item(server, item, n, (x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5));
             }
@@ -3079,14 +3133,16 @@ pub fn explode(server: &Server, at: (f32, f32, f32), power: f32, by: &'static st
         if d >= reach {
             continue;
         }
+        // Vanilla: impact falls off over twice the power; damage (i^2 + i) / 2 * 7 * 2 * power + 1,
+        // pushed straight away from the centre.
         let impact = 1.0 - d / reach;
-        let damage = ((impact * impact + impact) / 2.0 * 7.0 * power + 1.0).floor() * difficulty_scale().max(0.5);
-        let (dx, dz) = (feet.0 - at.0, feet.2 - at.2);
-        let len = (dx * dx + dz * dz).sqrt().max(0.01);
+        let damage = ((impact * impact + impact) / 2.0 * 7.0 * reach + 1.0).floor() * difficulty_scale().max(0.5);
+        let (dx, dy, dz) = (feet.0 - at.0, p.pos.1 - 0.81 - at.1, feet.2 - at.2);
+        let len = (dx * dx + dy * dy + dz * dz).sqrt().max(0.01);
         let _ = server.events.send(Event::Damage {
             to: p.id,
             damage: crate::health::Damage::Explosion(damage, by),
-            knock: (dx / len * impact * 1.5, impact * 0.8, dz / len * impact * 1.5),
+            knock: (dx / len * impact, (dy / len * impact).max(0.1 * impact), dz / len * impact),
         });
     }
 }
@@ -3709,3 +3765,32 @@ mod tests {
     }
 }
 
+
+#[cfg(test)]
+mod explosion_tests {
+    use super::*;
+
+    #[test]
+    fn tnt_craters_stone_but_not_under_water() {
+        crate::blocks::init();
+        let w = crate::world::World::default();
+        let stone = crate::blocks::any_state("minecraft:stone").unwrap();
+        let water = crate::blocks::any_state("minecraft:water").unwrap();
+        for x in -8..=8 {
+            for y in -50..=-34 {
+                for z in -8..=8 {
+                    w.set(x, y, z, stone);
+                }
+            }
+        }
+        w.set(0, -42, 0, crate::world::AIR);
+        let n = explosion_rays(&w, (0.5, -41.5, 0.5), 4.0, 12345).len();
+        // vanilla TNT in stone breaks a few dozen blocks, not a whole radius-4 ball (~270)
+        assert!((10..150).contains(&n), "{n} blocks");
+        w.set(0, -42, 0, water);
+        for d in [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)] {
+            w.set(d.0, -42 + d.1, d.2, water);
+        }
+        assert!(explosion_rays(&w, (0.5, -41.5, 0.5), 4.0, 12345).is_empty(), "water soaks it up");
+    }
+}

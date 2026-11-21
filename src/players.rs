@@ -53,6 +53,8 @@ pub enum Event {
     Give { to: i64, item: Box<crate::inventory::Stack> },
     /// a plugin menu for `to` was opened or changed (see `ui::menu`)
     Menu { to: i64 },
+    /// a plugin asked `to` to type on a sign (see `ui::sign_input`)
+    SignInput { to: i64 },
     /// take items from a player, then hand what was taken to the plugin (see `Server::take_held`)
     Take { to: i64, what: TakeWhat, then: Taken },
 }

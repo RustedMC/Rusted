@@ -75,6 +75,9 @@ pub(crate) struct Session {
     pub mining: Option<(i32, i32, i32)>,
     /// Going down since the last movement packet (a hit now is a critical hit).
     pub falling: bool,
+    /// Swimming, crawling: either shrinks the hitbox to 0.6 so 1x1 gaps fit.
+    pub swimming: bool,
+    pub crawling: bool,
 }
 
 impl Session {
@@ -177,6 +180,8 @@ impl Session {
             last_view: None,
             mining: None,
             falling: false,
+            swimming: false,
+            crawling: false,
         })
     }
 
@@ -218,6 +223,13 @@ impl Session {
             Protocol::BlockActorDataPacket(b) => {
                 let p = (b.block_position.x, b.block_position.y, b.block_position.z);
                 let me = self.server.get(self.id);
+                // A plugin's sign input: give the lines to the plugin and take the fake sign away.
+                if let Some(m) = &me
+                    && let Some(real) = ui::sign_input_done(&self.server, m, p, &signs::text_of(&b.actor_data_tags, "FrontText"))
+                {
+                    let _ = self.conn.send(&[update_block(p.0, p.1, p.2, real)]).await;
+                    return GO;
+                }
                 let filter = |front: &mut String, back: &mut String| me.as_ref().is_none_or(|me| self.server.plugins.sign_change(&self.server, me, p, front, back));
                 if spawn::can_build(&self.mode) && let Some(packet) = signs::edited(&self.server.world, p, &b.actor_data_tags, filter) {
                     let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(packet) });
@@ -225,7 +237,7 @@ impl Session {
             }
             Protocol::SetLocalPlayerAsInitializedPacket(_) => {
                 // Physics flags (gravity, collision), attributes, abilities, inventory.
-                let _ = self.conn.send(&spawn::after_load(self.id, &self.name, self.inv.all_packets())).await;
+                let _ = self.conn.send(&spawn::after_load(self.id, &self.name, self.inv.all_packets(), &self.mode)).await;
             }
             Protocol::InteractPacket(i) if matches!(i.action, InteractAction::OpenInventory) => self.on_open_inventory().await,
             Protocol::InteractPacket(i) if matches!(i.action, InteractAction::StopRiding) => self.get_off(),

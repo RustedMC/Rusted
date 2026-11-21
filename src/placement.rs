@@ -227,6 +227,24 @@ pub fn orient(block: i32, click: &Click) -> Vec<((i32, i32, i32), i32)> {
         let (dx, dz) = look.step();
         return vec![((0, 0, 0), foot), ((dx, 0, dz), head)];
     }
+    if bname.ends_with("trapdoor") {
+        // Hinged on the clicked block's side; on a top/bottom face, on the side away from the
+        // player. direction: 0 east, 1 west, 2 south, 3 north. Upper half click = top trapdoor.
+        let face = match click.face {
+            2 => Facing::North,
+            3 => Facing::South,
+            4 => Facing::West,
+            5 => Facing::East,
+            _ => look.opposite(),
+        };
+        let d = match face {
+            Facing::East => 0,
+            Facing::West => 1,
+            Facing::South => 2,
+            Facing::North => 3,
+        };
+        return vec![((0, 0, 0), with(b, &[("direction", State::Int(d)), ("upside_down_bit", State::Bool(top_half)), ("open_bit", State::Bool(false))]))];
+    }
     if has_state(b, "direction") {
         // everything else 4-way (gates, pumpkins, anvils) faces the player
         b = with(b, &[("direction", State::Int(look.legacy()))]);
@@ -316,5 +334,16 @@ mod tests {
             let placed = orient(button, &click(face, 0.5, 0.0))[0].1;
             assert_eq!(crate::physics::support_of(placed), Some(support), "face {face}");
         }
+    }
+
+    #[test]
+    fn trapdoors_hinge_on_the_clicked_block() {
+        let t = id_of("minecraft:trapdoor");
+        let north = orient(t, &click(2, 0.2, 0.0))[0].1;
+        assert_eq!(state(north, "direction"), Some(&State::Int(3)));
+        assert_eq!(state(north, "upside_down_bit"), Some(&State::Bool(false)));
+        let high = orient(t, &click(5, 0.8, 0.0))[0].1;
+        assert_eq!(state(high, "direction"), Some(&State::Int(0)));
+        assert_eq!(state(high, "upside_down_bit"), Some(&State::Bool(true)));
     }
 }

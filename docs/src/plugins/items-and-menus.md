@@ -64,6 +64,22 @@ fn open_selector(server: &Server, to: i64) {
 Calling `ui::menu` again while one is open swaps its items, which is how you make
 multi-page menus.
 
+## Sign input
+
+`ui::sign_input` opens a sign editor for one player and hands you what they typed when
+they close it. Lines marked locked come back exactly as you sent them, whatever the player
+wrote there, so you can use them as labels:
+
+```rust
+// Line 1 is the input; lines 2-4 are a locked hint.
+ui::sign_input(server, player.id, ["", "^^^^^^", "Type a name", "above"], [false, true, true, true], |server, player, lines| {
+    server.tell(player.id, &format!("You typed: {}", lines[0]));
+});
+```
+
+Players editing real signs still go through `on_sign_change`, where you can read and
+change the front and back text.
+
 ## Player control
 
 All of these are on `server`:

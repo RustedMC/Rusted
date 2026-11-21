@@ -310,6 +310,13 @@ async fn main() {
                             }
                         }
                     }
+                    // Lava hardening into stone, cobblestone or obsidian hisses and smokes.
+                    if fluids::is_fluid(old) && blocks::entry(b).is_some_and(|e| matches!(e.name.as_str(), "minecraft:stone" | "minecraft:cobblestone" | "minecraft:obsidian")) {
+                        let at = (x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
+                        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(play_sound("random.fizz", at)) });
+                        let smoke = Protocol::LevelEventPacket(Box::new(bedrock::protocol::v662::packets::LevelEventPacket { event_id: 2000, position: at, data: 4 }));
+                        let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(smoke) });
+                    }
                     server.set_block_quiet(0, x, y, z, b);
                 }
                 if turn % 16 == 0 {

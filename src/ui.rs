@@ -592,9 +592,72 @@ pub fn menu_closed(player: i64) {
     }
 }
 
+// ---- sign input
+
+/// Gets the four lines back (locked ones as they were sent).
+type SignDone = Box<dyn FnOnce(&Server, &PlayerInfo, [String; 4]) + Send>;
+
+struct SignInput {
+    lines: [String; 4],
+    locked: [bool; 4],
+    on_done: Option<SignDone>,
+    /// Where the session put the fake sign, and the real block there.
+    at: Option<((i32, i32, i32), i32)>,
+}
+
+static SIGNS: Mutex<Option<HashMap<i64, SignInput>>> = Mutex::new(None);
+
+/// Opens a sign editor for `to` with these lines. Lines marked `locked` come back unchanged
+/// whatever the player typed there; `on_done` gets all four lines when they close it.
+/// Example: a search box, `["", "^^^^^^", "Type a name", "above"]` with lines 2-4 locked.
+pub fn sign_input(server: &Server, to: i64, lines: [&str; 4], locked: [bool; 4], on_done: impl FnOnce(&Server, &PlayerInfo, [String; 4]) + Send + 'static) {
+    let lines = lines.map(String::from);
+    SIGNS.lock().get_or_insert_with(HashMap::new).insert(to, SignInput { lines, locked, on_done: Some(Box::new(on_done)), at: None });
+    let _ = server.events.send(Event::SignInput { to });
+}
+
+/// The text to show and records where the session put the fake sign.
+pub fn sign_input_open(player: i64, at: (i32, i32, i32), real: i32) -> Option<String> {
+    let mut s = SIGNS.lock();
+    let i = s.as_mut()?.get_mut(&player)?;
+    i.at = Some((at, real));
+    Some(i.lines.join("\n"))
+}
+
+/// The player wrote the fake sign at `pos`: hand the lines to the plugin. Returns the real
+/// block to put back, or None if this isn't the player's sign input.
+pub fn sign_input_done(server: &Server, player: &PlayerInfo, pos: (i32, i32, i32), text: &str) -> Option<i32> {
+    let input = {
+        let mut s = SIGNS.lock();
+        let m = s.as_mut()?;
+        if m.get(&player.id)?.at.map(|a| a.0) != Some(pos) {
+            return None;
+        }
+        m.remove(&player.id)?
+    };
+    let typed: Vec<&str> = text.split('\n').collect();
+    let lines: [String; 4] = std::array::from_fn(|i| if input.locked[i] { input.lines[i].clone() } else { typed.get(i).unwrap_or(&"").to_string() });
+    if let Some(f) = input.on_done {
+        f(server, player, lines);
+    }
+    input.at.map(|a| a.1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sign_input_keeps_locked_lines() {
+        let server = Server::new();
+        let got = std::sync::Arc::new(Mutex::new(None));
+        let g = got.clone();
+        sign_input(&server, 77, ["", "^^^", "Type", "above"], [false, true, true, true], move |_, _, l| *g.lock() = Some(l));
+        assert_eq!(sign_input_open(77, (1, 2, 3), 5).as_deref(), Some("\n^^^\nType\nabove"));
+        let me = crate::players::tests::sample(77);
+        assert_eq!(sign_input_done(&server, &me, (1, 2, 3), "hello\nchanged\nx\ny"), Some(5));
+        assert_eq!(got.lock().clone().unwrap(), ["hello", "^^^", "Type", "above"].map(String::from));
+    }
 
     #[test]
     fn forms_json_and_answers() {

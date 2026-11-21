@@ -172,7 +172,7 @@ pub fn inventory_options() -> Protocol {
     use bedrock::protocol::v662::enums::{InventoryLayout, InventoryLeftTabIndex, InventoryRightTabIndex};
     use bedrock::protocol::v662::packets::SetPlayerInventoryOptionsPacket;
     Protocol::SetPlayerInventoryOptionsPacket(Box::new(SetPlayerInventoryOptionsPacket {
-        left_inventory_tab: InventoryLeftTabIndex::None,
+        left_inventory_tab: InventoryLeftTabIndex::RecipeSearch, // creative opens on the search tab
         right_inventory_tab: InventoryRightTabIndex::None,
         filtering: false,
         layout_inv: InventoryLayout::Creative,
@@ -182,7 +182,7 @@ pub fn inventory_options() -> Protocol {
 
 /// Sent once the client says it finished loading. PNX sends these on
 /// SetLocalPlayerAsInitialized, the client ignores them any earlier.
-pub fn after_load(id: i64, name: &str, inventory: Vec<Protocol>) -> Vec<Protocol> {
+pub fn after_load(id: i64, name: &str, inventory: Vec<Protocol>, mode: &bedrock::protocol::v662::enums::GameType) -> Vec<Protocol> {
     use bedrock::protocol::v662::enums::ContainerID;
     use bedrock::protocol::v662::packets::PlayerHotbarPacket;
     let hotbar = Protocol::PlayerHotbarPacket(Box::new(PlayerHotbarPacket {
@@ -192,7 +192,7 @@ pub fn after_load(id: i64, name: &str, inventory: Vec<Protocol>) -> Vec<Protocol
     }));
     let mut out = vec![inventory_options()];
     out.extend(inventory);
-    out.extend([hotbar, set_data(id, name), attributes(id), abilities(id, &bedrock::protocol::v662::enums::GameType::Creative)]);
+    out.extend([hotbar, set_data(id, name), attributes(id), abilities(id, mode)]);
     out
 }
 

@@ -35,7 +35,6 @@ pub struct ItemEntity {
 /// PNX EntityItem numbers: gravity 0.04/tick, drag 0.02, ground friction 0.6.
 const GRAVITY: f32 = 0.04;
 const DRAG: f32 = 0.02;
-const GROUND_FRICTION: f32 = 0.6;
 
 #[derive(Default)]
 pub struct Entities {
@@ -120,9 +119,49 @@ fn remove_packet(id: i64) -> Protocol {
     Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) }))
 }
 
+/// Items fall through air, liquids, plants, torches, rails...
 fn passable(block: i32) -> bool {
-    block == crate::world::AIR
-        || crate::blocks::entry(block).is_some_and(|e| e.name.ends_with("water") || e.name.ends_with("lava"))
+    block == crate::world::AIR || !crate::overworld::feature::blocks::is_solid(block)
+}
+
+/// How slippery a floor is (vanilla friction).
+fn slipperiness(block: i32) -> f32 {
+    match crate::blocks::entry(block).map_or("", |e| e.name.as_str()) {
+        "minecraft:ice" | "minecraft:packed_ice" | "minecraft:frosted_ice" => 0.98,
+        "minecraft:blue_ice" => 0.989,
+        "minecraft:slime" => 0.8,
+        _ => 0.6,
+    }
+}
+
+/// Which way the water at `c` flows (x, z): toward lower neighbours and down-slopes, like the
+/// vanilla flow vector. Depth 0 is a source, 1..7 thinner, 8+ falling.
+fn flow(w: &crate::world::World, c: (i32, i32, i32)) -> (f32, f32) {
+    let depth = |p: (i32, i32, i32)| -> Option<i32> {
+        let b = w.get(p.0, p.1, p.2);
+        if !crate::blocks::entry(b).is_some_and(|e| e.name.ends_with("water")) {
+            return None;
+        }
+        match crate::blocks::state(b, "liquid_depth") {
+            Some(crate::blocks::State::Int(d)) => Some(d & 7),
+            _ => Some(0),
+        }
+    };
+    let me = depth(c).unwrap_or(0);
+    let (mut fx, mut fz) = (0.0f32, 0.0f32);
+    for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+        let n = (c.0 + dx, c.1, c.2 + dz);
+        let diff = match depth(n) {
+            Some(d) => d - me,
+            // open space beside: the water pours that way (more if it can fall)
+            None if passable(w.get(n.0, n.1, n.2)) => if depth((n.0, n.1 - 1, n.2)).is_some() || passable(w.get(n.0, n.1 - 1, n.2)) { 8 - me } else { 0 },
+            None => 0,
+        };
+        fx += dx as f32 * diff as f32;
+        fz += dz as f32 * diff as f32;
+    }
+    let len = (fx * fx + fz * fz).sqrt();
+    if len < 1e-4 { (0.0, 0.0) } else { (fx / len, fz / len) }
 }
 
 /// Rest position on top of the first solid block below.
@@ -184,30 +223,62 @@ impl Entities {
         items.insert(e.id, e);
     }
 
-    /// Gravity, drag, landing, floating in water.
+    /// Vanilla item physics (PNX EntityItem): gravity, drag, block slipperiness (ice slides),
+    /// floating up and drifting with the current in water, pushed up out of blocks, burnt
+    /// by lava, fire and cactus.
     pub fn tick(&self, server: &Server) {
         self.tick_orbs(server);
         let w = &server.world;
         let mut moved = Vec::new();
+        let mut burnt = Vec::new();
         {
             let mut items = self.items.lock();
             for e in items.values_mut() {
-                if e.resting {
-                    // block below got removed, fall again
-                    let below = w.get(e.pos.0.floor() as i32, (e.pos.1 - 0.2).floor() as i32, e.pos.2.floor() as i32);
+                let cell = |p: (f32, f32, f32)| (p.0.floor() as i32, p.1.floor() as i32, p.2.floor() as i32);
+                let at = cell(e.pos);
+                let here = w.get(at.0, at.1, at.2);
+                let hname = crate::blocks::entry(here).map_or("", |b| b.name.as_str());
+                // Burns in lava and fire (netherite survives), and on touching a cactus.
+                let fireproof = crate::items::name_of(e.item.id).is_some_and(|n| n.contains("netherite") || n == "minecraft:ancient_debris");
+                let cactus = [(0, 0, 0), (1, 0, 0), (-1, 0, 0), (0, 0, 1), (0, 0, -1), (0, -1, 0)].iter().any(|d| {
+                    let q = (e.pos.0 + d.0 as f32 * 0.25, e.pos.1 + d.1 as f32 * 0.1, e.pos.2 + d.2 as f32 * 0.25);
+                    let c = cell(q);
+                    crate::blocks::entry(w.get(c.0, c.1, c.2)).is_some_and(|b| b.name == "minecraft:cactus")
+                });
+                if cactus || (!fireproof && (hname.ends_with("lava") || hname == "minecraft:fire" || hname == "minecraft:soul_fire")) {
+                    burnt.push((e.id, e.pos));
+                    continue;
+                }
+                // Inside a block (placed on it, or pushed in): rise until free (vanilla moves it out).
+                if !passable(here) {
+                    e.pos.1 = e.pos.1.floor() + 1.05;
+                    e.vel = (0.0, 0.0, 0.0);
+                    e.resting = false;
+                    moved.push((e.id, e.pos, false));
+                    continue;
+                }
+                let in_water = hname.ends_with("water");
+                if e.resting && !in_water {
+                    let below = w.get(at.0, (e.pos.1 - 0.05).floor() as i32, at.2);
                     if passable(below) {
                         e.resting = false;
                     } else {
                         continue;
                     }
                 }
+                e.resting = false;
                 let mut p = e.pos;
                 // two game ticks per 10 Hz update
                 for _ in 0..2 {
-                    let here = w.get(p.0.floor() as i32, p.1.floor() as i32, p.2.floor() as i32);
+                    let c = cell(p);
+                    let here = w.get(c.0, c.1, c.2);
                     let in_water = crate::blocks::entry(here).is_some_and(|b| b.name.ends_with("water"));
                     if in_water {
-                        e.vel.1 = (e.vel.1 + GRAVITY * 0.5).min(0.06); // bobs up
+                        // Floats up and drifts with the flow.
+                        e.vel.1 = (e.vel.1 + 0.005).min(0.06);
+                        let f = flow(w, c);
+                        e.vel.0 += f.0 * 0.014;
+                        e.vel.2 += f.1 * 0.014;
                     } else {
                         e.vel.1 -= GRAVITY;
                     }
@@ -222,7 +293,8 @@ impl Entities {
                     let ny = p.1 + e.vel.1;
                     let (bx, bz) = (p.0.floor() as i32, p.2.floor() as i32);
                     let mut on_ground = false;
-                    if e.vel.1 < 0.0 && !passable(w.get(bx, ny.floor() as i32, bz)) {
+                    let floor = w.get(bx, ny.floor() as i32, bz);
+                    if e.vel.1 < 0.0 && !passable(floor) {
                         p.1 = ny.floor() + 1.0;
                         on_ground = true;
                     } else if e.vel.1 > 0.0 && !passable(w.get(bx, (ny + 0.25).floor() as i32, bz)) {
@@ -230,16 +302,14 @@ impl Entities {
                     } else {
                         p.1 = ny;
                     }
-                    let mut friction = 1.0 - DRAG;
-                    if on_ground {
-                        friction *= GROUND_FRICTION;
-                    }
+                    // Ground friction is the block's slipperiness (0.6, ice 0.98) times 0.98.
+                    let friction = if on_ground { slipperiness(floor) * 0.98 } else { 1.0 - DRAG };
                     e.vel.0 *= friction;
                     e.vel.2 *= friction;
                     e.vel.1 *= 1.0 - DRAG;
                     if on_ground {
-                        e.vel.1 *= -0.5; // small bounce
-                        if e.vel.1.abs() < 0.02 && e.vel.0.abs() < 0.005 && e.vel.2.abs() < 0.005 {
+                        e.vel.1 *= -0.5;
+                        if e.vel.1.abs() < 0.02 && e.vel.0.abs() < 0.002 && e.vel.2.abs() < 0.002 {
                             e.vel = (0.0, 0.0, 0.0);
                             e.resting = true;
                             break;
@@ -249,9 +319,19 @@ impl Entities {
                 if p.1 < -80.0 {
                     e.born -= DESPAWN; // fell out of the world: despawn on the next sweep
                 }
+                if p == e.pos && e.resting {
+                    continue;
+                }
                 e.pos = p;
                 moved.push((e.id, p, e.resting));
             }
+            for (id, _) in &burnt {
+                items.remove(id);
+            }
+        }
+        for (id, pos) in burnt {
+            broadcast(server, remove_packet(id));
+            broadcast(server, crate::packets::level_sound("fizz", pos, -1));
         }
         for (id, pos, rest) in moved {
             broadcast(server, Protocol::MoveActorAbsolutePacket(Box::new(bedrock::protocol::v662::packets::MoveActorAbsolutePacket {
@@ -465,6 +545,34 @@ fn dist2(a: (f32, f32, f32), b: (f32, f32, f32)) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn items_slide_on_ice_rise_out_of_blocks_and_burn() {
+        crate::blocks::init();
+        let server = Server::new();
+        let b = |n: &str| crate::blocks::any_state(n).unwrap();
+        let dirt = crate::items::item_by_name("minecraft:dirt").unwrap();
+        // ice floor at x 100.., plain floor at x 200..: same push, ice goes farther
+        for x in 100..120 {
+            server.world.set(x, -61, 0, b("minecraft:ice"));
+        }
+        server.entities.drop_item_vel(&server, dirt.clone(), 1, (100.5, -60.0, 0.5), (0.3, 0.0, 0.0));
+        server.entities.drop_item_vel(&server, dirt.clone(), 1, (200.5, -60.0, 0.5), (0.3, 0.0, 0.0));
+        // one inside stone, one in lava
+        server.world.set(300, -60, 0, b("minecraft:stone"));
+        server.entities.drop_item(&server, dirt.clone(), 1, (300.5, -59.5, 0.5));
+        server.world.set(300, -60, 0, b("minecraft:stone"));
+        server.world.set(400, -60, 0, b("minecraft:lava"));
+        server.entities.drop_item(&server, dirt.clone(), 1, (400.5, -59.8, 0.5));
+        let at = |x0: f32| server.entities.items.lock().values().find(|e| (e.pos.0 - x0).abs() < 20.0).map(|e| e.pos);
+        for _ in 0..30 {
+            server.entities.tick(&server);
+        }
+        let (ice, plain) = (at(100.0).unwrap(), at(200.0).unwrap());
+        assert!(ice.0 - 100.5 > 2.0 * (plain.0 - 200.5), "ice {ice:?} plain {plain:?}");
+        assert!(at(300.0).unwrap().1 >= -59.0, "pushed up out of the stone");
+        assert!(at(400.0).is_none(), "burnt in lava");
+    }
 
     #[test]
     fn drop_merge_fall_and_pickup() {

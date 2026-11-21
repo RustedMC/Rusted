@@ -397,4 +397,17 @@ mod tests {
         run(&w, &f);
         assert_eq!(crate::blocks::entry(w.get(5, -60, 5)).map(|e| e.name.as_str()), Some("minecraft:obsidian"));
     }
+
+    #[test]
+    fn flowing_lava_and_water_make_cobblestone() {
+        let w = World::default();
+        let f = Fluids::default();
+        w.set(0, -60, 0, Kind::Water.source());
+        w.set(6, -60, 0, Kind::Lava.source());
+        f.notify((0, -60, 0));
+        f.notify((6, -60, 0));
+        run(&w, &f);
+        let made: Vec<_> = (0..7).map(|x| crate::blocks::entry(w.get(x, -60, 0)).map_or("air".to_string(), |e| e.name.clone())).collect();
+        assert!(made.iter().any(|n| n == "minecraft:cobblestone" || n == "minecraft:stone"), "{made:?}");
+    }
 }

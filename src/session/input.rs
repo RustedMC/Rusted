@@ -29,29 +29,31 @@ impl Session {
             self.on_block_actions(actions).await;
         }
         use bedrock::protocol::v2168::enums::PlayerAuthInputData as Input;
+        // The held Sneaking flag, not Start/StopSneaking: those can arrive after the click
+        // they belong to, and then sneak-placing on a chest opened it.
+        let sneak = input.input_data.iter().any(|f| matches!(f, Input::Sneaking));
+        if sneak != self.sneaking {
+            self.sneaking = sneak;
+            if let Some(me) = self.server.get(self.id) {
+                self.server.plugins.sneak(&self.server, &me, sneak);
+            }
+            self.inv.sneaking = sneak;
+            self.raise_shield();
+            if sneak {
+                self.get_off();
+            }
+        }
+        let (swim, crawl) = (self.swimming, self.crawling);
         for flag in &input.input_data {
             match flag {
+                Input::StartSwimming => self.swimming = true,
+                Input::StopSwimming => self.swimming = false,
+                Input::StartCrawling => self.crawling = true,
+                Input::StopCrawling => self.crawling = false,
                 Input::StartFlying => self.flying = true,
                 Input::StartGliding => self.gliding = true,
                 Input::StopGliding => self.gliding = false,
                 Input::StopFlying => self.flying = false,
-                Input::StartSneaking => {
-                    self.sneaking = true;
-                    if let Some(me) = self.server.get(self.id) {
-                        self.server.plugins.sneak(&self.server, &me, true);
-                    }
-                    self.inv.sneaking = true;
-                    self.raise_shield();
-                    self.get_off();
-                }
-                Input::StopSneaking => {
-                    self.sneaking = false;
-                    if let Some(me) = self.server.get(self.id) {
-                        self.server.plugins.sneak(&self.server, &me, false);
-                    }
-                    self.inv.sneaking = false;
-                    self.raise_shield();
-                }
                 Input::StartSprinting | Input::StopSprinting => {
                     self.sprinting = matches!(flag, Input::StartSprinting);
                     if let Some(me) = self.server.get(self.id) {
@@ -63,6 +65,9 @@ impl Session {
                 }
                 _ => {}
             }
+        }
+        if (swim, crawl) != (self.swimming, self.crawling) {
+            self.update_pose().await;
         }
         let pos = input.player_position;
         // Plugins can stop a move (regions, frozen players): send them back to where they were.
@@ -214,6 +219,26 @@ impl Session {
         self.last_pos = None;
         let _ = self.conn.send(&[self.food.packet(self.id)]).await;
         GO
+    }
+
+    /// Swimming or crawling: the SWIMMING flag (56) and a 0.6-high hitbox, which is what lets
+    /// the client fit through 1x1 gaps (PNX Player.setSwimming / setCrawling).
+    pub(super) async fn update_pose(&mut self) {
+        use bedrock::protocol::v662::types::{ActorRuntimeID, DataItem, PropertySyncData};
+        use bedrock::protocol::v2168::enums::DataItemType as T;
+        use bedrock::protocol::v924::enums::ActorDataIDs as D;
+        let low = self.swimming || self.crawling;
+        let packet = Protocol::SetActorDataPacket(Box::new(bedrock::protocol::v662::packets::SetActorDataPacket {
+            target_runtime_id: ActorRuntimeID(self.id as u64),
+            actor_data: vec![
+                DataItem { data_item_id: D::Reserved0, data_item_type: T::Int64(spawn::FLAGS | (self.swimming as i64) << 56) },
+                DataItem { data_item_id: D::Reserved054, data_item_type: T::Float(if low { 0.6 } else { 1.8 }) },
+            ],
+            synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
+            tick: 0,
+        }));
+        let _ = self.conn.send(&[packet.clone()]).await;
+        let _ = self.server.events.send(crate::players::Event::Relay { from: self.id, packet: Box::new(packet) });
     }
 
     /// Shows the shield raised while sneaking with one (the BLOCKING flag, 72).

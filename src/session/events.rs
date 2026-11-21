@@ -265,6 +265,17 @@ impl Session {
                 }
                 vec![self.inv.content_packet()]
             }
+            Ok(Event::SignInput { to }) if to == self.id => {
+                let Some(me) = self.server.get(self.id) else { return GO };
+                let at = (me.pos.0.floor() as i32, (me.pos.1 - 1.62).floor() as i32 - 2, me.pos.2.floor() as i32);
+                let real = self.server.world.get(at.0, at.1, at.2);
+                let (Some(text), Some(sign)) = (ui::sign_input_open(self.id, at, real), blocks::any_state("minecraft:standing_sign")) else { return GO };
+                let _ = self.conn.send(&[update_block(at.0, at.1, at.2, sign), signs::data_packet(at, &text, "")]).await;
+                // The client needs the sign in place before it opens the editor.
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                let _ = self.conn.send(&[signs::open_packet(at)]).await;
+                return GO;
+            }
             Ok(Event::Menu { to }) if to == self.id => {
                 self.open_menu().await;
                 return GO;

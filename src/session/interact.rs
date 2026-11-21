@@ -369,7 +369,16 @@ impl Session {
                     } else if !n.contains("repeater") && !n.contains("comparator") {
                         let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(level_event(1003, (p.x, p.y, p.z))) });
                     }
-                    for ((bx, by, bz), b) in changes {
+                    // Fence gates swing away from the player: opening one from its far side turns it.
+                    let yaw = self.server.get(self.id).map_or(0.0, |me| me.rot.1);
+                    let look = (((yaw.rem_euclid(360.0) + 45.0) / 90.0) as i32) % 4; // 0 S, 1 W, 2 N, 3 E
+                    for ((bx, by, bz), mut b) in changes {
+                        if blocks::entry(b).is_some_and(|e| e.name.ends_with("fence_gate"))
+                            && matches!(blocks::state(b, "open_bit"), Some(blocks::State::Bool(true)))
+                            && matches!(blocks::state(b, "direction"), Some(blocks::State::Int(d)) if *d == (look + 2) % 4)
+                        {
+                            b = blocks::with(b, &[("direction", blocks::State::Int(look))]);
+                        }
                         self.server.set_block_quiet(self.id, bx, by, bz, b);
                     }
                 }

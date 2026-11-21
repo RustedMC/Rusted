@@ -20,7 +20,10 @@ See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands
 - 🔨 **0.4.4** Mob spawning: PNX's per-mob Bedrock spawn rules (biome, light, surface or cave,
   herds); buttons on every face, pistons breaking attached blocks; multiplayer fixes (players,
   items and mobs reappear after teleports and deaths, live-synced chests, per-player ender
-  chests, break cracks); critical hits, sprint knockback, bottles o' enchanting
+  chests, break cracks); critical hits, sprint knockback, bottles o' enchanting; vanilla
+  explosions (rays, blast resistance), item physics (ice, currents, burning), trapdoors, gates,
+  selectors on every command, sign input for plugins, swimming/crawling through 1x1 gaps
+- ⏳ **0.4.6** Waterlogging (a second block layer in chunks and saves)
 - ⏳ **0.4.5** Mob AI: the rest of PNX's behaviours for neutrals, villagers, fish and flyers;
   arrows and tridents checked against PNX
 

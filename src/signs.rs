@@ -103,7 +103,7 @@ pub fn data_packet(p: Pos, front: &str, back: &str) -> Protocol {
     Protocol::BlockActorDataPacket(Box::new(BlockActorDataPacket { block_position: pos(p), actor_data_tags: tags }))
 }
 
-fn text_of(tags: &HashMap<String, nbtx::Value>, key: &str) -> String {
+pub(crate) fn text_of(tags: &HashMap<String, nbtx::Value>, key: &str) -> String {
     match tags.get(key) {
         Some(nbtx::Value::Compound(c)) => match c.iter().find(|(k, _)| k.as_slice() == b"Text") {
             Some((_, nbtx::Value::String(s))) => String::from_utf8_lossy(s).chars().take(MAX_TEXT).collect(),
