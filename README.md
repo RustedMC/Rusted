@@ -19,7 +19,7 @@
  |  _ <| |_| \__ \ ||  __/ (_| |
  |_| \_\\__,_|___/\__\___|\__,_|
 
-Starting Rusted 0.4.3 for Minecraft: Bedrock Edition 1.26.60
+Starting Rusted 0.4.6 for Minecraft: Bedrock Edition 1.26.60
 Rusted listening on 0.0.0.0:19132 (RakNet UDP + NetherNet TCP)
 Level 'world': seed 1794952337106584800
 Done (0.2s)! Players can join on port 19132. Type "help" for commands, "stop" to shut down.
