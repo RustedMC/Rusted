@@ -224,7 +224,8 @@ fn spot(server: &Server, (x, y, z): (i32, i32, i32), night: bool) -> Option<Spot
         return None;
     };
     let open = crate::mobs::sky(w, (x, y, z));
-    let sky_light = if open { if night { 4 } else { 15 } } else { 0 };
+    // Real sky light (spreads into overhangs and cave mouths), darkened by 11 at night.
+    let sky_light = (w.sky_light(x, y, z) as i32 - if night { 11 } else { 0 }).max(0);
     Some(Spot {
         pos: (x, y, z),
         place,

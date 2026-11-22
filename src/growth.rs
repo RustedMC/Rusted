@@ -28,6 +28,12 @@ fn emits_light(b: i32) -> bool {
 
 /// Random tick at `p`, returns (pos, new block). `raining`/`snowy` are the weather and
 /// biome there.
+/// Light at a spot for growing (sky light as at noon, or block light, whichever is brighter),
+/// like PNX's `getFullLight` checks.
+fn light(world: &World, (x, y, z): (i32, i32, i32)) -> u8 {
+    world.sky_light(x, y, z).max(world.block_light(x, y, z))
+}
+
 pub fn random_tick(world: &World, p: (i32, i32, i32), roll: u32, raining: bool, snowy: bool) -> Vec<((i32, i32, i32), i32)> {
     let b = world.get(p.0, p.1, p.2);
     let n = name(b);
@@ -51,7 +57,8 @@ pub fn random_tick(world: &World, p: (i32, i32, i32), roll: u32, raining: bool, 
             vec![(p, AIR)]
         }
         n if n.ends_with("_sapling") || n == "minecraft:sapling" => {
-            if !roll.is_multiple_of(7) {
+            // PNX BlockSapling: needs light 9 above it.
+            if !roll.is_multiple_of(7) || light(world, (x, y + 1, z)) < 9 {
                 return vec![];
             }
             if int(b, "age_bit") == 0 {
@@ -62,7 +69,8 @@ pub fn random_tick(world: &World, p: (i32, i32, i32), roll: u32, raining: bool, 
         "minecraft:wheat" | "minecraft:carrots" | "minecraft:potatoes" | "minecraft:beetroot" => {
             let g = int(b, "growth");
             let on_farmland = name(world.get(x, y - 1, z)) == "minecraft:farmland";
-            if g < 7 && on_farmland && roll.is_multiple_of(3) {
+            // PNX BlockCrops: grows only in light 9 or more.
+            if g < 7 && on_farmland && roll.is_multiple_of(3) && light(world, p) >= 9 {
                 vec![(p, blocks::with(b, &[("growth", State::Int(g + 1))]))]
             } else {
                 vec![]
@@ -171,15 +179,18 @@ pub fn random_tick(world: &World, p: (i32, i32, i32), roll: u32, raining: bool, 
             }
         }
         "minecraft:grass_block" => {
-            // spread to nearby dirt with air above
-            // TODO: grass should die under solid blocks, needs light/opacity data
+            // PNX BlockGrass: dies to dirt under a solid block in the dark, spreads in light 9+
+            // to dirt that has light 4+ above it.
+            if crate::overworld::feature::blocks::is_solid(above) && light(world, (x, y + 1, z)) < 4 {
+                return blocks::any_state("minecraft:dirt").map(|d| vec![(p, d)]).unwrap_or_default();
+            }
             if raining && snowy && above == AIR && let Some(s) = blocks::any_state("minecraft:snow_layer") {
                 return vec![((x, y + 1, z), s)];
             }
             let (dx, dy, dz) = ((roll % 3) as i32 - 1, ((roll / 3) % 5) as i32 - 3, ((roll / 15) % 3) as i32 - 1);
             let t = (x + dx, y + dy, z + dz);
             let tb = world.get(t.0, t.1, t.2);
-            if name(tb) == "minecraft:dirt" && int(tb, "dirt_type") == 0 && world.get(t.0, t.1 + 1, t.2) == AIR {
+            if name(tb) == "minecraft:dirt" && int(tb, "dirt_type") == 0 && world.get(t.0, t.1 + 1, t.2) == AIR && light(world, (x, y + 1, z)) >= 9 && light(world, (t.0, t.1 + 1, t.2)) >= 4 {
                 return vec![(t, b)];
             }
             vec![]

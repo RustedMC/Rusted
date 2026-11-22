@@ -256,6 +256,47 @@ impl World {
         best.clamp(0, 15) as u8
     }
 
+    /// Sky light at a spot (0-15, as if it were noon): 15 under open sky, then -1 a block
+    /// sideways or down through anything that isn't solid (PNX's sky light spreads the same
+    /// way). Searched outward from the spot like `block_light`. Night darkens it by 11.
+    pub fn sky_light(&self, x: i32, y: i32, z: i32) -> u8 {
+        use std::collections::{HashMap, HashSet, VecDeque};
+        let opaque = |id: i32| crate::overworld::feature::blocks::is_solid(id) || crate::overworld::feature::blocks::is_leaves(id);
+        // Per column: the lowest y that sees the sky (64 blocks of lookahead, like mobs::sky).
+        let mut open_from: HashMap<(i32, i32), i32> = HashMap::new();
+        let mut sees_sky = |px: i32, py: i32, pz: i32| {
+            let from = *open_from.entry((px, pz)).or_insert_with(|| {
+                let mut top = (y + 64).min(319);
+                while top >= py && !opaque(self.get(px, top, pz)) {
+                    top -= 1;
+                }
+                top + 1
+            });
+            py >= from
+        };
+        let mut seen = HashSet::from([(x, y, z)]);
+        let mut queue = VecDeque::from([((x, y, z), 0i32)]);
+        let mut visited = 0;
+        while let Some(((px, py, pz), d)) = queue.pop_front() {
+            if d >= 15 || visited > 4096 {
+                break; // shortcut: searches stop after 4096 blocks; plenty for spawn and growth checks
+            }
+            visited += 1;
+            if d > 0 && opaque(self.get(px, py, pz)) {
+                continue;
+            }
+            if sees_sky(px, py, pz) {
+                return (15 - d) as u8;
+            }
+            for n in [(px + 1, py, pz), (px - 1, py, pz), (px, py + 1, pz), (px, py - 1, pz), (px, py, pz + 1), (px, py, pz - 1)] {
+                if seen.insert(n) {
+                    queue.push_back((n, d + 1));
+                }
+            }
+        }
+        0
+    }
+
     /// Player-placed blocks in chunk (cx, cz), as world positions.
     pub fn edits_in(&self, cx: i32, cz: i32) -> Vec<((i32, i32, i32), i32)> {
         self.changes
@@ -832,6 +873,33 @@ mod tests {
         loaded.set(1, -60, 1, DIRT);
         assert!(!loaded.waterlogged(1, -60, 1));
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn sky_light_spreads_under_overhangs() {
+        let w = World::default();
+        assert_eq!(w.sky_light(0, -60, 0), 15, "open sky");
+        // A 5x5 roof two blocks up: the middle is 3 blocks from the open edge.
+        for x in -2..=2 {
+            for z in -2..=2 {
+                w.set(x, -58, z, DIRT);
+            }
+        }
+        assert_eq!(w.sky_light(0, -60, 0), 12);
+        // Walls round the sides too: no way to the sky, dark.
+        for i in -3..=3 {
+            for y in -60..=-58 {
+                for (x, z) in [(i, -3), (i, 3), (-3, i), (3, i)] {
+                    w.set(x, y, z, DIRT);
+                }
+            }
+        }
+        for x in -3..=3 {
+            for z in -3..=3 {
+                w.set(x, -58, z, DIRT);
+            }
+        }
+        assert_eq!(w.sky_light(0, -60, 0), 0);
     }
 
     #[test]
