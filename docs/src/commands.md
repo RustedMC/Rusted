@@ -15,11 +15,19 @@ apply here. A few examples:
 | `/summon` | `/summon zombie ~ ~ ~` |
 | `/scoreboard` | `/scoreboard objectives add kills playerKillCount Kills` |
 | `/whitelist` | `/whitelist add Steve` |
+| `/execute` | `/execute as @a at @s if block ~ ~-1 ~ gold_block run effect @s speed 5` |
+| `/locate` | `/locate village` |
+| `/function` | `/function welcome` runs `functions/welcome.mcfunction` |
+| `/ban-ip` | `/ban-ip Steve griefing` |
 
-Two commands are Rusted's own:
+These are Rusted's own:
 
 - `/pl` lists loaded plugins
 - `/ver` shows the Rusted version
+- `/perf` shows TPS, memory and what's taking time (`/perf parts` for more)
+- `/mv` makes extra worlds, like Multiverse: `/mv create skyblock void`, `/mv tp skyblock`,
+  `/mv list`. Types are `void`, `flat` and `normal` (add a seed after it). Each extra world
+  keeps its own inventory; the main world shares one with its Nether and End.
 
 ## Target selectors
 

@@ -58,13 +58,18 @@ pub(crate) async fn change_dim(conn: &mut dims::DimConn, server: &players::Serve
     // Others stop seeing us where we were.
     let gone = Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) }));
     let _ = server.events.send(players::Event::Relay { from: id, packet: Box::new(gone) });
+    // Between the overworld and an extra world the client stays in "the overworld": no
+    // ChangeDimension (it ignores one to the dimension it's in), just new chunks and a teleport.
+    let same = dims::network_id(to) == dims::network_id(conn.dim);
     conn.dim = to;
-    conn.send(&[Protocol::ChangeDimensionPacket(Box::new(bedrock::protocol::v712::packets::ChangeDimensionPacket {
-        dimension_id: dims::network_id(to),
-        position: eye,
-        respawn: false,
-        loading_screen_id: None,
-    }))]).await?;
+    if !same {
+        conn.send(&[Protocol::ChangeDimensionPacket(Box::new(bedrock::protocol::v712::packets::ChangeDimensionPacket {
+            dimension_id: dims::network_id(to),
+            position: eye,
+            respawn: false,
+            loading_screen_id: None,
+        }))]).await?;
+    }
     chunks.sent.clear();
     chunks.pending.clear();
     chunks.center = None;
@@ -87,7 +92,11 @@ pub(crate) async fn change_dim(conn: &mut dims::DimConn, server: &players::Serve
         result_pos: at,
         face: 0,
     }));
-    conn.send(&[tp, ack]).await?;
+    if same {
+        conn.send(&[tp]).await?;
+    } else {
+        conn.send(&[tp, ack]).await?;
+    }
     // Everyone in the new dimension sees us arrive.
     let _ = server.events.send(players::Event::Join(id));
     if to == dims::END {

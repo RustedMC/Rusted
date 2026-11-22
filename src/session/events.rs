@@ -345,6 +345,19 @@ impl Session {
                 }
                 let eye = (feet.0, feet.1 + 1.62, feet.2);
                 let (rot, head) = self.server.get(self.id).map_or(((0.0, 0.0), 0.0), |p| (p.rot, p.head_yaw));
+                // Into another dimension or world: the full switch (chunks, others seeing us).
+                let to = dims::of_f(feet.1);
+                if to != self.conn.dim {
+                    let from = self.conn.dim;
+                    if change_dim(&mut self.conn, &self.server, &mut self.chunks, self.id, to, eye, rot, head).await.is_err() {
+                        return END;
+                    }
+                    // Each extra world keeps its own inventory.
+                    if crate::multiworld::swap_inventory(&self.name, &mut self.inv, from, to) {
+                        let _ = self.conn.send(&self.inv.all_packets()).await;
+                    }
+                    return GO;
+                }
                 let mut tp = move_player(self.id, eye, rot, head);
                 if let Protocol::MovePlayerPacket(m) = &mut tp {
                     m.position_mode = PlayerPositionMode::Teleport;

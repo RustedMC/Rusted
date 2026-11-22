@@ -393,7 +393,7 @@ pub fn difficulty_packet(d: u32) -> crate::Protocol {
 pub const OP_ONLY: &[&str] = &[
     "kick", "op", "deop", "ban", "unban", "pardon", "ban-ip", "banip", "unban-ip", "pardon-ip", "banlist", "whitelist", "say", "weather", "difficulty", "gamemode", "gm",
     "tp", "teleport", "give", "summon", "effect", "enchant", "xp", "title", "titleraw", "tellraw", "playsound", "stopsound", "camerashake",
-    "transfer", "damage", "setblock", "fill", "clone", "testfor", "locate", "execute", "function", "testforblock", "toggledownfall", "daylock", "alwaysday", "scoreboard", "time", "gamerule", "kill", "clear", "spawnpoint", "setworldspawn", "stop", "status", "perf",
+    "transfer", "damage", "setblock", "fill", "clone", "testfor", "locate", "execute", "function", "mv", "multiverse", "testforblock", "toggledownfall", "daylock", "alwaysday", "scoreboard", "time", "gamerule", "kill", "clear", "spawnpoint", "setworldspawn", "stop", "status", "perf",
 ];
 
 /// (name, description) for everything we advertise and show in /help.
@@ -401,6 +401,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("ban", "Bans a player"),
     ("ban-ip", "Bans an IP address, or the address a player joined from"),
     ("locate", "Finds the nearest structure"),
+    ("mv", "Makes and visits extra worlds: create, tp, list"),
     ("execute", "Runs a command as or at other players, or if a block or player is there"),
     ("function", "Runs the commands in functions/<name>.mcfunction"),
     ("unban-ip", "Lifts an IP ban"),
@@ -596,6 +597,7 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
             if l.banned.set(who, false) { format!("Unbanned player {who}") } else { format!("§c{who} is not banned") }
         }
         ["banlist"] => format!("Banned players: {}", l.banned.all().join(", ")),
+        ["mv" | "multiverse", rest @ ..] => crate::multiworld::command(server, sender, rest),
         ["locate", "structure", what] | ["locate", what] => {
             let names = crate::overworld::structures::names();
             let what = what.trim_start_matches("minecraft:");

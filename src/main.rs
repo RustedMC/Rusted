@@ -63,6 +63,7 @@ mod ui;
 mod useblock;
 mod villagers;
 mod world;
+mod multiworld;
 
 // Rusted: minimal Bedrock server. Based on bedrock-rs examples/server.rs (Apache-2.0).
 use bedrock::auth::Login;
@@ -238,6 +239,7 @@ async fn main() {
         let _ = endfight::END.set(the_end.clone());
         server.world.set_dim(dims::END, Box::new(E(the_end)));
     }
+    multiworld::load(&server);
     blocks::init();
     server.plugins.server_start(&server);
     // Hoppers players placed keep working after a restart.

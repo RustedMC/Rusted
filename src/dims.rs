@@ -1,5 +1,6 @@
-//! All three dimensions live in one world, the Nether 1000 blocks up and the End 2000 up,
-//! so everything position-based just works. [`DimConn`] shifts coords for the client.
+//! All dimensions live in one world, the Nether 1000 blocks up and the End 2000 up, and extra
+//! worlds (/mv) 1000 apart from 3000 up, so everything position-based just works. [`DimConn`]
+//! shifts coords for the client.
 
 use bedrock::network::tokio::Connection;
 use bedrock::network::tokio::error::ConnectionError;
@@ -9,18 +10,30 @@ use crate::Protocol;
 pub const OVERWORLD: u8 = 0;
 pub const NETHER: u8 = 1;
 pub const END: u8 = 2;
+/// Extra overworld-style worlds are dimensions 3.. (see `crate::multiworld`).
+pub const FIRST_EXTRA: u8 = 3;
+pub const MAX_EXTRA: u8 = 16;
+
+/// An extra world made with /mv (an overworld to the client).
+pub const fn is_extra(dim: u8) -> bool {
+    dim >= FIRST_EXTRA
+}
 
 /// Stored y of each dimension's y = 0.
 pub const fn base(dim: u8) -> i32 {
     match dim {
         NETHER => 1000,
         END => 2000,
+        d if d >= FIRST_EXTRA => 3064 + (d - FIRST_EXTRA) as i32 * 1000,
         _ => 0,
     }
 }
 
 pub const fn of(y: i32) -> u8 {
-    if y >= 1900 {
+    if y >= 2900 {
+        let d = (y - 2900) / 1000;
+        FIRST_EXTRA + if d > (MAX_EXTRA - 1) as i32 { MAX_EXTRA - 1 } else { d as u8 }
+    } else if y >= 1900 {
         END
     } else if y >= 900 {
         NETHER
@@ -35,7 +48,7 @@ pub fn of_f(y: f32) -> u8 {
 
 /// Bedrock dimension id (ChangeDimension / LevelChunk).
 pub fn network_id(dim: u8) -> i32 {
-    dim as i32
+    if is_extra(dim) { 0 } else { dim as i32 }
 }
 
 /// Inclusive stored y range.
@@ -43,6 +56,7 @@ pub const fn range(dim: u8) -> (i32, i32) {
     match dim {
         NETHER => (1000, 1127),
         END => (2000, 2255),
+        d if d >= FIRST_EXTRA => (base(d) - 64, base(d) + 319),
         _ => (-64, 319),
     }
 }

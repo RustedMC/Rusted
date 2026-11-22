@@ -70,7 +70,7 @@ pub trait DimGen: Send + Sync {
 /// Nether and End generators (set at startup) and their chunk cache.
 #[derive(Default)]
 pub struct Dims {
-    gens: [OnceLock<Box<dyn DimGen>>; 2],
+    gens: [OnceLock<Box<dyn DimGen>>; 2 + crate::dims::MAX_EXTRA as usize],
     cache: Mutex<HashMap<(u8, i32, i32), Arc<dyn Column>>>,
 }
 
@@ -329,7 +329,7 @@ impl World {
         Self::with_generator(Generator::Normal { seed, cache: crate::terrain::Cache::default() })
     }
 
-    /// `dim` 1 is the Nether, 2 the End.
+    /// `dim` 1 is the Nether, 2 the End, 3.. the extra worlds (each set once).
     pub fn set_dim(&self, dim: u8, g: Box<dyn DimGen>) {
         if let Some(slot) = self.dims.gens.get(dim as usize - 1) {
             let _ = slot.set(g);
@@ -571,6 +571,22 @@ impl World {
             return self.chunk_payload(cx, cz);
         }
         let (lo, hi) = crate::dims::range(dim);
+        if crate::dims::is_extra(dim) {
+            // An overworld to the client: world y -64..319, column y 0..383.
+            let base = crate::dims::base(dim);
+            let edits = self.changes.lock().get(&(cx, cz)).cloned().unwrap_or_default();
+            let local: HashMap<(i32, i32, i32), i32> = edits.into_iter().filter(|((_, y, _), _)| (lo..=hi).contains(y)).map(|((x, y, z), b)| ((x, y - base, z), b)).collect();
+            let water: std::collections::HashSet<(i32, i32, i32)> = self.water_in(cx, cz).into_iter().filter(|(_, y, _)| (lo..=hi).contains(y)).map(|(x, y, z)| (x, y - base, z)).collect();
+            let col = self.dims.column(dim, cx, cz);
+            return encode_range(
+                &local,
+                &water,
+                |lx, y, lz| col.as_ref().map_or(AIR, |c| c.get(lx, y + 64, lz)),
+                |lx, y, lz| col.as_ref().map_or(PLAINS, |c| c.biome(lx, y + 64, lz) as i32),
+                MIN_Y,
+                SUBCHUNKS,
+            );
+        }
         let edits = self.changes.lock().get(&(cx, cz)).cloned().unwrap_or_default();
         let col = self.dims.column(dim, cx, cz);
         // edits are stored `lo` blocks up
