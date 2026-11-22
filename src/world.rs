@@ -524,6 +524,15 @@ impl World {
         Ok(world)
     }
 
+    /// /locate: the nearest structure called `name` to (x, z), in block coordinates. Only the
+    /// vanilla generator has structures.
+    pub fn locate(&self, name: &str, x: i32, z: i32) -> Option<(i32, i32)> {
+        match &*self.generator {
+            Generator::Vanilla { ow, .. } => crate::overworld::structures::locate(ow, name, x >> 4, z >> 4, 150),
+            _ => None,
+        }
+    }
+
     /// Whether this block holds water in its second layer.
     pub fn waterlogged(&self, x: i32, y: i32, z: i32) -> bool {
         self.water.lock().get(&(x >> 4, z >> 4)).is_some_and(|c| c.contains(&(x & 15, y, z & 15)))

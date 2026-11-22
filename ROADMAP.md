@@ -27,14 +27,14 @@ See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands
   traders (trades, visits), villager breeding, leads and llama caravans, polar bears guarding
   cubs, chest boats, TNT minecarts
 - ✅ **0.4.6** Waterlogging (a second block layer in chunks and saves); crawling pose; explosions hurt mobs
-- ⏳ **0.5.0** Sky light
+- 🔨 **0.5.0** Sky light (for spawning and growth), fireworks from the ground, `/execute`, `/locate`, `/function`
 - ⏳ **0.5.1** Multiple worlds (Multiverse), with per-world inventories
 - ⏳ **0.5.2** Maps and the cartography table
-- ⏳ **0.5.3** Fireworks launched from the ground, with their effects
+- ✅ **0.5.3** Fireworks launched from the ground, with their effects (moved into 0.5.0)
 
 ## 0.6: servers and plugins
 
-- ⏳ **0.6.0** `/execute` and the remaining vanilla commands
+- ⏳ **0.6.0** The remaining vanilla commands (`/execute` came early, in 0.5.0)
 - ⏳ **0.6.1** Plugins loaded at runtime, more events
 - ⏳ **0.6.2** Camera control, NPC dialogs
 

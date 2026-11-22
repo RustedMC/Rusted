@@ -98,6 +98,30 @@ fn types() -> &'static Vec<StructureType> {
     })
 }
 
+/// Structure names for /locate, without the `normal_` prefix (village, stronghold...).
+pub fn names() -> Vec<&'static str> {
+    types().iter().map(|t| t.name.trim_start_matches("normal_").trim_start_matches("generic_")).collect()
+}
+
+/// The nearest `name` structure to chunk (cx, cz) within `max` chunks, as block (x, z):
+/// rings outward, the cheap seed check first, then a real build to be sure it's there.
+pub fn locate(ow: &Overworld, name: &str, cx: i32, cz: i32, max: i32) -> Option<(i32, i32)> {
+    let want: Vec<&StructureType> = types().iter().filter(|t| t.name.trim_start_matches("normal_").trim_start_matches("generic_") == name).collect();
+    for r in 0..=max {
+        for sx in cx - r..=cx + r {
+            for sz in cz - r..=cz + r {
+                if (sx - cx).abs() != r && (sz - cz).abs() != r {
+                    continue; // inside the ring: already checked
+                }
+                if want.iter().any(|t| (t.hint)(ow.seed, sx, sz) && !build(ow, t, sx, sz).is_empty()) {
+                    return Some((sx * 16 + 8, sz * 16 + 8));
+                }
+            }
+        }
+    }
+    None
+}
+
 /// A built structure's blocks, grouped by chunk: (local x, y, local z, id).
 type Built = HashMap<(i32, i32), Vec<(u8, i16, u8, i32)>>;
 

@@ -268,6 +268,18 @@ fn name_index(cmd: &str, args: &[&str]) -> Option<usize> {
 /// Expands a target selector into one run per player, rewriting the target as `@s`.
 /// Commands without a target just run here.
 pub fn expand(server: &crate::players::Server, me: i64, line: &str) -> Result<Vec<(i64, String)>, String> {
+    // /execute and /function turn into ordinary runs, at most 16 deep (a function calling itself).
+    thread_local!(static DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) });
+    let first = line.split_whitespace().next().unwrap_or("");
+    if matches!(first, "execute" | "function") {
+        if DEPTH.with(|d| d.get()) >= 16 {
+            return Err("§cToo many nested /execute or /function calls".into());
+        }
+        DEPTH.with(|d| d.set(d.get() + 1));
+        let out = if first == "execute" { execute(server, me, line) } else { function(server, me, line) };
+        DEPTH.with(|d| d.set(d.get() - 1));
+        return out;
+    }
     // /tp <who> @s, /tp @p: the destination selector means the sender's view, so it's turned
     // into a name here, before the command is split per player being moved.
     let resolved;
@@ -381,13 +393,16 @@ pub fn difficulty_packet(d: u32) -> crate::Protocol {
 pub const OP_ONLY: &[&str] = &[
     "kick", "op", "deop", "ban", "unban", "pardon", "ban-ip", "banip", "unban-ip", "pardon-ip", "banlist", "whitelist", "say", "weather", "difficulty", "gamemode", "gm",
     "tp", "teleport", "give", "summon", "effect", "enchant", "xp", "title", "titleraw", "tellraw", "playsound", "stopsound", "camerashake",
-    "transfer", "damage", "setblock", "fill", "clone", "testfor", "testforblock", "toggledownfall", "daylock", "alwaysday", "scoreboard", "time", "gamerule", "kill", "clear", "spawnpoint", "setworldspawn", "stop", "status", "perf",
+    "transfer", "damage", "setblock", "fill", "clone", "testfor", "locate", "execute", "function", "testforblock", "toggledownfall", "daylock", "alwaysday", "scoreboard", "time", "gamerule", "kill", "clear", "spawnpoint", "setworldspawn", "stop", "status", "perf",
 ];
 
 /// (name, description) for everything we advertise and show in /help.
 pub const HELP: &[(&str, &str)] = &[
     ("ban", "Bans a player"),
     ("ban-ip", "Bans an IP address, or the address a player joined from"),
+    ("locate", "Finds the nearest structure"),
+    ("execute", "Runs a command as or at other players, or if a block or player is there"),
+    ("function", "Runs the commands in functions/<name>.mcfunction"),
     ("unban-ip", "Lifts an IP ban"),
     ("banlist", "Lists bans (banlist ips for addresses)"),
     ("clear", "Clears items from your inventory"),
@@ -581,6 +596,21 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
             if l.banned.set(who, false) { format!("Unbanned player {who}") } else { format!("§c{who} is not banned") }
         }
         ["banlist"] => format!("Banned players: {}", l.banned.all().join(", ")),
+        ["locate", "structure", what] | ["locate", what] => {
+            let names = crate::overworld::structures::names();
+            let what = what.trim_start_matches("minecraft:");
+            if !names.contains(&what) {
+                return Some(format!("§cUnknown structure. Try: {}", names.join(", ")));
+            }
+            let here = server.find_by_name(sender).and_then(|id| server.get(id)).map_or((0.0, 0.0), |p| (p.pos.0, p.pos.2));
+            match server.world.locate(what, here.0 as i32, here.1 as i32) {
+                Some((x, z)) => {
+                    let d = ((x as f32 - here.0).powi(2) + (z as f32 - here.1).powi(2)).sqrt() as i32;
+                    format!("The nearest {what} is at [{x}, ~, {z}] ({d} blocks away)")
+                }
+                None => format!("§cCould not find a {what} nearby"),
+            }
+        }
         ["whitelist", "on"] => {
             *l.whitelist_on.lock() = true;
             "Turned on the allowlist".into()
@@ -698,5 +728,153 @@ mod tests {
         std::fs::remove_file(path).ok();
         assert_eq!(difficulty_from("hard"), Some(3));
         assert_eq!(difficulty_from("x"), None);
+    }
+}
+/// Feet position of a player.
+fn feet_of(server: &crate::players::Server, id: i64) -> (f32, f32, f32) {
+    server.get(id).map_or((0.0, 0.0, 0.0), |p| (p.pos.0, p.pos.1 - 1.62, p.pos.2))
+}
+
+/// One coordinate: `~`, `~2.5` (relative to `base`) or a number.
+fn coord(s: &str, base: f32) -> Option<f32> {
+    match s.strip_prefix('~') {
+        Some("") => Some(base),
+        Some(r) => r.parse::<f32>().ok().map(|d| base + d),
+        None => s.parse().ok(),
+    }
+}
+
+/// Turns `~` coordinates in a command into numbers around `at`, so a command run "at" a
+/// place works no matter whose session runs it.
+fn absolute(line: &str, at: (f32, f32, f32)) -> String {
+    let mut t: Vec<String> = line.split_whitespace().map(str::to_string).collect();
+    let mut i = 0;
+    while i + 2 < t.len() {
+        let triple = [&t[i], &t[i + 1], &t[i + 2]];
+        if triple.iter().any(|x| x.starts_with('~')) && triple.iter().all(|x| coord(x, 0.0).is_some()) {
+            for (k, base) in [at.0, at.1, at.2].into_iter().enumerate() {
+                if t[i + k].starts_with('~') {
+                    t[i + k] = format!("{:.2}", coord(&t[i + k], base).unwrap_or(base));
+                }
+            }
+            i += 3;
+        } else {
+            i += 1;
+        }
+    }
+    t.join(" ")
+}
+
+/// /execute: `as <targets>`, `at <targets>`, `positioned <x y z>`, `if|unless block <x y z>
+/// <block>`, `if|unless entity <targets>`, then `run <command>`, chained like vanilla.
+fn execute(server: &crate::players::Server, me: i64, line: &str) -> Result<Vec<(i64, String)>, String> {
+    let args: Vec<&str> = line.split_whitespace().skip(1).collect();
+    // (who runs it, where it runs)
+    let mut ctx: Vec<(i64, (f32, f32, f32))> = vec![(me, feet_of(server, me))];
+    let mut i = 0;
+    let usage = || "§cUsage: /execute [as|at <targets>] [positioned <x y z>] [if|unless block <x y z> <block>|entity <targets>] run <command>".to_string();
+    while i < args.len() {
+        match args[i] {
+            "as" => {
+                let sel = args.get(i + 1).ok_or_else(usage)?;
+                let mut next = Vec::new();
+                for (who, at) in &ctx {
+                    for id in select(server, *who, sel)? {
+                        next.push((id, *at));
+                    }
+                }
+                ctx = next;
+                i += 2;
+            }
+            "at" => {
+                let sel = args.get(i + 1).ok_or_else(usage)?;
+                let mut next = Vec::new();
+                for (who, _) in &ctx {
+                    for id in select(server, *who, sel)? {
+                        next.push((*who, feet_of(server, id)));
+                    }
+                }
+                ctx = next;
+                i += 2;
+            }
+            "positioned" => {
+                let [x, y, z] = [args.get(i + 1), args.get(i + 2), args.get(i + 3)].map(|a| a.copied().unwrap_or(""));
+                for c in &mut ctx {
+                    c.1 = (coord(x, c.1.0).ok_or_else(usage)?, coord(y, c.1.1).ok_or_else(usage)?, coord(z, c.1.2).ok_or_else(usage)?);
+                }
+                i += 4;
+            }
+            cond @ ("if" | "unless") => {
+                let want = cond == "if";
+                match args.get(i + 1).copied() {
+                    Some("block") => {
+                        let [x, y, z, b] = [args.get(i + 2), args.get(i + 3), args.get(i + 4), args.get(i + 5)].map(|a| a.copied().unwrap_or(""));
+                        let block = format!("minecraft:{}", b.trim_start_matches("minecraft:"));
+                        let mut keep = Vec::new();
+                        for c in ctx {
+                            let (bx, by, bz) = (coord(x, c.1.0).ok_or_else(usage)?, coord(y, c.1.1).ok_or_else(usage)?, coord(z, c.1.2).ok_or_else(usage)?);
+                            let here = server.world.get(bx.floor() as i32, by.floor() as i32, bz.floor() as i32);
+                            if crate::blocks::entry(here).is_some_and(|e| e.name == block) == want {
+                                keep.push(c);
+                            }
+                        }
+                        ctx = keep;
+                        i += 6;
+                    }
+                    Some("entity") => {
+                        let sel = args.get(i + 2).ok_or_else(usage)?;
+                        let mut keep = Vec::new();
+                        for c in ctx {
+                            if select(server, c.0, sel).is_ok_and(|v| !v.is_empty()) == want {
+                                keep.push(c);
+                            }
+                        }
+                        ctx = keep;
+                        i += 3;
+                    }
+                    _ => return Err(usage()),
+                }
+            }
+            "run" => {
+                let rest = args[i + 1..].join(" ");
+                if rest.is_empty() {
+                    return Err(usage());
+                }
+                let mut runs = Vec::new();
+                for (who, at) in ctx {
+                    runs.extend(expand(server, who, &absolute(&rest, at))?);
+                }
+                return Ok(runs);
+            }
+            _ => return Err(usage()),
+        }
+    }
+    // No `run`: vanilla reports whether the conditions passed.
+    Err(if ctx.is_empty() { "§cTest failed".into() } else { format!("Test passed, count: {}", ctx.len()) })
+}
+
+/// /function <name>: runs each line of functions/<name>.mcfunction (blank lines and `#`
+/// comments skipped), as the sender.
+fn function(server: &crate::players::Server, me: i64, line: &str) -> Result<Vec<(i64, String)>, String> {
+    let Some(name) = line.split_whitespace().nth(1) else { return Err("§cUsage: /function <name>".into()) };
+    if name.contains("..") || name.starts_with(['/', '\\']) {
+        return Err("§cBad function name".into());
+    }
+    let path = std::path::Path::new("functions").join(format!("{name}.mcfunction"));
+    let text = std::fs::read_to_string(&path).map_err(|_| format!("§cUnknown function: {name} (looked for {})", path.display()))?;
+    let mut runs = Vec::new();
+    for l in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+        runs.extend(expand(server, me, l.trim_start_matches('/'))?);
+    }
+    Ok(runs)
+}
+
+#[cfg(test)]
+mod execute_tests {
+    #[test]
+    fn tilde_coordinates_become_absolute() {
+        assert_eq!(super::absolute("setblock ~ ~1 ~-2 stone", (10.0, 64.0, 5.0)), "setblock 10.00 65.00 3.00 stone");
+        assert_eq!(super::absolute("say hi ~ there", (1.0, 2.0, 3.0)), "say hi ~ there", "not a coordinate triple");
+        assert_eq!(super::absolute("tp @s 5 ~ 7", (0.0, 70.0, 0.0)), "tp @s 5 70.00 7");
     }
 }
