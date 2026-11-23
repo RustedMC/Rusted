@@ -12,6 +12,7 @@ mod ai;
 mod beacon;
 mod placeholders;
 mod packs;
+mod custom;
 mod blockops;
 mod session;
 mod cmdargs;

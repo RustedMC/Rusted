@@ -15,6 +15,8 @@ use crate::players::{Event, Server};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum Kind {
+    /// A plugin custom mob: index into custom::get().entities.
+    Custom(u16),
     Cow,
     Pig,
     Sheep,
@@ -194,6 +196,7 @@ impl Kind {
 
     pub fn spec(self) -> &'static Spec {
         match self {
+            Kind::Custom(i) => &crate::custom::get().entities[i as usize],
             Kind::Cow => &Spec { id: "minecraft:cow", display: "Cow", health: 10.0, size: (0.9, 1.4), speed: 0.25, melee: 0.0, class: Class::Passive, food: &["minecraft:wheat"], drops: &[("minecraft:beef", 1, 3), ("minecraft:leather", 0, 2)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
             Kind::Pig => &Spec { id: "minecraft:pig", display: "Pig", health: 10.0, size: (0.9, 0.9), speed: 0.25, melee: 0.0, class: Class::Passive, food: &["minecraft:carrot", "minecraft:potato", "minecraft:beetroot"], drops: &[("minecraft:porkchop", 1, 3)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
             Kind::Sheep => &Spec { id: "minecraft:sheep", display: "Sheep", health: 8.0, size: (0.9, 1.3), speed: 0.25, melee: 0.0, class: Class::Passive, food: &["minecraft:wheat"], drops: &[("minecraft:mutton", 1, 2), ("minecraft:white_wool", 1, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
@@ -340,6 +343,7 @@ impl Kind {
             n => n,
         };
         Kind::ALL.into_iter().find(|k| k.identifier().trim_start_matches("minecraft:") == n)
+            .or_else(|| crate::custom::get().entities.iter().position(|e| e.id == n || e.id.rsplit(':').next() == Some(n)).map(|i| Kind::Custom(i as u16)))
     }
 
     fn max_health(self) -> f32 {

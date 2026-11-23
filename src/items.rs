@@ -140,6 +140,21 @@ fn data() -> &'static Data {
             })
             .collect();
 
+        // Plugin custom items: new runtime ids after vanilla's, in their own creative group.
+        let (mut items, mut groups, mut contents): (Vec<ItemsEntry<V2225>>, Vec<CreativeItemGroup<V2225>>, Vec<CreativeItemData<V2225>>) = (items, groups, contents);
+        let mut next = items.iter().map(|i| i.runtime_id).max().unwrap_or(0) + 1;
+        for c in &crate::custom::get().items {
+            let instance = NetworkItemInstanceDescriptor { id: next as i32, stack_size: 1, aux_value: 0, block_runtime_id: 0, user_data_buffer: EMPTY_USER_DATA.to_vec() };
+            groups.push(CreativeItemGroup {
+                category: match c.category { 1 => CreativeItemCategory::Construction, 2 => CreativeItemCategory::Nature, 3 => CreativeItemCategory::Equipment, _ => CreativeItemCategory::Items },
+                name: String::new(),
+                icon: NetworkItemInstanceDescriptor { id: 0, stack_size: 0, aux_value: 0, block_runtime_id: 0, user_data_buffer: EMPTY_USER_DATA.to_vec() },
+            });
+            contents.push(CreativeItemData { creative_net_id: contents.len() as u32 + 1, item_instance: instance, group_id: groups.len() as u32 - 1 });
+            items.push(ItemsEntry { component_data: crate::custom::item_nbt(c, next), component_item_name: c.id.to_string(), runtime_id: next, is_component_based: true, version: ItemVersion::DataDriven });
+            next += 1;
+        }
+
         Data {
             registry: ItemComponentPacket { items },
             creative: CreativeContentPacket { groups, contents },
@@ -150,6 +165,9 @@ fn data() -> &'static Data {
 /// Our item data has no stack sizes, so guess from the name like vanilla
 /// (tools/armor/potions 1, pearls/signs/buckets 16).
 fn stack_size_for(name: &str) -> i8 {
+    if let Some(c) = crate::custom::get().items.iter().find(|c| c.id == name) {
+        return c.stack;
+    }
     let n = name.trim_start_matches("minecraft:");
     const ONE_SUFFIX: [&str; 16] = [
         "_sword", "_pickaxe", "_axe", "_shovel", "_hoe", "_helmet", "_chestplate", "_leggings",
@@ -403,10 +421,16 @@ pub fn actor_identifiers() -> std::collections::HashMap<String, nbtx::Value> {
     let gz = include_bytes!("../data/entity_identifiers.nbt");
     let mut raw = flate2::read::GzDecoder::new(&gz[..]);
     match nbtx::from_bytes::<nbtx::BigEndian, nbtx::Value>(&mut raw).expect("entity_identifiers.nbt") {
-        nbtx::Value::Compound(map) => map
-            .into_iter()
-            .map(|(k, v)| (String::from_utf8_lossy(&k).into_owned(), v))
-            .collect(),
+        nbtx::Value::Compound(map) => {
+            let mut out: std::collections::HashMap<String, nbtx::Value> = map.into_iter().map(|(k, v)| (String::from_utf8_lossy(&k).into_owned(), v)).collect();
+            // Custom entities join the list so the client accepts their ids.
+            if let Some(nbtx::Value::List(list)) = out.get_mut("idlist") {
+                for (n, e) in crate::custom::get().entities.iter().enumerate() {
+                    let _ = list.push(crate::custom::entity_nbt(e.id, 5000 + n as i32));
+                }
+            }
+            out
+        }
         _ => panic!("entity_identifiers.nbt: root is not a compound"),
     }
 }

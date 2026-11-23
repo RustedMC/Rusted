@@ -44,6 +44,16 @@ pub enum Access {
 pub trait Plugin: Send + Sync {
     fn name(&self) -> &str;
 
+    /// Custom items this plugin adds (textures from a resource pack). See custom.rs.
+    fn custom_items(&self) -> Vec<crate::custom::Item> {
+        vec![]
+    }
+
+    /// Custom mobs this plugin adds, by their resource-pack entity id. /summon works on them.
+    fn custom_entities(&self) -> Vec<crate::mobs::Spec> {
+        vec![]
+    }
+
     /// Shown by `/pl`.
     fn version(&self) -> &str {
         "1.0.0"
