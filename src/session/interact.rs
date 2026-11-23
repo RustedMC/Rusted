@@ -136,6 +136,24 @@ impl Session {
             }
             return;
         }
+        // An empty map becomes a map of the area you're standing in.
+        if let InventoryTransactionData::ItemUse(u) = &t.data
+            && u.action_type == 1
+            && self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id)) == Some("minecraft:empty_map")
+            && let Some(me) = self.server.get(self.id)
+            && let Some(map) = crate::maps::filled_map(crate::maps::create(me.pos.0, me.pos.2, self.conn.dim))
+        {
+            let slot = self.selected_slot as usize;
+            if survival_like(&self.mode) && self.inv.held(slot).is_some_and(|s| s.count > 1) {
+                self.inv.use_one(slot);
+                self.inv.add(map, 1);
+            } else {
+                self.inv.set_slot(slot, map, 1);
+            }
+            let _ = self.conn.send(&[self.inv.content_packet()]).await;
+            let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(play_sound("ui.cartography_table.take_result", me.pos)) });
+            return;
+        }
         // Splash and lingering potions are thrown.
         if let InventoryTransactionData::ItemUse(u) = &t.data
             && u.action_type == 1

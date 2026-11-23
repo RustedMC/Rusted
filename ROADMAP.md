@@ -29,7 +29,8 @@ See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands
 - ✅ **0.4.6** Waterlogging (a second block layer in chunks and saves); crawling pose; explosions hurt mobs
 - ✅ **0.5.0** Sky light (for spawning and growth), fireworks from the ground, `/execute`, `/locate`, `/function`
 - ✅ **0.5.1** Multiple worlds (`/mv`), with per-world inventories
-- ⏳ **0.5.2** Maps and the cartography table
+- ✅ **0.5.2** Maps: empty maps become maps of the area, drawn from the world
+- ⏳ **0.5.4** The cartography table (zoom, copy and lock maps)
 - ✅ **0.5.3** Fireworks launched from the ground, with their effects (moved into 0.5.0)
 
 ## 0.6: servers and plugins

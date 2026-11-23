@@ -272,6 +272,12 @@ impl Session {
             }
             Protocol::InteractPacket(i) if matches!(i.action, InteractAction::OpenInventory) => self.on_open_inventory().await,
             Protocol::InteractPacket(i) if matches!(i.action, InteractAction::StopRiding) => self.get_off(),
+            // Holding a map: the client asks for its picture.
+            Protocol::MapInfoRequestPacket(m) => {
+                if let Some(p) = crate::maps::packet(&self.server, m.map_unique_id.0) {
+                    let _ = self.conn.send(&[p]).await;
+                }
+            }
             Protocol::LecternUpdatePacket(l) => {
                 // Page turned: everyone sees the lectern open at it.
                 let p = &l.position_of_lectern_to_update;

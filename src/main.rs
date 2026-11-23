@@ -64,6 +64,7 @@ mod useblock;
 mod villagers;
 mod world;
 mod multiworld;
+mod maps;
 
 // Rusted: minimal Bedrock server. Based on bedrock-rs examples/server.rs (Apache-2.0).
 use bedrock::auth::Login;
