@@ -73,16 +73,17 @@ fn registry() -> &'static Registry {
         }
         // Plugin custom blocks: one state each, id = its hash like vanilla's.
         for b in &crate::custom::get().blocks {
-            let id = crate::custom::block_hash(b);
-            let mut c = nbtx::Compound::new();
-            c.insert("name".into(), nbtx::Value::String(b.id.into()));
-            c.insert("states".into(), nbtx::Value::Compound(Default::default()));
-            c.insert("version".into(), nbtx::Value::Int(18100737));
-            let i = reg.entries.len();
-            reg.by_id.insert(id, i);
-            reg.by_name.entry(b.id.to_string()).or_default().push(i);
-            reg.entries.push(Entry { name: b.id.to_string(), states: vec![], nbt: nbtx::Value::Compound(c) });
-            reg.ids.push(id);
+            for (st, id) in b.states() {
+                let mut c = nbtx::Compound::new();
+                c.insert("name".into(), nbtx::Value::String(b.id.into()));
+                c.insert("states".into(), nbtx::Value::Compound(st.iter().map(|(k, v)| (k.as_str().into(), nbtx::Value::String(v.as_str().into()))).collect()));
+                c.insert("version".into(), nbtx::Value::Int(18100737));
+                let i = reg.entries.len();
+                reg.by_id.insert(id, i);
+                reg.by_name.entry(b.id.to_string()).or_default().push(i);
+                reg.entries.push(Entry { name: b.id.to_string(), states: st.into_iter().map(|(k, v)| (k, State::Str(v))).collect(), nbt: nbtx::Value::Compound(c) });
+                reg.ids.push(id);
+            }
         }
         reg
     })

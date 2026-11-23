@@ -30,10 +30,19 @@ fn custom_blocks(&self) -> Vec<custom::Block> {
 | `light` | Light it gives off, 0-15 |
 | `render` | `"opaque"`, `"alpha_test"` (cut-out like leaves) or `"blend"` (see-through like glass) |
 | `category` | Creative tab: 1 construction, 2 nature, 3 equipment, 4 items |
+| `rotatable` | Faces the player when placed (`minecraft:cardinal_direction`, like a furnace) |
+| `variants` | `&[(name, texture)]`: colours or types of one block, each its own creative entry, in the `<namespace>:variant` state |
 | `extra` | Any other Bedrock block component, sent as-is (custom geometry, friction...) |
 
 Blocks can be placed, mined, dropped and saved like vanilla ones, and they show in the creative menu.
-For now each block has one state, so it can't face different directions or have variants.
+Their `light` counts on the server too, for mob spawning and crop growth.
+
+```rust
+custom::Block { id: "my:lamp", name: "Lamp", texture: "lamp_red", light: 15, rotatable: true,
+    variants: &[("red", "lamp_red"), ("blue", "lamp_blue")], ..Default::default() }
+```
+
+Plugins can read and change the states with `blocks::state` and `blocks::with`, like any vanilla block.
 
 ## Items
 

@@ -14,7 +14,11 @@ impl crate::plugin::Plugin for Example {
     }
 
     fn custom_blocks(&self) -> Vec<Block> {
-        vec![Block { id: "example:ruby_block", name: "Block of Ruby", texture: "ruby_block", hardness: 5.0, light: 7, ..Default::default() }]
+        vec![
+            Block { id: "example:ruby_block", name: "Block of Ruby", texture: "ruby_block", hardness: 5.0, light: 7, ..Default::default() },
+            // Faces the player, comes in two colours.
+            Block { id: "example:lamp", name: "Lamp", texture: "lamp_red", light: 15, rotatable: true, variants: &[("red", "lamp_red"), ("blue", "lamp_blue")], ..Default::default() },
+        ]
     }
 
     fn custom_items(&self) -> Vec<Item> {

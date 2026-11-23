@@ -22,6 +22,9 @@ fn int(b: i32, key: &str) -> i32 {
 }
 
 fn emits_light(b: i32) -> bool {
+    if crate::custom::block(b).is_some() {
+        return crate::world::emission(b) > 0;
+    }
     matches!(name(b), "minecraft:torch" | "minecraft:lantern" | "minecraft:glowstone" | "minecraft:lava" | "minecraft:flowing_lava"
         | "minecraft:sea_lantern" | "minecraft:jack_o_lantern" | "minecraft:lit_furnace" | "minecraft:campfire" | "minecraft:shroomlight" | "minecraft:fire")
 }

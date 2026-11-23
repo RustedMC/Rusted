@@ -651,6 +651,9 @@ fn layer(layers: &[i32], y: i32) -> i32 {
 /// Vanilla light levels, 0 = none.
 pub fn emission(id: i32) -> i32 {
     let Some(e) = crate::blocks::entry(id) else { return 0 };
+    if let Some(b) = crate::custom::block(id) {
+        return b.light.min(15) as i32;
+    }
     match e.name.trim_start_matches("minecraft:") {
         "glowstone" | "sea_lantern" | "lantern" | "jack_o_lantern" | "lava" | "flowing_lava" | "beacon" | "shroomlight" | "campfire" | "lit_pumpkin"
         | "ochre_froglight" | "verdant_froglight" | "pearlescent_froglight" | "end_gateway" | "conduit" | "respawn_anchor" | "fire" | "lit_redstone_lamp" | "copper_lantern" => 15,

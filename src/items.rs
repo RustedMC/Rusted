@@ -152,7 +152,11 @@ fn data() -> &'static Data {
                 name: String::new(),
                 icon: NetworkItemInstanceDescriptor { id: 0, stack_size: 0, aux_value: 0, block_runtime_id: 0, user_data_buffer: EMPTY_USER_DATA.to_vec() },
             });
-            contents.push(CreativeItemData { creative_net_id: contents.len() as u32 + 1, item_instance: instance, group_id: groups.len() as u32 - 1 });
+            // One creative entry per variant (in its default direction).
+            for (_, id) in b.states().into_iter().filter(|(st, _)| st.iter().all(|(k, v)| k != "minecraft:cardinal_direction" || v == "north")) {
+                let item_instance = NetworkItemInstanceDescriptor { block_runtime_id: id, ..instance.clone() };
+                contents.push(CreativeItemData { creative_net_id: contents.len() as u32 + 1, item_instance, group_id: groups.len() as u32 - 1 });
+            }
             items.push(ItemsEntry { component_data: empty_compound(), component_item_name: b.id.to_string(), runtime_id: rid, is_component_based: false, version: ItemVersion::None });
         }
         for c in &crate::custom::get().items {

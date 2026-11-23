@@ -74,38 +74,73 @@ pub struct Block {
     pub render: &'static str,
     /// Creative tab: 1 construction, 2 nature, 3 equipment, 4 items.
     pub category: u8,
+    /// Faces the player when placed (minecraft:cardinal_direction, like furnaces).
+    pub rotatable: bool,
+    /// Variants as (name, texture), e.g. [("red", "lamp_red"), ("blue", "lamp_blue")]: each gets
+    /// its own creative entry. Stored in the "<namespace>:variant" state.
+    pub variants: &'static [(&'static str, &'static str)],
     /// Anything else, added as-is to the block's client components
     /// (e.g. ("minecraft:geometry", nbt) for a custom model, ("minecraft:friction", nbt)).
     pub extra: Vec<(&'static str, nbtx::Value)>,
 }
 
+const DIRS: [&str; 4] = ["north", "west", "south", "east"];
+
+impl Block {
+    /// Name of the variant state.
+    pub fn variant_key(&self) -> String {
+        format!("{}:variant", self.id.split(':').next().unwrap_or("custom"))
+    }
+
+    /// Every state as (states, network id); the first is the default.
+    pub fn states(&self) -> Vec<(Vec<(String, String)>, i32)> {
+        let dirs: Vec<Option<&str>> = if self.rotatable { DIRS.iter().map(|d| Some(*d)).collect() } else { vec![None] };
+        let vars: Vec<Option<&str>> = if self.variants.is_empty() { vec![None] } else { self.variants.iter().map(|v| Some(v.0)).collect() };
+        let mut out = vec![];
+        for v in &vars {
+            for d in &dirs {
+                let mut st: Vec<(String, String)> = vec![];
+                if let Some(d) = d {
+                    st.push(("minecraft:cardinal_direction".into(), d.to_string()));
+                }
+                if let Some(v) = v {
+                    st.push((self.variant_key(), v.to_string()));
+                }
+                st.sort();
+                let nbt = nbtx::Value::Compound(st.iter().map(|(k, v)| (k.as_str().into(), s(v))).collect());
+                out.push((st, crate::blocks::hash(self.id, nbt)));
+            }
+        }
+        out
+    }
+}
+
 impl Default for Block {
     fn default() -> Self {
-        Block { id: "", name: "", texture: "", hardness: 1.5, light: 0, render: "opaque", category: 1, extra: vec![] }
+        Block { id: "", name: "", texture: "", hardness: 1.5, light: 0, render: "opaque", category: 1, rotatable: false, variants: &[], extra: vec![] }
     }
 }
 
 /// First legacy block id for custom blocks (what PNX uses too).
 pub const FIRST_BLOCK_ID: i32 = 10000;
 
-/// The network id of a custom block (its state hash), by index.
+/// The network id of a custom block's default state.
 pub fn block_hash(b: &Block) -> i32 {
-    crate::blocks::hash(b.id, nbtx::Value::Compound(Default::default()))
+    b.states()[0].1
 }
 
-/// A custom block by its network id.
+/// A custom block by the network id of any of its states.
 pub fn block(id: i32) -> Option<&'static Block> {
-    get().blocks.iter().find(|b| block_hash(b) == id)
+    let name = &crate::blocks::entry(id)?.name;
+    get().blocks.iter().find(|b| b.id == name)
 }
 
 /// The block's StartGame definition: how the client draws and mines it.
 pub fn block_nbt(b: &Block, n: usize) -> std::collections::HashMap<String, nbtx::Value> {
     use nbtx::Value::{Byte, Float, Int};
+    let materials = |texture: &str| compound([("mappings", compound([])), ("materials", compound([("*", compound([("texture", s(texture)), ("render_method", s(b.render)), ("ambient_occlusion", Byte(1)), ("face_dimming", Byte(1))]))]))]);
     let mut comps = nbtx::Compound::new();
-    comps.insert(
-        "minecraft:material_instances".into(),
-        compound([("mappings", compound([])), ("materials", compound([("*", compound([("texture", s(b.texture)), ("render_method", s(b.render)), ("ambient_occlusion", Byte(1)), ("face_dimming", Byte(1))]))]))]),
-    );
+    comps.insert("minecraft:material_instances".into(), materials(b.texture));
     comps.insert("minecraft:geometry".into(), compound([("identifier", s("minecraft:geometry.full_block")), ("culling", s(""))]));
     comps.insert("minecraft:destructible_by_mining".into(), compound([("value", Float(b.hardness))]));
     comps.insert("minecraft:light_emission".into(), compound([("emission", Byte(b.light.min(15) as i8))]));
@@ -114,7 +149,29 @@ pub fn block_nbt(b: &Block, n: usize) -> std::collections::HashMap<String, nbtx:
         comps.insert((*k).into(), v.clone());
     }
     let cat = ["construction", "construction", "nature", "equipment", "items"][b.category.min(4) as usize];
+    // States the client tracks: the variant as a property, the direction from the placement trait.
+    let mut properties = vec![];
+    let mut traits = vec![];
+    let mut permutations = vec![];
+    if !b.variants.is_empty() {
+        let values = nbtx::ValueList::try_from(b.variants.iter().map(|v| s(v.0)).collect::<Vec<_>>()).unwrap_or_default();
+        properties.push(compound([("name", s(&b.variant_key())), ("enum", nbtx::Value::List(values))]));
+        for (v, tex) in b.variants {
+            permutations.push(compound([("condition", s(&format!("q.block_state('{}') == '{v}'", b.variant_key()))), ("components", compound([("minecraft:material_instances", materials(tex))]))]));
+        }
+    }
+    if b.rotatable {
+        traits.push(compound([("name", s("minecraft:placement_direction")), ("enabled_states", compound([("cardinal_direction", Byte(1))])), ("y_rotation_offset", Float(0.0))]));
+        for (i, d) in DIRS.iter().enumerate() {
+            let t = compound([("RX", Int(0)), ("RY", Int(i as i32)), ("RZ", Int(0)), ("SX", Float(1.0)), ("SY", Float(1.0)), ("SZ", Float(1.0)), ("TX", Float(0.0)), ("TY", Float(0.0)), ("TZ", Float(0.0))]);
+            permutations.push(compound([("condition", s(&format!("q.block_state('minecraft:cardinal_direction') == '{d}'"))), ("components", compound([("minecraft:transformation", t)]))]));
+        }
+    }
+    let list = |v: Vec<nbtx::Value>| nbtx::Value::List(nbtx::ValueList::try_from(v).unwrap_or_default());
     [
+        ("properties".to_string(), list(properties)),
+        ("traits".to_string(), list(traits)),
+        ("permutations".to_string(), list(permutations)),
         ("components".to_string(), nbtx::Value::Compound(comps)),
         ("menu_category".to_string(), compound([("category", s(cat)), ("group", s(""))])),
         ("molangVersion".to_string(), Int(12)),
@@ -207,5 +264,21 @@ mod tests {
         let i = super::Item { id: "velt:ruby", name: "Ruby", icon: "ruby", stack: 16, food: Some((4.0, 2.4)), ..Default::default() };
         let text = format!("{:?}", super::item_nbt(&i, 3000));
         assert!(text.contains("velt:ruby") && text.contains("\"ruby\"") && text.contains("Int(16)") && text.contains("Int(3000)") && text.contains("minecraft:food"), "{text}");
+    }
+}
+
+#[cfg(all(test, feature = "example"))]
+mod example_tests {
+    use crate::blocks::{self, State};
+
+    #[test]
+    fn lamp_has_directions_variants_and_light() {
+        let lamp = blocks::any_state("example:lamp").expect("lamp registered");
+        let east = blocks::with(lamp, &[("minecraft:cardinal_direction", State::Str("east".into()))]);
+        assert_ne!(east, lamp);
+        let blue = blocks::with(east, &[("example:variant", State::Str("blue".into()))]);
+        assert_eq!(blocks::state(blue, "minecraft:cardinal_direction"), Some(&State::Str("east".into())));
+        assert_eq!(crate::world::emission(blue), 15);
+        assert_eq!(super::block(blue).map(|b| b.id), Some("example:lamp"));
     }
 }
