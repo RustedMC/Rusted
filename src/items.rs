@@ -143,6 +143,18 @@ fn data() -> &'static Data {
         // Plugin custom items: new runtime ids after vanilla's, in their own creative group.
         let (mut items, mut groups, mut contents): (Vec<ItemsEntry<V2225>>, Vec<CreativeItemGroup<V2225>>, Vec<CreativeItemData<V2225>>) = (items, groups, contents);
         let mut next = items.iter().map(|i| i.runtime_id).max().unwrap_or(0) + 1;
+        // Custom blocks' items: id 255 - legacy block id (negative), like vanilla block items.
+        for (n, b) in crate::custom::get().blocks.iter().enumerate() {
+            let rid = (255 - (crate::custom::FIRST_BLOCK_ID + n as i32)) as i16;
+            let instance = NetworkItemInstanceDescriptor { id: rid as i32, stack_size: 1, aux_value: 0, block_runtime_id: crate::custom::block_hash(b), user_data_buffer: EMPTY_USER_DATA.to_vec() };
+            groups.push(CreativeItemGroup {
+                category: match b.category { 2 => CreativeItemCategory::Nature, 3 => CreativeItemCategory::Equipment, 4 => CreativeItemCategory::Items, _ => CreativeItemCategory::Construction },
+                name: String::new(),
+                icon: NetworkItemInstanceDescriptor { id: 0, stack_size: 0, aux_value: 0, block_runtime_id: 0, user_data_buffer: EMPTY_USER_DATA.to_vec() },
+            });
+            contents.push(CreativeItemData { creative_net_id: contents.len() as u32 + 1, item_instance: instance, group_id: groups.len() as u32 - 1 });
+            items.push(ItemsEntry { component_data: empty_compound(), component_item_name: b.id.to_string(), runtime_id: rid, is_component_based: false, version: ItemVersion::None });
+        }
         for c in &crate::custom::get().items {
             let instance = NetworkItemInstanceDescriptor { id: next as i32, stack_size: 1, aux_value: 0, block_runtime_id: 0, user_data_buffer: EMPTY_USER_DATA.to_vec() };
             groups.push(CreativeItemGroup {

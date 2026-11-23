@@ -419,7 +419,7 @@ pub(crate) fn start_game_packet(id: i64, name: &str, position: (f32, f32, f32), 
         },
         current_level_time: time.max(0) as u64,
         enchantment_seed: 99000,
-        block_properties: vec![],
+        block_properties: crate::custom::get().blocks.iter().enumerate().map(|(n, b)| bedrock::protocol::v2168::packets::BlockProperty { block_name: b.id.to_string(), block_definition: crate::custom::block_nbt(b, n) }).collect(),
         multiplayer_correlation_id: String::new(),
         // Modern clients drive the inventory screen through the item stack system.
         enable_item_stack_net_manager: true,

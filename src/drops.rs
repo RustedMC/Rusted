@@ -132,6 +132,7 @@ fn entry_int(block: i32, key: &str) -> i32 {
 pub fn break_ticks(block: i32, tool: Option<&str>, efficiency: i16, haste: Option<i32>) -> i32 {
     let n = crate::blocks::entry(block).map_or("", |e| e.name.as_str()).trim_start_matches("minecraft:");
     let hardness: f32 = match n {
+        _ if crate::custom::block(block).is_some() => crate::custom::block(block).map_or(1.5, |b| b.hardness),
         "obsidian" | "crying_obsidian" | "respawn_anchor" => 50.0,
         "ancient_debris" => 30.0,
         "bedrock" | "barrier" | "end_portal_frame" => return i32::MAX / 2,

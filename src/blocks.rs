@@ -71,6 +71,19 @@ fn registry() -> &'static Registry {
             reg.entries.push(Entry { name, states, nbt });
             reg.ids.push(*id);
         }
+        // Plugin custom blocks: one state each, id = its hash like vanilla's.
+        for b in &crate::custom::get().blocks {
+            let id = crate::custom::block_hash(b);
+            let mut c = nbtx::Compound::new();
+            c.insert("name".into(), nbtx::Value::String(b.id.into()));
+            c.insert("states".into(), nbtx::Value::Compound(Default::default()));
+            c.insert("version".into(), nbtx::Value::Int(18100737));
+            let i = reg.entries.len();
+            reg.by_id.insert(id, i);
+            reg.by_name.entry(b.id.to_string()).or_default().push(i);
+            reg.entries.push(Entry { name: b.id.to_string(), states: vec![], nbt: nbtx::Value::Compound(c) });
+            reg.ids.push(id);
+        }
         reg
     })
 }
@@ -134,6 +147,21 @@ pub fn any_state(name: &str) -> Option<i32> {
     r.by_name.get(name).and_then(|v| v.first()).map(|&i| r.ids[i])
 }
 
+/// A block state's network id: FNV-1a 32 of its {name, states} little-endian NBT (what the
+/// client computes when block_network_ids_are_hashes is on).
+pub fn hash(name: &str, states: nbtx::Value) -> i32 {
+    let mut c = nbtx::Compound::new();
+    c.insert("name".into(), nbtx::Value::String(name.into()));
+    c.insert("states".into(), states);
+    let bytes = nbtx::to_bytes::<nbtx::LittleEndian>(&nbtx::Value::Compound(c)).unwrap_or_default();
+    let mut h: u32 = 0x811c9dc5;
+    for b in bytes {
+        h ^= b as u32;
+        h = h.wrapping_mul(0x01000193);
+    }
+    h as i32
+}
+
 /// Decode the palette at startup so the first placement isn't slow.
 pub fn init() -> usize {
     registry().entries.len()
@@ -142,6 +170,15 @@ pub fn init() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hash_matches_palette_ids() {
+        for &id in ids().iter().take(50) {
+            let e = entry(id).unwrap();
+            let states = get(&e.nbt, "states").cloned().unwrap_or(nbtx::Value::Compound(Default::default()));
+            assert_eq!(hash(&e.name, states), id, "{}", e.name);
+        }
+    }
 
     #[test]
     fn loads_and_round_trips_states() {

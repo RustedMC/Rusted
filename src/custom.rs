@@ -1,9 +1,12 @@
-//! Custom items and mobs from plugin code, like PNX's CustomItem/CustomEntity API. A plugin
+//! Custom blocks, items and mobs from plugin code, like PNX's CustomItem/CustomEntity API. A plugin
 //! returns them from `custom_items()` / `custom_entities()`; their textures and models come
 //! from a resource pack in `resource_packs/` (icon = the pack's item_texture.json short name,
 //! entity id = the pack's client entity identifier).
 //!
 //! ```ignore
+//! fn custom_blocks(&self) -> Vec<custom::Block> {
+//!     vec![custom::Block { id: "velt:ruby_block", name: "Block of Ruby", texture: "ruby_block", hardness: 5.0, light: 7, ..Default::default() }]
+//! }
 //! fn custom_items(&self) -> Vec<custom::Item> {
 //!     vec![
 //!         custom::Item { id: "velt:ruby", name: "Ruby", icon: "ruby", ..Default::default() },
@@ -55,7 +58,74 @@ pub fn item(id: &str) -> Option<&'static Item> {
     get().items.iter().find(|i| i.id == id)
 }
 
+/// A custom full block. Its texture is the short name from the resource pack's
+/// terrain_texture.json. Placing it, breaking it (drops itself) and saving it all work.
+#[derive(Clone)]
+pub struct Block {
+    pub id: &'static str,
+    pub name: &'static str,
+    /// Texture on every face.
+    pub texture: &'static str,
+    /// Mining time base, like vanilla hardness (stone 1.5, obsidian 50).
+    pub hardness: f32,
+    /// Light it gives off, 0-15.
+    pub light: u8,
+    /// "opaque", "alpha_test" (cut-out, like leaves) or "blend" (see-through, like glass).
+    pub render: &'static str,
+    /// Creative tab: 1 construction, 2 nature, 3 equipment, 4 items.
+    pub category: u8,
+    /// Anything else, added as-is to the block's client components
+    /// (e.g. ("minecraft:geometry", nbt) for a custom model, ("minecraft:friction", nbt)).
+    pub extra: Vec<(&'static str, nbtx::Value)>,
+}
+
+impl Default for Block {
+    fn default() -> Self {
+        Block { id: "", name: "", texture: "", hardness: 1.5, light: 0, render: "opaque", category: 1, extra: vec![] }
+    }
+}
+
+/// First legacy block id for custom blocks (what PNX uses too).
+pub const FIRST_BLOCK_ID: i32 = 10000;
+
+/// The network id of a custom block (its state hash), by index.
+pub fn block_hash(b: &Block) -> i32 {
+    crate::blocks::hash(b.id, nbtx::Value::Compound(Default::default()))
+}
+
+/// A custom block by its network id.
+pub fn block(id: i32) -> Option<&'static Block> {
+    get().blocks.iter().find(|b| block_hash(b) == id)
+}
+
+/// The block's StartGame definition: how the client draws and mines it.
+pub fn block_nbt(b: &Block, n: usize) -> std::collections::HashMap<String, nbtx::Value> {
+    use nbtx::Value::{Byte, Float, Int};
+    let mut comps = nbtx::Compound::new();
+    comps.insert(
+        "minecraft:material_instances".into(),
+        compound([("mappings", compound([])), ("materials", compound([("*", compound([("texture", s(b.texture)), ("render_method", s(b.render)), ("ambient_occlusion", Byte(1)), ("face_dimming", Byte(1))]))]))]),
+    );
+    comps.insert("minecraft:geometry".into(), compound([("identifier", s("minecraft:geometry.full_block")), ("culling", s(""))]));
+    comps.insert("minecraft:destructible_by_mining".into(), compound([("value", Float(b.hardness))]));
+    comps.insert("minecraft:light_emission".into(), compound([("emission", Byte(b.light.min(15) as i8))]));
+    comps.insert("minecraft:display_name".into(), compound([("value", s(b.name))]));
+    for (k, v) in &b.extra {
+        comps.insert((*k).into(), v.clone());
+    }
+    let cat = ["construction", "construction", "nature", "equipment", "items"][b.category.min(4) as usize];
+    [
+        ("components".to_string(), nbtx::Value::Compound(comps)),
+        ("menu_category".to_string(), compound([("category", s(cat)), ("group", s(""))])),
+        ("molangVersion".to_string(), Int(12)),
+        ("vanilla_block_data".to_string(), compound([("block_id", Int(FIRST_BLOCK_ID + n as i32))])),
+    ]
+    .into_iter()
+    .collect()
+}
+
 pub struct Custom {
+    pub blocks: Vec<Block>,
     pub items: Vec<Item>,
     pub entities: Vec<crate::mobs::Spec>,
 }
@@ -66,6 +136,7 @@ pub fn get() -> &'static Custom {
     C.get_or_init(|| {
         let plugins = crate::plugin::all();
         Custom {
+            blocks: plugins.iter().flat_map(|p| p.custom_blocks()).collect(),
             items: plugins.iter().flat_map(|p| p.custom_items()).collect(),
             entities: plugins.iter().flat_map(|p| p.custom_entities()).collect(),
         }
