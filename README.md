@@ -164,6 +164,10 @@ About 50 events, custom commands, permissions, per-player config, chest menus, f
 scoreboards and boss bars. Add your plugin to `plugin::all()` in [`src/plugin.rs`](src/plugin.rs),
 and see the [plugin docs](https://rustedmc.github.io/Rusted/plugins/first-plugin.html).
 
+Plugins can also add **custom blocks, items and mobs** straight from code, with no behavior pack, and a
+resource pack gives them their look. See [custom content](https://rustedmc.github.io/Rusted/plugins/custom-content.html)
+and the working example in [`src/example_plugin.rs`](src/example_plugin.rs).
+
 ## Under the hood
 
 ```text

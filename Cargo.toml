@@ -1,10 +1,14 @@
 [package]
 name = "rusted"
-version = "0.5.7"
+version = "0.5.8"
 edition = "2024"
 license = "LGPL-3.0-only"
 authors = ["SXCULPZ", "Claude"]
 description = "A fast Minecraft: Bedrock Edition server written in Rust"
+
+[features]
+# Example custom block, items and mob (see examples/custom-content).
+example = []
 
 [dependencies]
 parking_lot = "0.12"

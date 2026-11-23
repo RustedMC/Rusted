@@ -30,6 +30,7 @@ See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands
 - ✅ **0.5.0** Sky light (for spawning and growth), fireworks from the ground, `/execute`, `/locate`, `/function`
 - ✅ **0.5.1** Multiple worlds (`/mv`), with per-world inventories
 - ✅ **0.5.2** Maps: empty maps become maps of the area, drawn from the world
+- ✅ **0.5.8** Example custom content (block, items, mob + resource pack) and a custom content guide
 - ✅ **0.5.7** Custom blocks from plugin code (texture, hardness, light, render method, extra components)
 - ✅ **0.5.6** Custom item damage, durability, food, armor, glint and raw extra components; on_tick plugin hook
 - ✅ **0.5.5** Custom items and mobs from plugin code (custom_items / custom_entities), looks from a resource pack

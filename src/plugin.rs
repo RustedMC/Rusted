@@ -337,6 +337,9 @@ pub trait Plugin: Send + Sync {
 /// Every loaded plugin. Add yours here.
 pub fn all() -> Vec<Box<dyn Plugin>> {
     // Rusted ships no gameplay plugins: it's a vanilla server. Add your own here.
+    #[cfg(feature = "example")]
+    return vec![Box::new(crate::example_plugin::Example)];
+    #[cfg(not(feature = "example"))]
     vec![]
 }
 

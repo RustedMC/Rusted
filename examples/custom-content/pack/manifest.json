@@ -1,0 +1,29 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Rusted example content",
+    "description": "Textures for the example custom block, items and mob",
+    "uuid": "b69fe3d6-0aa6-534f-95bc-fbffd7cf5d83",
+    "version": [
+      1,
+      0,
+      1
+    ],
+    "min_engine_version": [
+      1,
+      21,
+      0
+    ]
+  },
+  "modules": [
+    {
+      "type": "resources",
+      "uuid": "eab6f72a-34e4-5e3c-9b67-37117b7f54d7",
+      "version": [
+        1,
+        0,
+        1
+      ]
+    }
+  ]
+}

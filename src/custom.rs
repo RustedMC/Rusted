@@ -176,6 +176,8 @@ pub fn item_nbt(i: &Item, runtime_id: i16) -> nbtx::Value {
         comps.insert("minecraft:food".into(), compound([("nutrition", Int(nutrition as i32)), ("saturation_modifier", Float(saturation / nutrition.max(1.0) / 2.0)), ("can_always_eat", Byte(0))]));
         props.insert("use_animation".into(), Int(1));
         props.insert("use_duration".into(), Int(32));
+        // 1.21+ clients only finish eating (sound, consume packet) with this.
+        comps.insert("minecraft:use_modifiers".into(), compound([("use_duration", Float(1.6)), ("movement_modifier", Float(0.35))]));
     }
     if let Some((slot, points)) = i.armor {
         let slot = ["slot.armor.head", "slot.armor.chest", "slot.armor.legs", "slot.armor.feet"][slot.min(3) as usize];

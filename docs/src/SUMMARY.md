@@ -19,6 +19,7 @@
 - [Scheduler](plugins/scheduler.md)
 - [Config files](plugins/config.md)
 - [Items, menus and player control](plugins/items-and-menus.md)
+- [Custom blocks, items and mobs](plugins/custom-content.md)
 - [Forms, scoreboards and boss bars](plugins/ui.md)
 
 # Project

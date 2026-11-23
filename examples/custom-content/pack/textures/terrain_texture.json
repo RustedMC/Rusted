@@ -1,0 +1,9 @@
+{
+  "resource_pack_name": "rusted_example",
+  "texture_name": "atlas.terrain",
+  "texture_data": {
+    "ruby_block": {
+      "textures": "textures/blocks/ruby_block"
+    }
+  }
+}

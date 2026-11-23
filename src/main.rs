@@ -13,6 +13,8 @@ mod beacon;
 mod placeholders;
 mod packs;
 mod custom;
+#[cfg(feature = "example")]
+mod example_plugin;
 mod blockops;
 mod session;
 mod cmdargs;

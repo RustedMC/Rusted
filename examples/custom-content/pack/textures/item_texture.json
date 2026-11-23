@@ -1,0 +1,18 @@
+{
+  "resource_pack_name": "rusted_example",
+  "texture_name": "atlas.items",
+  "texture_data": {
+    "ruby": {
+      "textures": "textures/items/ruby"
+    },
+    "ruby_sword": {
+      "textures": "textures/items/ruby_sword"
+    },
+    "ruby_helmet": {
+      "textures": "textures/items/ruby_helmet"
+    },
+    "burger": {
+      "textures": "textures/items/burger"
+    }
+  }
+}
