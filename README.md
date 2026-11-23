@@ -168,6 +168,20 @@ Plugins can also add **custom blocks, items and mobs** straight from code, with 
 resource pack gives them their look. See [custom content](https://rustedmc.github.io/Rusted/plugins/custom-content.html)
 and the working example in [`src/example_plugin.rs`](src/example_plugin.rs).
 
+## Rusted vs PowerNukkitX
+
+Measured on the same Windows 11 PC, each server in a fresh folder with a fresh world, no players, no plugins:
+
+| | Rusted 0.5.9 | PowerNukkitX (Java 21) |
+|---|---|---|
+| Start-up to "Done" | **1.1 s** | 14.1 s |
+| RAM after 30 s idle | **77 MB** | 434 MB |
+| CPU time used (start + 30 s idle) | **0.5 s** | 34.5 s |
+| Install size (incl. world) | **20 MB** (one .exe) | 238 MB (jar + Java runtime) |
+
+Plus: no Java to install, custom blocks/items/mobs from plain code, and the vanilla mechanics ported 1:1 from PNX.
+These are idle numbers; a busy server uses more on both. BDS was not measured.
+
 ## Under the hood
 
 ```text
