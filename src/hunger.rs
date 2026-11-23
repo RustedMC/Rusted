@@ -105,6 +105,9 @@ impl Hunger {
 
 /// (food, saturation), vanilla values.
 pub fn food(name: &str) -> Option<(f32, f32)> {
+    if let Some(c) = crate::custom::item(name) {
+        return c.food;
+    }
     let n = name.strip_prefix("minecraft:").unwrap_or(name);
     Some(match n {
         "apple" => (4.0, 2.4),

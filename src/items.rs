@@ -196,6 +196,9 @@ fn stack_size_for(name: &str) -> i8 {
 
 /// Bedrock durability values (PNX Item.getMaxDurability).
 pub fn max_durability(name: &str) -> Option<i32> {
+    if let Some(c) = crate::custom::item(name) {
+        return (c.durability > 0).then_some(c.durability);
+    }
     let n = name.trim_start_matches("minecraft:");
     let tier = |t: &str| match t {
         "wooden" => Some(59),

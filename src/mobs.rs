@@ -4035,6 +4035,9 @@ pub fn path(w: &crate::world::World, start: (i32, i32, i32), goal: (i32, i32, i3
 
 /// Melee damage of the held item (vanilla Bedrock values).
 pub fn attack_damage(held: Option<&str>) -> f32 {
+    if let Some(c) = held.and_then(crate::custom::item) {
+        return c.damage;
+    }
     match held.unwrap_or("").trim_start_matches("minecraft:") {
         "wooden_sword" | "golden_sword" => 5.0,
         "stone_sword" => 6.0,

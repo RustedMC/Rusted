@@ -86,6 +86,7 @@ pub(crate) fn armor_points(inv: &inventory::Inventory) -> f32 {
     (inventory::ARMOR..inventory::ARMOR + 4)
         .filter_map(|i| inv.held(i).and_then(|s| items::name_of(s.item.id)))
         .map(|n| match n.trim_start_matches("minecraft:") {
+            _ if crate::custom::item(n).is_some() => crate::custom::item(n).and_then(|c| c.armor).map_or(0.0, |a| a.1),
             "leather_helmet" | "leather_boots" | "golden_boots" | "chainmail_boots" => 1.0,
             "leather_leggings" | "golden_helmet" | "chainmail_helmet" | "iron_helmet" | "iron_boots" | "turtle_helmet" => 2.0,
             "leather_chestplate" | "golden_leggings" | "diamond_helmet" | "netherite_helmet" | "diamond_boots" | "netherite_boots" => 3.0,

@@ -360,6 +360,7 @@ async fn main() {
                 let mut p = std::mem::take(&mut plates);
                 let back = tokio::task::spawn_blocking(move || {
                     perf::time("redstone and plates", || redstone_tick(&s, &mut p));
+                    perf::time("plugin ticks", || s.plugins.tick(&s));
                     p
                 })
                 .await;

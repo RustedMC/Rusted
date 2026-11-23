@@ -732,6 +732,9 @@ impl Session {
 
 /// Which armor slot (0 helmet .. 3 boots) an item goes in when used.
 fn armor_slot(name: &str) -> Option<usize> {
+    if let Some(c) = crate::custom::item(name) {
+        return c.armor.map(|a| a.0 as usize);
+    }
     let n = name.trim_start_matches("minecraft:");
     if n.ends_with("_helmet") || n == "carved_pumpkin" || n.ends_with("_head") || n.ends_with("_skull") {
         Some(0)

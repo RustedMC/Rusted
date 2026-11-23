@@ -123,6 +123,9 @@ pub trait Plugin: Send + Sync {
     /// Server is up, worlds loaded, about to accept players.
     fn on_server_start(&self, _server: &Server) {}
 
+    /// Every game tick (20 a second): custom mob AI, timers, particles, anything ongoing.
+    fn on_tick(&self, _server: &Server) {}
+
     /// Server stopping, before the final save.
     fn on_server_stop(&self, _server: &Server) {}
 
@@ -430,6 +433,10 @@ impl Plugins {
     }
 
     /// In load order, so a plugin's dependencies start before it.
+    pub fn tick(&self, s: &Server) {
+        self.list.iter().for_each(|pl| pl.on_tick(s));
+    }
+
     pub fn server_start(&self, s: &Server) {
         self.list.iter().for_each(|pl| pl.on_server_start(s));
     }
