@@ -31,6 +31,7 @@ See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands
 - ✅ **0.5.1** Multiple worlds (`/mv`), with per-world inventories
 - ✅ **0.5.2** Maps: empty maps become maps of the area, drawn from the world
 - ✅ README comparison with PowerNukkitX (start-up, RAM, CPU, size)
+- ✅ **0.5.10** Block breaking on current clients: slow blocks break, crack progress and mining sound for the miner, no ghost breaks; spawn protection only once someone is op; air bubbles hide out of water; items land on leaves
 - ✅ **0.5.9** Custom blocks can face the player and have variants; their light counts for spawning and growth
 - ✅ **0.5.8** Example custom content (block, items, mob + resource pack) and a custom content guide
 - ✅ **0.5.7** Custom blocks from plugin code (texture, hardness, light, render method, extra components)
