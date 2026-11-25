@@ -119,9 +119,10 @@ fn remove_packet(id: i64) -> Protocol {
     Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) }))
 }
 
-/// Items fall through air, liquids, plants, torches, rails...
+/// Items fall through air, liquids, plants, torches, rails... but land on leaves.
 fn passable(block: i32) -> bool {
-    block == crate::world::AIR || !crate::overworld::feature::blocks::is_solid(block)
+    use crate::overworld::feature::blocks::{is_leaves, is_solid};
+    block == crate::world::AIR || !is_solid(block) && !is_leaves(block)
 }
 
 /// How slippery a floor is (vanilla friction).

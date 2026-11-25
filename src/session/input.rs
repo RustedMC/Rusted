@@ -28,6 +28,7 @@ impl Session {
         if let Some(actions) = &input.player_block_actions {
             self.on_block_actions(actions).await;
         }
+        self.mining_tick().await;
         use bedrock::protocol::v2168::enums::PlayerAuthInputData as Input;
         // The held Sneaking flag, not Start/StopSneaking: those can arrive after the click
         // they belong to, and then sneak-placing on a chest opened it.

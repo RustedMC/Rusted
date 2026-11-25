@@ -30,6 +30,10 @@ impl NameList {
         self.names.lock().contains(&name.to_lowercase())
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.names.lock().is_empty()
+    }
+
     /// false if nothing changed
     pub fn set(&self, name: &str, present: bool) -> bool {
         let mut names = self.names.lock();
@@ -493,7 +497,8 @@ pub fn set_spawn(player: Option<&str>, pos: (f32, f32, f32)) {
 /// spawn-protection blocks around the world spawn; operators can always build).
 pub fn spawn_protected(server: &Server, player: &str, pos: (i32, i32, i32)) -> bool {
     let r = crate::config::get().spawn_protection;
-    if r <= 0 || is_op(player) || crate::dims::of(pos.1) != crate::dims::OVERWORLD {
+    // Vanilla: spawn protection only applies once someone is op.
+    if r <= 0 || is_op(player) || lists().ops.is_empty() || crate::dims::of(pos.1) != crate::dims::OVERWORLD {
         return false;
     }
     let s = world_spawn(server);

@@ -73,6 +73,11 @@ pub(crate) struct Session {
     pub last_view: Option<(f32, f32, f32)>,
     /// Block being mined, so moving onto the next one restarts the cracks.
     pub mining: Option<(i32, i32, i32)>,
+    /// When that block's mining started, and whether the last action on it was the start
+    /// (an instant break sometimes sends only the start: PNX PlayerAuthInputHandler).
+    pub mining_since: (Instant, bool),
+    /// Last mining hit sound, so it plays every 4 ticks.
+    pub mining_hit: Instant,
     /// Going down since the last movement packet (a hit now is a critical hit).
     pub falling: bool,
     /// Swimming, crawling: either shrinks the hitbox to 0.6 so 1x1 gaps fit.
@@ -181,6 +186,8 @@ impl Session {
             seen: Default::default(),
             last_view: None,
             mining: None,
+            mining_since: (Instant::now(), false),
+            mining_hit: Instant::now(),
             falling: false,
             swimming: false,
             crawling: false,

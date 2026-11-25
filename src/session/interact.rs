@@ -688,40 +688,98 @@ impl Session {
         }
     }
 
+    /// Ticks this player needs to break the block at `p` with what they hold (haste counted).
+    fn break_ticks_at(&self, p: (i32, i32, i32)) -> i32 {
+        let held = self.inv.held(self.selected_slot as usize);
+        let eff = held.map_or(0, |s| enchant::level(&s.item.user_data_buffer, enchant::EFFICIENCY));
+        crate::drops::break_ticks(self.server.world.get(p.0, p.1, p.2), held.and_then(|s| items::name_of(s.item.id)), eff, self.effects.level(3)).max(1) // 3 = haste
+    }
+
+    /// Server-side breaking: the client keeps mining until the server breaks the block once its
+    /// break time has passed (PNX Player.onBlockBreakContinue, run every tick).
+    pub(super) async fn mining_tick(&mut self) {
+        let Some(p) = self.mining else { return };
+        let needed = std::time::Duration::from_millis(self.break_ticks_at(p) as u64 * 50);
+        if survival_like(&self.mode) && self.mining_since.0.elapsed() >= needed {
+            self.mining = None;
+            let center = (p.0 as f32 + 0.5, p.1 as f32 + 0.5, p.2 as f32 + 0.5);
+            let stop = Protocol::LevelEventPacket(Box::new(LevelEventPacket { event_id: 3601, position: center, data: 0 }));
+            let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(stop) });
+            self.destroy_block(p).await;
+        }
+    }
+
     /// Mining progress the client reports inside its movement packets (server-side block
-    /// breaking): others see the cracks and punches, and the finished break goes through.
+    /// breaking), ported from PNX PlayerAuthInputHandler: everyone, the miner too, sees the
+    /// cracks, and the finished break goes through.
     pub(super) async fn on_block_actions(&mut self, actions: &[bedrock::protocol::v2168::types::PlayerBlockActionData<Protocol>]) {
+        let event = |id: i32, p: (i32, i32, i32), data: i32| {
+            let center = (p.0 as f32 + 0.5, p.1 as f32 + 0.5, p.2 as f32 + 0.5);
+            Box::new(Protocol::LevelEventPacket(Box::new(LevelEventPacket { event_id: id, position: center, data })))
+        };
         for a in actions {
             let pos = &a.position;
             let p = (pos.x, pos.y, pos.z);
-            let center = (p.0 as f32 + 0.5, p.1 as f32 + 0.5, p.2 as f32 + 0.5);
             let block = self.server.world.get(p.0, p.1, p.2);
-            let event = |id: i32, data: i32| Protocol::LevelEventPacket(Box::new(LevelEventPacket { event_id: id, position: center, data }));
+            // Stop (always at 0,0,0) is the client saying it finished mining: break the tracked
+            // block if its time is about up (the client's clock runs a little ahead of ours).
+            if let PlayerActionType::StopDestroyBlock = a.action_type {
+                if let Some(last) = self.mining
+                    && survival_like(&self.mode)
+                    && self.mining_since.0.elapsed() + std::time::Duration::from_millis(BREAK_SLACK_MS) >= std::time::Duration::from_millis(self.break_ticks_at(last) as u64 * 50)
+                {
+                    self.mining = None;
+                    let _ = self.server.events.send(Event::Relay { from: 0, packet: event(3601, last, 0) });
+                    self.destroy_block(last).await;
+                }
+                continue;
+            }
+            // Moved onto another block: an instant break often sends only its start, so finish
+            // the last one if it had time to break, else stop its cracks.
+            if let Some(last) = self.mining
+                && last != p
+            {
+                let (since, only_started) = self.mining_since;
+                let needed = std::time::Duration::from_millis((self.break_ticks_at(last) as u64 * 50).saturating_sub(50));
+                self.mining = None;
+                if only_started && since.elapsed() >= needed && survival_like(&self.mode) {
+                    self.destroy_block(last).await;
+                } else {
+                    let _ = self.server.events.send(Event::Relay { from: 0, packet: event(3601, last, 0) });
+                }
+            }
+            let is_start = matches!(a.action_type, PlayerActionType::StartDestroyBlock);
             // Cracks start on a new block: the first hit, or sliding onto the next one.
-            let start = matches!(a.action_type, PlayerActionType::StartDestroyBlock)
-                || (matches!(a.action_type, PlayerActionType::CrackBlock | PlayerActionType::ContinueDestroyBlock) && self.mining != Some(p));
+            let start = is_start || (matches!(a.action_type, PlayerActionType::CrackBlock | PlayerActionType::ContinueDestroyBlock) && self.mining != Some(p));
             if start && survival_like(&self.mode) && block != world::AIR {
                 self.mining = Some(p);
-                // LevelEvent 3600 starts the crack animation for everyone else; data is 65535 / break
-                // ticks. Not to the miner: their client cracks it itself, and a 3600 restarts its timer.
-                let held = self.inv.held(self.selected_slot as usize);
-                let eff = held.map_or(0, |s| enchant::level(&s.item.user_data_buffer, enchant::EFFICIENCY));
-                let ticks = crate::drops::break_ticks(block, held.and_then(|s| items::name_of(s.item.id)), eff, self.effects.level(3)).max(1); // 3 = haste
-                let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(event(3600, 65535 / ticks)) });
+                self.mining_since = (Instant::now(), is_start);
+                // LevelEvent 3600 starts the crack animation; data is 65535 / break ticks. With
+                // server-side breaking the miner's own client waits for it too (PNX onBlockBreakStart).
+                let ticks = self.break_ticks_at(p);
+                let _ = self.server.events.send(Event::Relay { from: 0, packet: event(3600, p, 65535 / ticks) });
+            } else if self.mining == Some(p) && !is_start {
+                self.mining_since.1 = false;
             }
             match a.action_type {
                 PlayerActionType::CrackBlock | PlayerActionType::ContinueDestroyBlock => {
                     // 2014: the little punch particles, on the face being mined.
                     let face = a.facing;
-                    let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(event(2014, block | (face << 24))) });
+                    let _ = self.server.events.send(Event::Relay { from: self.id, packet: event(2014, p, block | (face << 24)) });
+                    // The mining "hit" sound, every 4 ticks like vanilla; the miner's client waits for it too.
+                    if self.mining_hit.elapsed() >= std::time::Duration::from_millis(200) {
+                        self.mining_hit = Instant::now();
+                        let center = (p.0 as f32 + 0.5, p.1 as f32 + 0.5, p.2 as f32 + 0.5);
+                        let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(level_sound("hit", center, block)) });
+                    }
                 }
                 PlayerActionType::AbortDestroyBlock => {
                     self.mining = None;
-                    let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(event(3601, 0)) });
+                    let _ = self.server.events.send(Event::Relay { from: 0, packet: event(3601, p, 0) });
                 }
                 PlayerActionType::PredictDestroyBlock | PlayerActionType::CreativeDestroyBlock => {
                     self.mining = None;
-                    let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(event(3601, 0)) });
+                    let _ = self.server.events.send(Event::Relay { from: 0, packet: event(3601, p, 0) });
                     self.destroy_block(p).await;
                 }
                 _ => {}
@@ -729,6 +787,9 @@ impl Session {
         }
     }
 }
+
+/// How far ahead of the server's timer a client may finish a break (network lag, tick rounding).
+const BREAK_SLACK_MS: u64 = 150;
 
 /// Which armor slot (0 helmet .. 3 boots) an item goes in when used.
 fn armor_slot(name: &str) -> Option<usize> {

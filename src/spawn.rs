@@ -30,8 +30,8 @@ pub fn player_data(name: &str) -> Vec<DataItem<Protocol>> {
         item(Reserved054, T::Float(1.8)), // height
         item(Reserved053, T::Float(0.6)), // width
         item(BedPosition, T::Pos(bedrock::protocol::v662::types::BlockPos { x: 0, y: 0, z: 0 })),
-        item(AirSupply, T::Short(400)),
-        item(AirSupplyMax, T::Short(400)),
+        item(AirSupply, T::Short(300)),
+        item(AirSupplyMax, T::Short(300)), // must match full air (300) or the bubbles never hide
         item(Name, T::String(name.into())),
         item(LeashHolder, T::Int64(-1)),
         item(Reserved038, T::Float(1.0)), // scale
