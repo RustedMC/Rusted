@@ -1,6 +1,8 @@
 //! Maps: using an empty map makes a filled map of the 128x128 area you're in (snapped to the
 //! vanilla map grid), and the server draws its pixels from the top block of each column, shaded
 //! by height like vanilla. Map ids and centres are kept in worlds/<level>/maps.txt.
+//! The cartography table zooms maps out (scale 0-4, each step twice the area) and locks them:
+//! a locked map keeps the picture it had, saved in worlds/<level>/maps/<id>.locked.
 
 use crate::players::Server;
 use parking_lot::Mutex;
@@ -9,6 +11,9 @@ use std::collections::HashMap;
 struct MapData {
     center: (i32, i32),
     dim: u8,
+    /// 0-4: each pixel covers 2^scale blocks.
+    scale: u8,
+    locked: bool,
     /// Drawn pixels and when (redrawn after a while so maps show new building).
     drawn: Option<(std::time::Instant, Vec<i32>)>,
 }
@@ -28,27 +33,90 @@ fn with_maps<R>(f: impl FnOnce(&mut HashMap<i64, MapData>) -> R) -> R {
         text.lines()
             .filter_map(|l| {
                 let p: Vec<i64> = l.split_whitespace().filter_map(|x| x.parse().ok()).collect();
-                let [id, x, z, dim] = p.as_slice() else { return None };
-                Some((*id, MapData { center: (*x as i32, *z as i32), dim: *dim as u8, drawn: None }))
+                // Older files have no scale or locked columns.
+                let [id, x, z, dim] = *p.get(..4)? else { return None };
+                let scale = p.get(4).copied().unwrap_or(0).clamp(0, 4) as u8;
+                let locked = p.get(5).copied().unwrap_or(0) != 0;
+                let drawn = if locked { load_locked(id).map(|px| (std::time::Instant::now(), px)) } else { None };
+                Some((id, MapData { center: (x as i32, z as i32), dim: dim as u8, scale, locked, drawn }))
             })
             .collect()
     });
     f(maps)
 }
 
+/// Centre of the vanilla map grid square containing `v` at this scale (squares 128 << scale
+/// wide, offset by 64).
+fn grid(v: i32, scale: u8) -> i32 {
+    let w = SIZE << scale;
+    (v + 64).div_euclid(w) * w + w / 2 - 64
+}
+
+fn save(maps: &HashMap<i64, MapData>) {
+    let mut ids: Vec<_> = maps.keys().copied().collect();
+    ids.sort();
+    let text: String = ids
+        .iter()
+        .map(|id| {
+            let m = &maps[id];
+            format!("{id} {} {} {} {} {}\n", m.center.0, m.center.1, m.dim, m.scale, m.locked as u8)
+        })
+        .collect();
+    if let Err(e) = std::fs::write(file(), text) {
+        println!("failed to save maps.txt: {e}");
+    }
+}
+
+fn add(maps: &mut HashMap<i64, MapData>, m: MapData) -> i64 {
+    let id = maps.keys().max().copied().unwrap_or(0) + 1;
+    maps.insert(id, m);
+    save(maps);
+    id
+}
+
 /// A new map centred on the map grid square containing (x, z). Returns its id.
 pub fn create(x: f32, z: f32, dim: u8) -> i64 {
-    // Vanilla grid at scale 0: squares 128 wide, offset by 64.
-    let grid = |v: f32| (v.floor() as i32 + 64).div_euclid(SIZE) * SIZE;
+    let center = (grid(x.floor() as i32, 0), grid(z.floor() as i32, 0));
+    with_maps(|maps| add(maps, MapData { center, dim, scale: 0, locked: false, drawn: None }))
+}
+
+/// Cartography table with paper: a new map one scale further out, around the same spot.
+/// None at the widest scale (4) or for a locked map, like vanilla.
+pub fn zoom_out(id: i64) -> Option<i64> {
     with_maps(|maps| {
-        let id = maps.keys().max().copied().unwrap_or(0) + 1;
-        maps.insert(id, MapData { center: (grid(x), grid(z)), dim, drawn: None });
-        let text: String = maps.iter().map(|(id, m)| format!("{id} {} {} {}\n", m.center.0, m.center.1, m.dim)).collect();
-        if let Err(e) = std::fs::write(file(), text) {
-            println!("failed to save maps.txt: {e}");
-        }
-        id
+        let m = maps.get(&id).filter(|m| m.scale < 4 && !m.locked)?;
+        let scale = m.scale + 1;
+        let zoomed = MapData { center: (grid(m.center.0, scale), grid(m.center.1, scale)), dim: m.dim, scale, locked: false, drawn: None };
+        Some(add(maps, zoomed))
     })
+}
+
+/// Cartography table with a glass pane: a locked copy. It takes its picture the first time
+/// it's drawn and keeps it from then on.
+pub fn lock(id: i64) -> Option<i64> {
+    with_maps(|maps| {
+        let m = maps.get(&id).filter(|m| !m.locked)?;
+        // Keep the source's current picture if it has one, so the lock shows what you saw.
+        let drawn = m.drawn.as_ref().map(|(_, p)| {
+            save_locked_pixels(maps.keys().max().copied().unwrap_or(0) + 1, p);
+            (std::time::Instant::now(), p.clone())
+        });
+        let locked = MapData { center: m.center, dim: m.dim, scale: m.scale, locked: true, drawn };
+        Some(add(maps, locked))
+    })
+}
+
+fn save_locked_pixels(id: i64, pixels: &[i32]) {
+    let dir = file().with_file_name("maps");
+    let bytes: Vec<u8> = pixels.iter().flat_map(|p| p.to_le_bytes()).collect();
+    if let Err(e) = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(dir.join(format!("{id}.locked")), bytes)) {
+        println!("failed to save locked map {id}: {e}");
+    }
+}
+
+fn load_locked(id: i64) -> Option<Vec<i32>> {
+    let bytes = std::fs::read(file().with_file_name("maps").join(format!("{id}.locked"))).ok()?;
+    Some(bytes.chunks_exact(4).map(|c| i32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect())
 }
 
 /// The filled map item for map `id`.
@@ -57,6 +125,8 @@ pub fn filled_map(id: i64) -> Option<bedrock::protocol::v2168::types::NetworkIte
     let mut d = crate::itemdata::ItemData::read(&item.user_data_buffer);
     d.set("map_uuid", crate::itemdata::Tag::Long(id));
     d.set("map_name_index", crate::itemdata::Tag::Int(id as i32));
+    let scale = with_maps(|maps| maps.get(&id).map_or(0, |m| m.scale));
+    d.set("map_scale", crate::itemdata::Tag::Int(scale as i32));
     item.user_data_buffer = d.write();
     Some(item)
 }
@@ -116,18 +186,21 @@ fn top(server: &Server, x: i32, z: i32, dim: u8) -> (i32, Option<(u8, u8, u8)>) 
 
 /// Pixels (ABGR, the order Bedrock maps use), row by row: shaded lighter where the ground
 /// steps up from the north and darker where it steps down, like vanilla.
-fn draw(server: &Server, center: (i32, i32), dim: u8) -> Vec<i32> {
-    let (x0, z0) = (center.0 - SIZE / 2, center.1 - SIZE / 2);
+/// Zoomed out, each pixel shows the block at its corner (shortcut: vanilla blends the area;
+/// upgrade if zoomed maps look too noisy).
+fn draw(server: &Server, center: (i32, i32), dim: u8, scale: u8) -> Vec<i32> {
+    let step = 1 << scale;
+    let (x0, z0) = (center.0 - SIZE / 2 * step, center.1 - SIZE / 2 * step);
     let mut out = Vec::with_capacity((SIZE * SIZE) as usize);
     for pz in 0..SIZE {
         for px in 0..SIZE {
-            let (x, z) = (x0 + px, z0 + pz);
+            let (x, z) = (x0 + px * step, z0 + pz * step);
             let (h, c) = top(server, x, z, dim);
             let Some((r, g, b)) = c else {
                 out.push(0); // transparent
                 continue;
             };
-            let (north, _) = top(server, x, z - 1, dim);
+            let (north, _) = top(server, x, z - step, dim);
             let shade: u32 = if h > north { 255 } else if h < north { 180 } else { 220 };
             let s = |v: u8| (v as u32 * shade / 255) as i32;
             out.push((0xFFu32 << 24) as i32 | s(b) << 16 | s(g) << 8 | s(r));
@@ -138,20 +211,24 @@ fn draw(server: &Server, center: (i32, i32), dim: u8) -> Vec<i32> {
 
 /// The map data packet for map `id` (what the client asks for while holding it).
 pub fn packet(server: &Server, id: i64) -> Option<crate::Protocol> {
-    let (center, dim, cached) = with_maps(|maps| {
+    let (center, dim, scale, locked, cached) = with_maps(|maps| {
         let m = maps.get(&id)?;
-        let fresh = m.drawn.as_ref().filter(|(t, _)| t.elapsed().as_secs() < 30).map(|(_, p)| p.clone());
-        Some((m.center, m.dim, fresh))
+        // Locked maps never redraw.
+        let fresh = m.drawn.as_ref().filter(|(t, _)| m.locked || t.elapsed().as_secs() < 30).map(|(_, p)| p.clone());
+        Some((m.center, m.dim, m.scale, m.locked, fresh))
     })?;
     let pixels = match cached {
         Some(p) => p,
         None => {
-            let p = draw(server, center, dim);
+            let p = draw(server, center, dim, scale);
             with_maps(|maps| {
                 if let Some(m) = maps.get_mut(&id) {
                     m.drawn = Some((std::time::Instant::now(), p.clone()));
                 }
             });
+            if locked {
+                save_locked_pixels(id, &p);
+            }
             p
         }
     };
@@ -160,10 +237,10 @@ pub fn packet(server: &Server, id: i64) -> Option<crate::Protocol> {
     Some(crate::Protocol::ClientBoundMapItemDataPacket(Box::new(bedrock::protocol::v2168::packets::ClientBoundMapItemDataPacket {
         map_id: ActorUniqueID(id),
         dimension: crate::dims::network_id(dim) as i8,
-        is_locked: false,
+        is_locked: locked,
         map_origin: NetworkBlockPosition { x: center.0, y: 0, z: center.1 },
         creation_map_ids: Some(vec![ActorUniqueID(id)]),
-        scale: Some(0),
+        scale: Some(scale as i8),
         tracked_actor_ids: Some(vec![]),
         decorations: Some(vec![]),
         width: Some(SIZE),
@@ -176,6 +253,20 @@ pub fn packet(server: &Server, id: i64) -> Option<crate::Protocol> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn grid_matches_vanilla() {
+        // Scale 0: 128-wide squares; (0,0) is in the square centred on 0.
+        assert_eq!(super::grid(0, 0), 0);
+        assert_eq!(super::grid(63, 0), 0);
+        assert_eq!(super::grid(64, 0), 128);
+        assert_eq!(super::grid(-65, 0), -128);
+        // Scale 1: 256-wide squares centred on 64, -192...
+        assert_eq!(super::grid(0, 1), 64);
+        assert_eq!(super::grid(-65, 1), -192);
+        assert_eq!(super::grid(191, 1), 64);
+        assert_eq!(super::grid(192, 1), 320);
+    }
+
     #[test]
     fn colours_for_common_blocks() {
         assert_eq!(super::color("minecraft:grass_block"), Some((127, 178, 56)));

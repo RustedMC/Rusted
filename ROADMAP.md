@@ -37,7 +37,7 @@ See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands
 - ✅ **0.5.7** Custom blocks from plugin code (texture, hardness, light, render method, extra components)
 - ✅ **0.5.6** Custom item damage, durability, food, armor, glint and raw extra components; on_tick plugin hook
 - ✅ **0.5.5** Custom items and mobs from plugin code (custom_items / custom_entities), looks from a resource pack
-- ⏳ **0.5.4** The cartography table (zoom, copy and lock maps)
+- ✅ **0.5.11** The cartography table: make, copy, zoom out (4 levels) and lock maps; locator maps (was planned as 0.5.4)
 - ✅ **0.5.3** Fireworks launched from the ground, with their effects (moved into 0.5.0)
 
 ## 0.6: servers and plugins

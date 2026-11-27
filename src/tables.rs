@@ -377,3 +377,51 @@ mod loom_tests {
         assert!(loom(&plain, "minecraft:stick", "bo", false).is_none(), "needs a dye");
     }
 }
+
+/// The map id a filled map shows.
+fn map_id(map: &Item) -> Option<i64> {
+    match ItemData::read(&map.user_data_buffer).get("map_uuid") {
+        Some(Tag::Long(id)) => Some(*id),
+        _ => None,
+    }
+}
+
+/// Cartography table result and how many (from PNX CraftRecipeOptionalProcessor
+/// updateCartographyTableResult). Zooming and locking make new maps, so call it only when the
+/// player takes the result.
+pub fn cartography(input: &Item, extra: Option<&Item>) -> Option<(Item, i8)> {
+    let get = |n: &str| crate::items::item_by_name(n);
+    match (name(input), extra.map(name)) {
+        ("minecraft:paper", None) => Some((get("minecraft:empty_map")?, 1)),
+        ("minecraft:empty_map" | "minecraft:filled_map", None) => Some((input.clone(), 1)),
+        // A compass makes a locator map.
+        ("minecraft:paper" | "minecraft:empty_map", Some("minecraft:compass")) => {
+            let mut map = get("minecraft:empty_map")?;
+            map.aux_value = 2;
+            Some((map, 1))
+        }
+        ("minecraft:filled_map", Some("minecraft:empty_map")) => Some((input.clone(), 2)),
+        ("minecraft:filled_map", Some("minecraft:paper")) => Some((crate::maps::filled_map(crate::maps::zoom_out(map_id(input)?)?)?, 1)),
+        ("minecraft:filled_map", Some("minecraft:glass_pane")) => Some((crate::maps::filled_map(crate::maps::lock(map_id(input)?)?)?, 1)),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod cartography_tests {
+    use super::*;
+
+    #[test]
+    fn paper_and_copies() {
+        let item = |n: &str| crate::items::item_by_name(n).unwrap();
+        let (m, n) = cartography(&item("minecraft:paper"), None).expect("paper makes an empty map");
+        assert_eq!((name(&m), n), ("minecraft:empty_map", 1));
+        let filled = item("minecraft:filled_map");
+        let (copy, n) = cartography(&filled, Some(&item("minecraft:empty_map"))).expect("copy");
+        assert_eq!((name(&copy), n), ("minecraft:filled_map", 2));
+        assert!(cartography(&item("minecraft:stick"), None).is_none());
+        assert!(cartography(&filled, Some(&item("minecraft:stick"))).is_none());
+        // A map with no id can't be zoomed or locked.
+        assert!(cartography(&filled, Some(&item("minecraft:paper"))).is_none());
+    }
+}

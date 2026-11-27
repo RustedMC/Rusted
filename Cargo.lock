@@ -2570,7 +2570,7 @@ dependencies = [
 
 [[package]]
 name = "rusted"
-version = "0.5.10"
+version = "0.5.11"
 dependencies = [
  "base64 0.22.1",
  "bedrock",

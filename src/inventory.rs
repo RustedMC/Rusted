@@ -69,6 +69,9 @@ pub const BEACON_PAYMENT: usize = 12;
 pub const LOOM_BANNER: usize = 1;
 pub const LOOM_DYE: usize = 2;
 pub const LOOM_PATTERN: usize = 3;
+// The cartography table reuses the grindstone slots.
+pub const CARTO_INPUT: usize = 3;
+pub const CARTO_EXTRA: usize = 4;
 
 pub const CHEST_SLOTS: usize = 27;
 
@@ -162,6 +165,8 @@ fn place_of(info: &ItemStackRequestSlotInfo<Protocol>) -> Option<Place> {
         ContainerEnumName::AnvilMaterialContainer => Some(Place::Craft(ANVIL_MATERIAL)),
         ContainerEnumName::GrindstoneInputContainer => Some(Place::Craft(GRIND_INPUT)),
         ContainerEnumName::GrindstoneAdditionalContainer => Some(Place::Craft(GRIND_EXTRA)),
+        ContainerEnumName::CartographyInputContainer => Some(Place::Craft(CARTO_INPUT)),
+        ContainerEnumName::CartographyAdditionalContainer => Some(Place::Craft(CARTO_EXTRA)),
         ContainerEnumName::SmithingTableInputContainer => Some(Place::Craft(SMITH_INPUT)),
         ContainerEnumName::Trade2Ingredient1Container | ContainerEnumName::TradeIngredient1Container => Some(Place::Craft(TRADE_A)),
         ContainerEnumName::Trade2Ingredient2Container | ContainerEnumName::TradeIngredient2Container => Some(Place::Craft(TRADE_B)),
@@ -778,6 +783,19 @@ impl Inventory {
                         self.beacon = Some((*primary_effect, *secondary_effect));
                     }
                     paid
+                }
+                // Cartography table (the anvil's slots are empty while it's open): zoom, copy,
+                // lock or make maps.
+                ItemStackRequestActionType::CraftRecipeOptional { .. } if self.craft[ANVIL_INPUT].is_none() && self.craft[CARTO_INPUT].is_some() => {
+                    let extra = self.craft[CARTO_EXTRA].as_ref().map(|s| &s.item);
+                    match self.craft[CARTO_INPUT].as_ref().and_then(|s| crate::tables::cartography(&s.item, extra)) {
+                        Some((item, count)) => {
+                            let net_id = self.fresh_id();
+                            self.created = Some(Stack { item, count, net_id });
+                            true
+                        }
+                        None => false,
+                    }
                 }
                 // anvil rename comes in through the filtered strings
                 ItemStackRequestActionType::CraftRecipeOptional { filtered_strings_index, .. } => {
