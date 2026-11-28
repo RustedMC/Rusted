@@ -41,8 +41,10 @@ fn place(r: &mut Region, ctx: &mut Ctx, count: i32, lava: bool) {
             continue;
         }
         if can_place(r, x, y, z) {
-            // TODO: PNX schedules a block update so the spring flows; Rusted has no tick hook here.
             r.set(x, y, z, fluid);
+            // Flows once the chunk is in the world (PNX schedules a block update).
+            // shortcut: assumes the main overworld (y base 0); springs in /mv worlds stay still until touched.
+            crate::fluids::spring((x, y, z));
         }
     }
 }

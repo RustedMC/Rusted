@@ -47,6 +47,7 @@ See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands
 - ✅ **0.6.1** Furnaces and brewing stands keep their progress over a restart
 - ✅ **0.6.2** Fire Protection works against lava and fire
 - ✅ **0.6.3** Runtime plugins get every event
+- ✅ **0.6.4** Overworld springs flow
 
 ## 1.0: stable
 

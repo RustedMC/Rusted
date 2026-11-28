@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.4
+
+- Water and lava springs in cave walls and cliffs now flow when you find them, instead of sitting as still source blocks.
+
 ## 0.6.3
 
 - Runtime plugins (`.wasm`) get every server event now, not just the first 16: crafting, fishing, mob spawns and deaths, explosions, signs, buckets, beds, XP, ticks and more. See [Runtime plugins](plugins/runtime.md) for the full list.
