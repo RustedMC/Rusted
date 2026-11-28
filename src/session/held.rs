@@ -140,7 +140,9 @@ impl Session {
             "minecraft:mushroom_stew" | "minecraft:rabbit_stew" | "minecraft:beetroot_soup" | "minecraft:suspicious_stew" => Some("minecraft:bowl"),
             _ => None,
         };
-        if (eaten.is_some() || leftover.is_some()) && survival_like(&self.mode) {
+        // Ominous bottle: Bad Omen at the bottle's level for 100 minutes, the bottle is used up.
+        let ominous = held == "minecraft:ominous_bottle";
+        if (eaten.is_some() || leftover.is_some() || ominous) && survival_like(&self.mode) {
             if let Some((points, sat)) = eaten {
                 self.food.eat(points, sat);
             }
@@ -149,6 +151,11 @@ impl Session {
                 .filter(|e| roll < e.3)
                 .map(|(e, amplifier, ticks, _)| (e, effects::Effect { amplifier, ticks, particles: true }))
                 .collect();
+            if ominous {
+                let amplifier = self.inv.held(slot).map_or(0, |s| s.item.aux_value.min(4) as i32);
+                self.effects.active.remove(&effects::BAD_OMEN); // a new bottle replaces the old omen
+                gained.push((effects::BAD_OMEN, effects::Effect { amplifier, ticks: 120_000, particles: true }));
+            }
             if held == "minecraft:potion" {
                 let aux = self.inv.held(slot).map_or(0, |s| s.item.aux_value);
                 gained.extend(effects::potion(aux).into_iter().map(|(e, amplifier, ticks)| (e, effects::Effect { amplifier, ticks, particles: true })));

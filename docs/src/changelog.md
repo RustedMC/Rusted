@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.5
+
+- Ominous bottles can be drunk. They give Bad Omen at the bottle's level (I to V) for 100 minutes, so you can start a raid without hunting a patrol captain.
+
 ## 0.6.4
 
 - Water and lava springs in cave walls and cliffs now flow when you find them, instead of sitting as still source blocks.
