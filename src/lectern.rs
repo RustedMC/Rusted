@@ -68,6 +68,23 @@ pub fn pages(book: &Stack) -> i32 {
     }
 }
 
+/// An item as block-entity NBT (lectern books, framed items): name, count 1, aux, and its
+/// own data (pages, enchantments, map ids) as `tag`.
+pub fn item_nbt(st: &Stack) -> nbtx::Value {
+    let name = crate::items::name_of(st.item.id).unwrap_or("minecraft:air");
+    let mut item = vec![
+        ("Name".to_string(), Tag::String(name.into())),
+        ("Count".to_string(), Tag::Byte(1)),
+        ("Damage".to_string(), Tag::Short(st.item.aux_value as i16)),
+        ("WasPickedUp".to_string(), Tag::Byte(0)),
+    ];
+    let nbt = ItemData::read(&st.item.user_data_buffer);
+    if !nbt.nbt.is_empty() {
+        item.push(("tag".into(), Tag::Compound(nbt.nbt)));
+    }
+    nbtx::Value::Compound(compound(&item))
+}
+
 /// Block-entity data for a lectern, holding `book` open at `page`.
 pub fn data(pos: (i32, i32, i32), book: Option<&Stack>, page: i32) -> Protocol {
     use nbtx::Value as V;
@@ -79,24 +96,7 @@ pub fn data(pos: (i32, i32, i32), book: Option<&Stack>, page: i32) -> Protocol {
     tags.insert("isMovable".into(), V::Byte(1));
     tags.insert("hasBook".into(), V::Byte(book.is_some() as i8));
     if let Some(b) = book {
-        let name = crate::items::name_of(b.item.id).unwrap_or("minecraft:writable_book");
-        let mut item = vec![
-            ("Name".to_string(), Tag::String(name.into())),
-            ("Count".to_string(), Tag::Byte(1)),
-            ("Damage".to_string(), Tag::Short(0)),
-            ("WasPickedUp".to_string(), Tag::Byte(0)),
-        ];
-        let nbt = ItemData::read(&b.item.user_data_buffer);
-        if let Some(Tag::List(_, p)) = nbt.get("pages") {
-            let mut tag = vec![("pages".to_string(), Tag::List(10, p.clone()))];
-            for k in ["author", "title", "generation"] {
-                if let Some(v) = nbt.get(k) {
-                    tag.push((k.into(), v.clone()));
-                }
-            }
-            item.push(("tag".into(), Tag::Compound(tag)));
-        }
-        tags.insert("book".into(), V::Compound(compound(&item)));
+        tags.insert("book".into(), item_nbt(b));
         tags.insert("page".into(), V::Int(page));
         tags.insert("totalPages".into(), V::Int(pages(b).max(1)));
     }

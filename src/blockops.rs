@@ -299,6 +299,10 @@ pub(crate) fn break_block(server: &players::Server, id: i64, p: (i32, i32, i32),
     let center = (p.0 as f32 + 0.5, p.1 as f32 + 0.25, p.2 as f32 + 0.5);
     let is_shulker = containers::kind(old) == Some(containers::Kind::Shulker);
     let contents = server.containers.remove(p);
+    // A framed item drops with its frame.
+    if let Some(framed) = crate::frames::take(p) {
+        server.entities.drop_item(server, framed.item, 1, center);
+    }
     if is_shulker {
         // Keeps its items (PNX `BlockShulkerBox.toItem`), even in creative.
         if let Some(it) = items::item_for_block(old) {
@@ -412,4 +416,14 @@ pub(crate) fn pop_unsupported(server: &players::Server, id: i64, p: (i32, i32, i
         }
         server.set_block(id, q.0, q.1, q.2, world::AIR);
     }
+}
+
+/// Is the frame at `p` a glow item frame?
+pub(crate) fn glow_frame(world: &world::World, p: (i32, i32, i32)) -> bool {
+    blocks::entry(world.get(p.0, p.1, p.2)).is_some_and(|e| e.name == "minecraft:glow_frame")
+}
+
+/// Tells everyone what the frame at `p` holds now.
+pub(crate) fn show_frame(server: &players::Server, p: (i32, i32, i32)) {
+    let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(crate::frames::data(p, glow_frame(&server.world, p))) });
 }

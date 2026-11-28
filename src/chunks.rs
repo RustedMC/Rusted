@@ -85,6 +85,7 @@ impl ChunkTracker {
         // Generate on blocking threads so no connection loop stalls on terrain.
         let mut sign_data = signs::in_chunks(&coords);
         sign_data.extend(chest_pairs_in(world, &coords));
+        sign_data.extend(crate::frames::in_chunks(&coords, |p| crate::blockops::glow_frame(world, p)));
         let world = world.clone();
         let dim = conn.dim;
         // A background batch is dropped once the player is gone (their receiver closes).

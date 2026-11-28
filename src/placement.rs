@@ -166,8 +166,8 @@ pub fn orient(block: i32, click: &Click) -> Vec<((i32, i32, i32), i32)> {
         };
         return vec![((0, 0, 0), with(b, &[("facing_direction", State::Int(dir))]))];
     }
-    if bname.ends_with("_button") {
-        // Buttons sit on the clicked face (same numbering: 0 down, 1 up, 2-5 N S W E).
+    if bname.ends_with("_button") || matches!(bname.trim_start_matches("minecraft:"), "frame" | "glow_frame") {
+        // Buttons and item frames sit on the clicked face (0 down, 1 up, 2-5 N S W E).
         return vec![((0, 0, 0), with(b, &[("facing_direction", State::Int(click.face.min(5) as i32))]))];
     }
     if has_state(b, "facing_direction") {

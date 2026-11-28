@@ -104,6 +104,7 @@ pub enum Kind {
     Creaking,
     HappyGhast,
     TntMinecart,
+    ArmorStand,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -192,7 +193,7 @@ impl Kind {
     }
 
     pub const PASSIVE: [Kind; 4] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken];
-    pub const ALL: [Kind; 87] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken, Kind::Zombie, Kind::Skeleton, Kind::Creeper, Kind::Spider, Kind::Enderman, Kind::Villager, Kind::IronGolem, Kind::Wolf, Kind::Cat, Kind::Squid, Kind::Cod, Kind::Salmon, Kind::Drowned, Kind::Rabbit, Kind::Horse, Kind::Donkey, Kind::Mule, Kind::Llama, Kind::Goat, Kind::Fox, Kind::Panda, Kind::PolarBear, Kind::Mooshroom, Kind::Ocelot, Kind::Turtle, Kind::Armadillo, Kind::Camel, Kind::Sniffer, Kind::Frog, Kind::Axolotl, Kind::GlowSquid, Kind::TropicalFish, Kind::Pufferfish, Kind::Dolphin, Kind::Bat, Kind::Parrot, Kind::Bee, Kind::Allay, Kind::Husk, Kind::Stray, Kind::Bogged, Kind::ZombieVillager, Kind::CaveSpider, Kind::Silverfish, Kind::Witch, Kind::Slime, Kind::Phantom, Kind::Pillager, Kind::Vindicator, Kind::Evoker, Kind::Ravager, Kind::Vex, Kind::Guardian, Kind::ElderGuardian, Kind::Breeze, Kind::Warden, Kind::WitherSkeleton, Kind::Blaze, Kind::Ghast, Kind::MagmaCube, Kind::Piglin, Kind::ZombiePigman, Kind::Hoglin, Kind::Strider, Kind::EnderDragon, Kind::EndCrystal, Kind::Shulker, Kind::Boat, Kind::Minecart, Kind::ChestMinecart, Kind::WanderingTrader, Kind::TraderLlama, Kind::Zoglin, Kind::PiglinBrute, Kind::SkeletonHorse, Kind::ZombieHorse, Kind::Endermite, Kind::SnowGolem, Kind::Wither, Kind::Tadpole, Kind::Creaking, Kind::HappyGhast, Kind::TntMinecart];
+    pub const ALL: [Kind; 88] = [Kind::Cow, Kind::Pig, Kind::Sheep, Kind::Chicken, Kind::Zombie, Kind::Skeleton, Kind::Creeper, Kind::Spider, Kind::Enderman, Kind::Villager, Kind::IronGolem, Kind::Wolf, Kind::Cat, Kind::Squid, Kind::Cod, Kind::Salmon, Kind::Drowned, Kind::Rabbit, Kind::Horse, Kind::Donkey, Kind::Mule, Kind::Llama, Kind::Goat, Kind::Fox, Kind::Panda, Kind::PolarBear, Kind::Mooshroom, Kind::Ocelot, Kind::Turtle, Kind::Armadillo, Kind::Camel, Kind::Sniffer, Kind::Frog, Kind::Axolotl, Kind::GlowSquid, Kind::TropicalFish, Kind::Pufferfish, Kind::Dolphin, Kind::Bat, Kind::Parrot, Kind::Bee, Kind::Allay, Kind::Husk, Kind::Stray, Kind::Bogged, Kind::ZombieVillager, Kind::CaveSpider, Kind::Silverfish, Kind::Witch, Kind::Slime, Kind::Phantom, Kind::Pillager, Kind::Vindicator, Kind::Evoker, Kind::Ravager, Kind::Vex, Kind::Guardian, Kind::ElderGuardian, Kind::Breeze, Kind::Warden, Kind::WitherSkeleton, Kind::Blaze, Kind::Ghast, Kind::MagmaCube, Kind::Piglin, Kind::ZombiePigman, Kind::Hoglin, Kind::Strider, Kind::EnderDragon, Kind::EndCrystal, Kind::Shulker, Kind::Boat, Kind::Minecart, Kind::ChestMinecart, Kind::WanderingTrader, Kind::TraderLlama, Kind::Zoglin, Kind::PiglinBrute, Kind::SkeletonHorse, Kind::ZombieHorse, Kind::Endermite, Kind::SnowGolem, Kind::Wither, Kind::Tadpole, Kind::Creaking, Kind::HappyGhast, Kind::TntMinecart, Kind::ArmorStand];
 
     pub fn spec(self) -> &'static Spec {
         match self {
@@ -282,6 +283,8 @@ impl Kind {
             Kind::Wither => &Spec { id: "minecraft:wither", display: "Wither", health: 600.0, size: (1.0, 3.0), speed: 0.3, melee: 8.0, class: Class::FlyingHostile, food: &[], drops: &[("minecraft:nether_star", 1, 1)], undead: true, arthropod: false, burns: false, splits: false, ranged: Some("minecraft:wither_skull"), hit_effect: Some((20, 10)) },
             Kind::Tadpole => &Spec { id: "minecraft:tadpole", display: "Tadpole", health: 6.0, size: (0.4, 0.3), speed: 0.2, melee: 0.0, class: Class::Aquatic, food: &["minecraft:slime_ball"], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
             Kind::Creaking => &Spec { id: "minecraft:creaking", display: "Creaking", health: 1.0, size: (0.9, 2.7), speed: 0.3, melee: 3.0, class: Class::Hostile, food: &[], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
+            // Two punches break it (PNX EntityArmorStand); it drops itself.
+            Kind::ArmorStand => &Spec { id: "minecraft:armor_stand", display: "Armor Stand", health: 2.0, size: (0.5, 1.975), speed: 0.0, melee: 0.0, class: Class::Passive, food: &[], drops: &[("minecraft:armor_stand", 1, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
             Kind::TntMinecart => &Spec { id: "minecraft:tnt_minecart", display: "Minecart with TNT", health: 3.0, size: (0.98, 0.7), speed: 0.0, melee: 0.0, class: Class::Passive, food: &[], drops: &[("minecraft:tnt_minecart", 1, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
             Kind::HappyGhast => &Spec { id: "minecraft:happy_ghast", display: "Happy Ghast", health: 20.0, size: (4.0, 4.0), speed: 0.15, melee: 0.0, class: Class::Flying, food: &["minecraft:snowball"], drops: &[], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
             Kind::Minecart => &Spec { id: "minecraft:minecart", display: "Minecart", health: 3.0, size: (0.98, 0.7), speed: 0.0, melee: 0.0, class: Class::Passive, food: &[], drops: &[("minecraft:minecart", 1, 1)], undead: false, arthropod: false, burns: false, splits: false, ranged: None, hit_effect: None },
@@ -1019,6 +1022,9 @@ impl Mobs {
         if let Some(p) = held_packet(&m) {
             broadcast(server, p);
         }
+        for p in crate::stands::packets(m.id) {
+            broadcast(server, p);
+        }
         self.mobs.lock().insert(id, m);
         id
     }
@@ -1042,7 +1048,7 @@ impl Mobs {
     }
 
     pub fn spawn_packets(&self) -> Vec<Protocol> {
-        self.mobs.lock().values().filter(|m| m.dying == 0).flat_map(|m| std::iter::once(add_packet(m)).chain(held_packet(m))).collect()
+        self.mobs.lock().values().filter(|m| m.dying == 0).flat_map(|m| std::iter::once(add_packet(m)).chain(held_packet(m)).chain(crate::stands::packets(m.id))).collect()
     }
 
     /// A player's held item changed (tempting).
@@ -1533,6 +1539,17 @@ impl Mobs {
         Some(job)
     }
 
+    /// Turns mob `id` to `yaw` (an armor stand facing whoever placed it).
+    pub fn face(&self, server: &Server, id: i64, yaw: f32) {
+        let packet = self.mobs.lock().get_mut(&id).map(|m| {
+            (m.yaw, m.head_yaw) = (yaw, yaw);
+            move_packet(m)
+        });
+        if let Some(p) = packet {
+            broadcast(server, p);
+        }
+    }
+
     /// The kind of mob `id`, if it exists.
     pub fn kind_of(&self, id: i64) -> Option<Kind> {
         self.mobs.lock().get(&id).map(|m| m.kind)
@@ -1663,6 +1680,12 @@ impl Mobs {
             server.plugins.entity_death(server, kind.identifier(), pos, attacker);
             if matches!(kind, Kind::Boat | Kind::Minecart | Kind::ChestMinecart | Kind::TntMinecart) {
                 server.plugins.vehicle_destroy(server, kind.identifier(), pos, attacker);
+            }
+            if kind == Kind::ArmorStand {
+                for st in crate::stands::take_all(id) {
+                    server.entities.drop_item(server, st.item, 1, (pos.0, pos.1 + 0.5, pos.2));
+                }
+                server.plugins.armor_stand_break(server, id, pos, attacker);
             }
             if kind == Kind::Villager {
                 crate::villagers::release(id);
@@ -1831,8 +1854,8 @@ impl Mobs {
                 }
                 continue;
             }
-            if matches!(m.kind, Kind::EndCrystal | Kind::Boat) {
-                continue; // crystals sit on their pillar, boats stay where they were left
+            if matches!(m.kind, Kind::EndCrystal | Kind::Boat | Kind::ArmorStand) {
+                continue; // crystals sit on their pillar, boats and armor stands stay where they were left
             }
             m.weak = m.weak.saturating_sub(1);
             if m.curing > 0 {
@@ -2925,7 +2948,7 @@ impl Mobs {
     /// Mobs vanish far from players (instantly past 128 blocks, now and then past 32), unless
     /// something made them persistent: tamed, named, bred, saddled, ridden, a villager...
     fn despawn(&self, server: &Server, m: &Mob) -> bool {
-        if m.owner.is_some() || m.kept || m.saddled || m.temper > 0 || m.rider.is_some() || m.home.is_some() || matches!(m.kind, Kind::Villager | Kind::IronGolem | Kind::EnderDragon | Kind::EndCrystal | Kind::Shulker | Kind::Wither) {
+        if m.owner.is_some() || m.kept || m.saddled || m.temper > 0 || m.rider.is_some() || m.home.is_some() || matches!(m.kind, Kind::Villager | Kind::IronGolem | Kind::EnderDragon | Kind::EndCrystal | Kind::Shulker | Kind::Wither | Kind::ArmorStand) {
             return false;
         }
         let players = server.all();
@@ -4074,7 +4097,7 @@ impl Mobs {
         use std::fmt::Write;
         let mut out = String::from("# Rusted mobs v1: kind x y z yaw health baby owner sitting color sheared job saddled temper\n");
         for m in self.mobs.lock().values() {
-            let keep = matches!(m.kind, Kind::Villager | Kind::IronGolem) || m.owner.is_some() || m.saddled || m.kept || m.temper > 0;
+            let keep = matches!(m.kind, Kind::Villager | Kind::IronGolem | Kind::ArmorStand) || m.owner.is_some() || m.saddled || m.kept || m.temper > 0;
             if m.dying > 0 || !keep {
                 continue;
             }
@@ -4091,6 +4114,10 @@ impl Mobs {
             if m.kept {
                 out.pop();
                 out.push_str(" kept\n");
+            }
+            if let Some(t) = crate::stands::save_token(m.id) {
+                out.pop();
+                let _ = writeln!(out, " {t}");
             }
         }
         let tmp = path.with_extension("tmp");
@@ -4136,6 +4163,9 @@ impl Mobs {
                     });
                     if let Some(site) = job.and_then(|j| j.site) {
                         crate::villagers::claim(site, id);
+                    }
+                    if let Some(t) = extra.iter().find(|t| t.starts_with("gear=")) {
+                        crate::stands::load_token(id, t);
                     }
                     n += 1;
                 }
@@ -4385,7 +4415,7 @@ mod tests {
         assert!((2..=4).contains(&kids), "split into {kids}");
         assert!(server.mobs.count() >= before + 3);
         assert_eq!(Kind::from_name("cave_spider").map(|k| k.spec().hit_effect), Some(Some((19, 7))));
-        assert_eq!(Kind::ALL.len(), 87);
+        assert_eq!(Kind::ALL.len(), 88);
 
         // An ender pearl thrown straight down lands and teleports its thrower.
         let mut rx = server.events.subscribe();

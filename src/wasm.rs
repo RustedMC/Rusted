@@ -1190,6 +1190,30 @@ impl Plugin for WasmPlugin {
         self.ask(server, json!({ "event": "book_sign", "player": player_json(player), "title": title }))
     }
 
+    fn on_frame_place(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32), item: &str) -> bool {
+        self.ask(server, json!({ "event": "frame_place", "player": player_json(player), "pos": [pos.0, pos.1, pos.2], "item": item }))
+    }
+
+    fn on_frame_rotate(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32), rotation: i32) -> bool {
+        self.ask(server, json!({ "event": "frame_rotate", "player": player_json(player), "pos": [pos.0, pos.1, pos.2], "rotation": rotation }))
+    }
+
+    fn on_frame_take(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32), item: &str) -> bool {
+        self.ask(server, json!({ "event": "frame_take", "player": player_json(player), "pos": [pos.0, pos.1, pos.2], "item": item }))
+    }
+
+    fn on_armor_stand_place(&self, server: &Server, player: &PlayerInfo, pos: (f32, f32, f32)) -> bool {
+        self.ask(server, json!({ "event": "armor_stand_place", "player": player_json(player), "pos": [pos.0, pos.1, pos.2] }))
+    }
+
+    fn on_armor_stand_change(&self, server: &Server, player: &PlayerInfo, mob: i64, item: &str) -> bool {
+        self.ask(server, json!({ "event": "armor_stand_change", "player": player_json(player), "mob": mob, "item": item }))
+    }
+
+    fn on_armor_stand_break(&self, server: &Server, mob: i64, pos: (f32, f32, f32), killer: Option<i64>) {
+        self.notify(server, json!({ "event": "armor_stand_break", "mob": mob, "pos": [pos.0, pos.1, pos.2], "killer": killer }));
+    }
+
 }
 
 #[cfg(test)]

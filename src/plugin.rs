@@ -1072,6 +1072,34 @@ pub trait Plugin: Send + Sync {
         true
     }
 
+    /// Player is putting `item` into the empty item frame at `pos`. Return false to stop it.
+    fn on_frame_place(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32), _item: &str) -> bool {
+        true
+    }
+
+    /// Player is turning the item in the frame at `pos` to `rotation` (0-7, 45 degrees each). Return false to stop it.
+    fn on_frame_rotate(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32), _rotation: i32) -> bool {
+        true
+    }
+
+    /// Player is hitting `item` out of the frame at `pos`. Return false to keep it in.
+    fn on_frame_take(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32), _item: &str) -> bool {
+        true
+    }
+
+    /// Player is placing an armor stand at `pos`. Return false to stop it.
+    fn on_armor_stand_place(&self, _server: &Server, _player: &PlayerInfo, _pos: (f32, f32, f32)) -> bool {
+        true
+    }
+
+    /// Player is putting `item` on armor stand `mob`, or taking something off (`item` ""). Return false to stop it.
+    fn on_armor_stand_change(&self, _server: &Server, _player: &PlayerInfo, _mob: i64, _item: &str) -> bool {
+        true
+    }
+
+    /// Armor stand `mob` was broken at `pos` (by `killer`, if anyone), dropping itself and its gear.
+    fn on_armor_stand_break(&self, _server: &Server, _mob: i64, _pos: (f32, f32, f32), _killer: Option<i64>) {}
+
     /// Player jumped.
     fn on_jump(&self, _server: &Server, _player: &PlayerInfo) {}
 
@@ -1982,6 +2010,30 @@ impl Plugins {
         let mut ok = self.allowed(player, node);
         self.each(|pl| pl.on_permission_check(s, player, node, &mut ok));
         ok
+    }
+
+    pub fn frame_place(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32), item: &str) -> bool {
+        self.cancellable(|pl| pl.on_frame_place(s, p, pos, item))
+    }
+
+    pub fn frame_rotate(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32), rotation: i32) -> bool {
+        self.cancellable(|pl| pl.on_frame_rotate(s, p, pos, rotation))
+    }
+
+    pub fn frame_take(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32), item: &str) -> bool {
+        self.cancellable(|pl| pl.on_frame_take(s, p, pos, item))
+    }
+
+    pub fn armor_stand_place(&self, s: &Server, p: &PlayerInfo, pos: (f32, f32, f32)) -> bool {
+        self.cancellable(|pl| pl.on_armor_stand_place(s, p, pos))
+    }
+
+    pub fn armor_stand_change(&self, s: &Server, p: &PlayerInfo, mob: i64, item: &str) -> bool {
+        self.cancellable(|pl| pl.on_armor_stand_change(s, p, mob, item))
+    }
+
+    pub fn armor_stand_break(&self, s: &Server, mob: i64, pos: (f32, f32, f32), killer: Option<i64>) {
+        self.each(|pl| pl.on_armor_stand_break(s, mob, pos, killer));
     }
 
     pub fn jump(&self, s: &Server, p: &PlayerInfo) {

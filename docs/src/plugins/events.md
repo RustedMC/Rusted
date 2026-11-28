@@ -272,6 +272,12 @@ Mob positions are `(f32, f32, f32)`.
 | `on_plugin_enable(server, name: &str)` | A plugin was loaded, at startup | |
 | `on_book_edit(server, player, page: i32, text: &str)` | Writing in a book and quill | yes |
 | `on_book_sign(server, player, title: &str)` | Signing a book and quill | yes |
+| `on_frame_place(server, player, pos, item: &str)` | Putting an item in an item frame | yes |
+| `on_frame_rotate(server, player, pos, rotation: i32)` | Turning the item in a frame | yes |
+| `on_frame_take(server, player, pos, item: &str)` | Hitting the item out of a frame | yes |
+| `on_armor_stand_place(server, player, pos)` | Placing an armor stand | yes |
+| `on_armor_stand_change(server, player, mob, item: &str)` | Dressing or undressing an armor stand | yes |
+| `on_armor_stand_break(server, mob, pos, killer: Option<i64>)` | An armor stand broke | |
 
 ## Example: a no-grief zone
 

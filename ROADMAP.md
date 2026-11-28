@@ -60,6 +60,7 @@ See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands
 - ✅ **0.6.14** 25 more plugin events: redstone inputs, tools on blocks, PvP, idle kicks, spawn protection, saplings and more
 - ✅ **0.6.15** 25 more plugin events (213, past PNX's ~200): mob care, PvP kills, maps, dialogs, every admin command
 - ✅ **0.6.16** Books work; plugins can change damage, drops, XP, knockback and permissions; packet-send and book events (225 events)
+- ✅ **0.6.17** Item frames and armor stands, with their plugin events (231 events)
 
 ## 1.0: stable
 

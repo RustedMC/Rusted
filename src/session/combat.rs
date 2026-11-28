@@ -20,6 +20,40 @@ impl Session {
             return;
         }
         let slot = self.selected_slot as usize;
+        let mob = e.actor_runtime_id as i64;
+        // Armor stands: put on what you hold, or take something back with an empty hand.
+        if self.server.mobs.kind_of(mob) == Some(mobs::Kind::ArmorStand) && !matches!(self.mode, GameType::Spectator) {
+            let held_stack = self.inv.held(slot).cloned();
+            let held_name = held_stack.as_ref().and_then(|s| items::name_of(s.item.id)).unwrap_or("");
+            if self.server.get(self.id).is_some_and(|me| !self.server.plugins.armor_stand_change(&self.server, &me, mob, held_name)) {
+                return;
+            }
+            if held_stack.is_some() && survival_like(&self.mode) {
+                self.inv.use_one(slot);
+            }
+            if let Some(back) = crate::stands::swap(mob, held_stack) {
+                let left = self.inv.add(back.item.clone(), 1);
+                if left > 0 && let Some(me) = self.server.get(self.id) {
+                    self.server.entities.drop_item(&self.server, back.item, left, (me.pos.0, me.pos.1 - 1.0, me.pos.2));
+                }
+            }
+            let _ = self.conn.send(&[self.inv.content_packet()]).await;
+            for p in crate::stands::packets(mob) {
+                let _ = self.server.events.send(crate::players::Event::Relay { from: 0, packet: Box::new(p) });
+            }
+            if crate::stands::packets(mob).is_empty() {
+                // took the last thing off: show it bare
+                let bare = Protocol::MobArmorEquipmentPacket(Box::new(bedrock::protocol::v1001::packets::MobArmorEquipmentPacket {
+                    target_runtime_id: ActorRuntimeID(mob as u64), head: spawn::air(), torso: spawn::air(), legs: spawn::air(), feet: spawn::air(), body: spawn::air(),
+                }));
+                let hand = Protocol::MobEquipmentPacket(Box::new(bedrock::protocol::v975::packets::MobEquipmentPacket {
+                    target_runtime_id: ActorRuntimeID(mob as u64), item: spawn::air(), slot: 0, selected_slot: 0, container_id: bedrock::protocol::v662::enums::ContainerID(0),
+                }));
+                let _ = self.server.events.send(crate::players::Event::Relay { from: 0, packet: Box::new(bare) });
+                let _ = self.server.events.send(crate::players::Event::Relay { from: 0, packet: Box::new(hand) });
+            }
+            return;
+        }
         let held = self.inv.held(slot).and_then(|s| items::name_of(s.item.id));
         let changed = match self.server.mobs.interact(&self.server, e.actor_runtime_id as i64, held, self.id) {
             mobs::Use::Trade => {

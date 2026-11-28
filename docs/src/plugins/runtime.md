@@ -275,6 +275,12 @@ Each event is JSON. `e.kind()` tells you which one; player events have `player` 
 | `plugin_enable` | `name` |  |
 | `book_edit` | `page`, `text` | cancellable |
 | `book_sign` | `title` | cancellable |
+| `frame_place` | `pos`, `item` | cancellable |
+| `frame_rotate` | `pos`, `rotation` | cancellable |
+| `frame_take` | `pos`, `item` | cancellable |
+| `armor_stand_place` | `pos` | cancellable |
+| `armor_stand_change` | `mob`, `item` | cancellable; `item` is "" when taking something off |
+| `armor_stand_break` | `mob`, `pos`, `killer` |  |
 
 ### Changing values
 

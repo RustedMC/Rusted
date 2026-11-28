@@ -265,6 +265,39 @@ impl Session {
             }
             return;
         }
+        // Item frames: put the held item in, then each click turns it (PNX BlockItemFrame.onActivate).
+        if crate::frames::is_frame(clicked) && !self.sneaking && !matches!(self.mode, GameType::Spectator) {
+            let pos = (p.x, p.y, p.z);
+            let slot = self.selected_slot as usize;
+            let Some(me) = self.server.get(self.id) else { return };
+            let at = (p.x as f32 + 0.5, p.y as f32 + 0.5, p.z as f32 + 0.5);
+            match crate::frames::get(pos) {
+                None => {
+                    let Some(held) = self.inv.held(slot).cloned() else { return };
+                    if !self.server.plugins.frame_place(&self.server, &me, pos, items::name_of(held.item.id).unwrap_or("")) {
+                        let _ = self.conn.send(&[crate::frames::data(pos, blockops::glow_frame(&self.server.world, pos))]).await;
+                        return;
+                    }
+                    if survival_like(&self.mode) {
+                        self.inv.use_one(slot);
+                        let _ = self.conn.send(&[self.inv.content_packet()]).await;
+                    }
+                    crate::frames::put(pos, held);
+                    let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(play_sound("block.itemframe.add_item", at)) });
+                }
+                Some(_) => {
+                    let next = crate::frames::get(pos).map_or(0, |(_, r)| (r + 1) % 8);
+                    if !self.server.plugins.frame_rotate(&self.server, &me, pos, next as i32) {
+                        let _ = self.conn.send(&[crate::frames::data(pos, blockops::glow_frame(&self.server.world, pos))]).await;
+                        return;
+                    }
+                    crate::frames::rotate(pos);
+                    let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(play_sound("block.itemframe.rotate_item", at)) });
+                }
+            }
+            blockops::show_frame(&self.server, pos);
+            return;
+        }
         // Lecterns: put a book on, sneak-click to take it back, click to read.
         if crate::lectern::is_lectern(clicked) && !matches!(self.mode, GameType::Spectator) {
             let pos = (p.x, p.y, p.z);
@@ -548,6 +581,22 @@ impl Session {
         let p = &u.block_position;
         let (dx, dy, dz) = placement::face_offset(u.block_face);
         let held = items::name_of(u.held_item.id).unwrap_or("");
+        // Armor stands stand on the clicked face, facing the player (PNX ItemArmorStand).
+        if held == "minecraft:armor_stand" && spawn::can_build(&self.mode) && !commands::spawn_protected(&self.server, &self.name, (p.x, p.y, p.z)) {
+            let at = (p.x as f32 + dx as f32 + 0.5, (p.y + dy) as f32, p.z as f32 + dz as f32 + 0.5);
+            let Some(me) = self.server.get(self.id) else { return };
+            if !self.server.plugins.armor_stand_place(&self.server, &me, at) {
+                return;
+            }
+            let id = self.server.mobs.spawn(&self.server, mobs::Kind::ArmorStand, at);
+            self.server.mobs.face(&self.server, id, (me.rot.1 + 180.0).rem_euclid(360.0));
+            if survival_like(&self.mode) {
+                self.inv.use_one(self.selected_slot as usize);
+                let _ = self.conn.send(&[self.inv.content_packet()]).await;
+            }
+            let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(play_sound("mob.armor_stand.place", at)) });
+            return;
+        }
         // Spawn eggs: the mob appears on the clicked face (vanilla ItemSpawnEgg).
         if let Some(kind) = held.strip_suffix("_spawn_egg").and_then(mobs::Kind::from_name) {
             if !matches!(self.mode, GameType::Spectator) && !commands::spawn_protected(&self.server, &self.name, (p.x, p.y, p.z)) {
@@ -749,6 +798,24 @@ impl Session {
     /// Breaks the block the player finished mining (or hit in creative), with drops, wear and
     /// plugin checks; puts it back on their screen if it may not break.
     pub(super) async fn destroy_block(&mut self, p: (i32, i32, i32)) {
+        // Hitting a frame that holds something takes the item out; the next hit breaks it.
+        if crate::frames::is_frame(self.server.world.get(p.0, p.1, p.2))
+            && let Some((item, _)) = crate::frames::get(p)
+            && !matches!(self.mode, GameType::Spectator)
+        {
+            if self.server.get(self.id).is_some_and(|me| self.server.plugins.frame_take(&self.server, &me, p, items::name_of(item.item.id).unwrap_or("")))
+                && let Some(out) = crate::frames::take(p)
+            {
+                if survival_like(&self.mode) {
+                    self.server.entities.drop_item(&self.server, out.item, 1, (p.0 as f32 + 0.5, p.1 as f32 + 0.5, p.2 as f32 + 0.5));
+                }
+                let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(play_sound("block.itemframe.remove_item", (p.0 as f32 + 0.5, p.1 as f32 + 0.5, p.2 as f32 + 0.5))) });
+                blockops::show_frame(&self.server, p);
+            }
+            // the client thinks the frame broke: put it back on their screen
+            let _ = self.conn.send(&[update_block(p.0, p.1, p.2, self.server.world.get(p.0, p.1, p.2)), crate::frames::data(p, blockops::glow_frame(&self.server.world, p))]).await;
+            return;
+        }
         if spawn::can_build(&self.mode)
             && !commands::spawn_protected(&self.server, &self.name, p)
             && self.server.world.get(p.0, p.1, p.2) != world::AIR

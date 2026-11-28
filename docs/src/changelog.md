@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.17
+
+**Item frames**
+- Put any item in an item frame or glow item frame, click to turn it (8 steps), hit to take it out. Maps show their picture.
+- Frames keep their items over a restart, and drop them when broken.
+
+**Armor stands**
+- Place them facing you. Click with armor to dress them, with any other item to put it in their hand, with an empty hand to take things back.
+- Two hits break one: it drops itself and everything it wore. They stay put, never despawn, and are saved.
+
+**Plugin events (231 in all)**
+- `on_frame_place`, `on_frame_rotate`, `on_frame_take`, `on_armor_stand_place`, `on_armor_stand_change` and `on_armor_stand_break`. All but the last can be cancelled.
+
 ## 0.6.16
 
 **Books work**

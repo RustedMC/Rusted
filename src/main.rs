@@ -1,6 +1,8 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)] // game code passes a lot of state around
 
 mod blocks;
+mod frames;
+mod stands;
 mod books;
 mod perf;
 mod spawning;
@@ -220,6 +222,8 @@ async fn main() {
     server.containers = std::sync::Arc::new(
         containers::Containers::load(&containers_path).expect("failed to load containers.dat (left untouched)"),
     );
+    let frames_path = level_dir.join("frames.dat");
+    frames::load(&frames_path);
     // The Nether and End generators (ported from PNX), on the same seed.
     {
         struct N(nether::Nether);
@@ -432,6 +436,9 @@ async fn main() {
                     Ok(false) => {}
                     Err(e) => println!("autosave failed: {e}"),
                 }
+                if let Err(e) = frames::save_if_dirty(&chests_path.with_file_name("frames.dat")) {
+                    println!("item frame save failed: {e}");
+                }
                 if let Err(e) = chests.save_if_dirty(&chests_path) {
                     println!("container autosave failed: {e}");
                 }
@@ -454,6 +461,9 @@ async fn main() {
                 // Everyone saves on the way out (sessions save when kicked).
                 let _ = events.send(players::Event::Kick { id: 0, message: "Server closed".into(), reason: players::Kick::Shutdown });
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                if let Err(e) = frames::save_if_dirty(&chests_path.with_file_name("frames.dat")) {
+                    println!("item frame save failed: {e}");
+                }
                 if let Err(e) = chests.save_if_dirty(&chests_path) {
                     println!("final container save failed: {e}");
                 }
