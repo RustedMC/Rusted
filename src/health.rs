@@ -28,8 +28,8 @@ pub enum Damage {
     /// empty food bar, 1 per step
     Starve,
     Drown,
-    Lava,
-    Fire,
+    Lava(f32),
+    Fire(f32),
     /// mob hit (damage, mob name)
     Mob(f32, &'static str),
     Shot(f32, &'static str),
@@ -96,9 +96,9 @@ impl Health {
         self.health = match d {
             Damage::Fall(n) => (self.health - n).max(0.0),
             Damage::Void | Damage::Kill => 0.0,
-            Damage::Starve | Damage::Fire => (self.health - 1.0).max(0.0),
+            Damage::Starve => (self.health - 1.0).max(0.0),
+            Damage::Fire(d) | Damage::Lava(d) => (self.health - d).max(0.0),
             Damage::Drown => (self.health - 2.0).max(0.0),
-            Damage::Lava => (self.health - 4.0).max(0.0),
             Damage::Mob(n, _) | Damage::Shot(n, _) | Damage::Explosion(n, _) | Damage::Magic(n) | Damage::Wither(n) => (self.health - n).max(0.0),
         };
         self.dead = self.health <= 0.0;
@@ -127,8 +127,8 @@ pub fn death_message(name: &str, d: Damage) -> String {
         Damage::Kill => format!("{name} died"),
         Damage::Starve => format!("{name} starved to death"),
         Damage::Drown => format!("{name} drowned"),
-        Damage::Lava => format!("{name} tried to swim in lava"),
-        Damage::Fire => format!("{name} went up in flames"),
+        Damage::Lava(_) => format!("{name} tried to swim in lava"),
+        Damage::Fire(_) => format!("{name} went up in flames"),
         Damage::Mob(_, by) => format!("{name} was slain by {by}"),
         Damage::Shot(_, by) => format!("{name} was shot by {by}"),
         Damage::Explosion(_, by) => format!("{name} was blown up by {by}"),

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2
+
+- Fire Protection and Protection now reduce lava and fire damage, like vanilla.
+
 ## 0.6.1
 
 - Lit furnaces, smokers, blast furnaces and brewing stands keep going after a restart instead of pausing or losing their brew.

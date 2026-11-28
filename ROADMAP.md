@@ -45,6 +45,7 @@ See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands
 - ✅ **0.6.0** The remaining vanilla commands, carver caves, canyons and dungeons, every PNX world feature, trial spawners and vaults, villager gossip
   (also runtime plugins in `plugins/*.wasm`, about 60 events, camera control and NPC dialogs)
 - ✅ **0.6.1** Furnaces and brewing stands keep their progress over a restart
+- ✅ **0.6.2** Fire Protection works against lava and fire
 
 ## 1.0: stable
 

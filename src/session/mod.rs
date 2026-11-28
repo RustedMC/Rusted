@@ -163,7 +163,7 @@ pub(crate) async fn hurt(conn: &mut dims::DimConn, server: &players::Server, id:
         return;
     }
     use health::Damage as D;
-    if fx.level(effects::FIRE_RESISTANCE).is_some() && matches!(damage, D::Lava | D::Fire) || fx.level(effects::WATER_BREATHING).is_some() && damage == D::Drown {
+    if fx.level(effects::FIRE_RESISTANCE).is_some() && matches!(damage, D::Lava(_) | D::Fire(_)) || fx.level(effects::WATER_BREATHING).is_some() && damage == D::Drown {
         return;
     }
     if let Some(me) = server.get(id) {
@@ -210,6 +210,8 @@ pub(crate) async fn hurt(conn: &mut dims::DimConn, server: &players::Server, id:
         D::Shot(d, by) => D::Shot(d * enchant::protection(&armor, enchant::Hit::Projectile), by),
         D::Explosion(d, by) => D::Explosion(d * enchant::protection(&armor, enchant::Hit::Explosion), by),
         D::Fall(d) => D::Fall((d * enchant::protection(&armor, enchant::Hit::Fall)).round()),
+        D::Lava(d) => D::Lava(d * enchant::protection(&armor, enchant::Hit::Fire)),
+        D::Fire(d) => D::Fire(d * enchant::protection(&armor, enchant::Hit::Fire)),
         other => other,
     };
     // Absorption hearts go first (PNX `EntityHuman.applyDamage`).
@@ -299,8 +301,8 @@ pub(crate) fn damage_cause(d: health::Damage) -> (&'static str, f32) {
         D::Kill => ("kill", 1000.0),
         D::Starve => ("starve", 1.0),
         D::Drown => ("drown", 2.0),
-        D::Lava => ("lava", 4.0),
-        D::Fire => ("fire", 1.0),
+        D::Lava(n) => ("lava", n),
+        D::Fire(n) => ("fire", n),
         D::Mob(n, by) | D::Shot(n, by) | D::Explosion(n, by) => (by, n),
         D::Magic(n) => ("magic", n),
         D::Wither(n) => ("wither", n),

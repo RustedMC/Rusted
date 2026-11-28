@@ -186,9 +186,9 @@ impl Session {
                 hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Drown, &mut self.inv, &self.effects, &self.mode).await;
             }
             if self.in_lava && !self.hp.dead {
-                hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Lava, &mut self.inv, &self.effects, &self.mode).await;
+                hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Lava(4.0), &mut self.inv, &self.effects, &self.mode).await;
             } else if self.in_fire && !self.hp.dead {
-                hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Fire, &mut self.inv, &self.effects, &self.mode).await;
+                hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Fire(1.0), &mut self.inv, &self.effects, &self.mode).await;
             }
             // Burning: lava and fire leave you alight a while (vanilla 15 s / 8 s); water puts it out.
             let was = self.burning > 0;
@@ -202,7 +202,7 @@ impl Session {
             } else if self.burning > 0 {
                 self.burning -= 1;
                 if !self.in_lava && !self.in_fire {
-                    hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Fire, &mut self.inv, &self.effects, &self.mode).await;
+                    hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Fire(1.0), &mut self.inv, &self.effects, &self.mode).await;
                 }
             }
             if was != (self.burning > 0) {

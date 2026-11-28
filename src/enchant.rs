@@ -210,7 +210,6 @@ pub fn wears(lvl: i16, armor: bool, roll: f32) -> bool {
 #[derive(Clone, Copy, PartialEq)]
 pub enum Hit {
     Other,
-    #[allow(dead_code)] // TODO: lava and fire damage don't go through protection yet
     Fire,
     Explosion,
     Projectile,

@@ -3731,7 +3731,6 @@ fn sound(name: &str, at: (f32, f32, f32)) -> Protocol {
 static PRIMED: Mutex<Vec<(i64, (f32, f32, f32), (f32, f32, f32), u32)>> = Mutex::new(Vec::new());
 
 /// Primes the TNT at `p` (PNX BlockTNT.prime), going off with power 4 after `fuse` 10 Hz ticks.
-/// TODO: primed TNT should fall and get pushed
 pub fn ignite_tnt(server: &Server, p: (i32, i32, i32), fuse: u32) {
     server.set_block_quiet(0, p.0, p.1, p.2, crate::world::AIR);
     let id = crate::players::next_id();
