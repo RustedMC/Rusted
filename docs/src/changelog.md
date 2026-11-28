@@ -1,5 +1,117 @@
 # Changelog
 
+## 0.6.0
+
+**Plugins**
+- Plugins load at runtime from `plugins/*.wasm`. They run sandboxed (WebAssembly, with a time limit per call), so a broken plugin can't crash the server. See [Runtime plugins](plugins/runtime.md).
+- About 60 plugin events, including bed leave, bucket fill and empty, fishing, gliding, swimming, container close, item break, kick, trading, mounting and dismounting.
+- NPC dialogs with buttons, and scenes loaded from `dialogues/<scene>.json`.
+
+**Commands**
+- The remaining vanilla commands: `/camera`, `/aimassist`, `/controlscheme`, `/ride`, `/dialogue`, `/hud`, `/fog`, `/playanimation`, `/inputpermission`, `/replaceitem entity`, `/loot`, `/particle`, `/spreadplayers`, `/testforblocks`, `/schedule`, `/clearspawnpoint`, `/tickingarea`, `/music`, `/setmaxplayers` and `/recipe`.
+
+**World generation**
+- Caves, extra underground caves and canyons are carved out like in PowerNukkitX.
+- Dungeons (monster rooms) with spawners and chests.
+- Every PowerNukkitX world feature: springs, geodes, dripstone clusters, sculk patches, azalea roots and the sulfur features.
+- Trial chambers now join up and down properly and have working trial spawners and vaults, including ominous vaults.
+
+**Mobs**
+- Villager gossip: villagers remember who cured, hurt, killed or traded with them, pass it on to each other, and change their prices to match.
+- Lightning makes charged creepers, which explode harder.
+- The ender dragon lands on the portal now and then.
+
+## 0.5.11
+
+- The cartography table: make, copy, zoom out (4 levels) and lock maps. Locator maps.
+
+## 0.5.10
+
+- Block breaking works on current clients: slow blocks break, the miner sees crack progress and hears the mining sound, and there are no more ghost breaks.
+- Spawn protection only applies once someone is op.
+- Air bubbles hide when you're out of water.
+- Dropped items land on leaves instead of falling through.
+
+## 0.5.9
+
+- Custom blocks can face the player and have variants. Their light counts for spawning and plant growth.
+
+## 0.5.8
+
+- Example custom content (a block, items and a mob with a resource pack) and a custom content guide.
+
+## 0.5.7
+
+- Custom blocks from plugin code: texture, hardness, light, render method and extra components.
+
+## 0.5.6
+
+- Custom item damage, durability, food, armor, glint and raw extra components.
+- New `on_tick` plugin hook.
+
+## 0.5.5
+
+- Custom items and mobs from plugin code, with their looks from a resource pack.
+
+## 0.5.2
+
+- Maps: empty maps become maps of the area, drawn from the world.
+
+## 0.5.1
+
+- Multiple worlds (`/mv`), with separate inventories per world.
+
+## 0.5.0
+
+- Sky light, used for spawning and growth.
+- Fireworks launched from the ground, with their effects.
+- `/execute`, `/locate` and `/function`.
+
+## 0.4.7
+
+- The 19 bundled gameplay plugins (lifesteal, economy, ranks, lobby and others) are gone. The plugin API stays for your own plugins.
+- `/ban-ip`, `/unban-ip` and `/banlist ips`. Banned addresses are refused at login.
+
+## 0.4.6
+
+- Waterlogging, with a second block layer in chunks and saves.
+- Crawling pose.
+- Explosions hurt mobs.
+
+## 0.4.5
+
+- 12 more mob types. Snow golems, iron golems and the wither can be built from blocks.
+- Wandering traders with trades and visits, villager breeding, leads and llama caravans, and polar bears guarding their cubs.
+- Chest boats and TNT minecarts.
+
+## 0.4.4
+
+- Mob spawning follows PowerNukkitX's Bedrock spawn rules for each mob (biome, light, surface or cave, herds).
+- Buttons on every face, and pistons break attached blocks.
+- Multiplayer fixes: players, items and mobs reappear after teleports and deaths, chests sync live, ender chests are per player, and everyone sees break cracks.
+- Critical hits, sprint knockback and bottles o' enchanting.
+- Vanilla explosions (rays and blast resistance) and item physics (ice, currents, burning).
+- Trapdoors and fence gates, selectors on every command, sign input for plugins, and swimming or crawling through 1x1 gaps.
+
+## 0.4.3
+
+- Tripwire and tripwire hooks, target blocks, trapped chests, copper bulbs and redstone torch burnout.
+
+## 0.4.2
+
+- Pistons slide blocks like vanilla. Crushed blocks drop, and mobs ride along.
+
+## 0.4.1
+
+- Skeletons draw and pillagers charge before shooting.
+- Vanilla spawn weights and mob cap, and rarer patrols.
+
+## 0.4.0
+
+- Redstone connects and powers like vanilla.
+- PowerNukkitX pistons, including slime, honey and containers.
+- Block support rules, vanilla sounds, knockback, mobs jumping, XP orbs, spawn eggs and sleeping.
+
 ## 0.3.0
 
 **Mobs**
