@@ -309,6 +309,188 @@ impl Plugin for WasmPlugin {
     fn on_trade(&self, server: &Server, player: &PlayerInfo, villager: i64, index: i32, times: i32) {
         self.notify(server, json!({ "event": "trade", "player": player_json(player), "villager": villager, "index": index, "times": times }));
     }
+    fn on_tick(&self, server: &Server) {
+        self.notify(server, json!({ "event": "tick" }));
+    }
+
+    fn on_gamemode_change(&self, server: &Server, player: &PlayerInfo, mode: &str) -> bool {
+        self.ask(server, json!({ "event": "gamemode_change", "player": player_json(player), "mode": mode }))
+    }
+
+    fn on_item_drop(&self, server: &Server, player: &PlayerInfo, item: &str, count: i8) -> bool {
+        self.ask(server, json!({ "event": "item_drop", "player": player_json(player), "item": item, "count": count }))
+    }
+
+    fn on_entity_damage(&self, server: &Server, player: &PlayerInfo, mob: i64, kind: &str, damage: f32) -> bool {
+        self.ask(server, json!({ "event": "entity_damage", "player": player_json(player), "mob": mob, "kind": kind, "damage": damage }))
+    }
+
+    fn on_entity_death(&self, server: &Server, kind: &str, pos: (f32, f32, f32), killer: Option<i64>) {
+        self.notify(server, json!({ "event": "entity_death", "kind": kind, "pos": [pos.0, pos.1, pos.2], "killer": killer }));
+    }
+
+    fn on_entity_spawn(&self, server: &Server, kind: &str, pos: (f32, f32, f32)) -> bool {
+        self.ask(server, json!({ "event": "entity_spawn", "kind": kind, "pos": [pos.0, pos.1, pos.2] }))
+    }
+
+    fn on_explosion(&self, server: &Server, pos: (f32, f32, f32), power: f32) -> bool {
+        self.ask(server, json!({ "event": "explosion", "pos": [pos.0, pos.1, pos.2], "power": power }))
+    }
+
+    fn on_weather_change(&self, server: &Server, weather: &str) -> bool {
+        self.ask(server, json!({ "event": "weather_change", "weather": weather }))
+    }
+
+    fn on_item_use(&self, server: &Server, player: &PlayerInfo, item: &crate::inventory::Stack) -> bool {
+        self.ask(server, json!({ "event": "item_use", "player": player_json(player), "item": crate::items::name_of(item.item.id).unwrap_or(""), "count": item.count }))
+    }
+
+    fn on_move(&self, server: &Server, player: &PlayerInfo, to: (f32, f32, f32)) -> bool {
+        self.ask(server, json!({ "event": "move", "player": player_json(player), "to": [to.0, to.1, to.2] }))
+    }
+
+    fn on_item_pickup(&self, server: &Server, player: &PlayerInfo, item: &str, count: i8) -> bool {
+        self.ask(server, json!({ "event": "item_pickup", "player": player_json(player), "item": item, "count": count }))
+    }
+
+    fn on_sprint(&self, server: &Server, player: &PlayerInfo, sprinting: bool) {
+        self.notify(server, json!({ "event": "sprint", "player": player_json(player), "sprinting": sprinting }));
+    }
+
+    fn on_container_open(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32), block: &str) -> bool {
+        self.ask(server, json!({ "event": "container_open", "player": player_json(player), "pos": [pos.0, pos.1, pos.2], "block": block }))
+    }
+
+    fn on_consume(&self, server: &Server, player: &PlayerInfo, item: &str) -> bool {
+        self.ask(server, json!({ "event": "consume", "player": player_json(player), "item": item }))
+    }
+
+    fn on_held_change(&self, server: &Server, player: &PlayerInfo, slot: u32, item: Option<&str>) {
+        self.notify(server, json!({ "event": "held_change", "player": player_json(player), "slot": slot, "item": item }));
+    }
+
+    fn on_dimension_change(&self, server: &Server, player: &PlayerInfo, to: u8) {
+        self.notify(server, json!({ "event": "dimension_change", "player": player_json(player), "to": to }));
+    }
+
+    fn on_teleport(&self, server: &Server, player: &PlayerInfo, to: (f32, f32, f32)) {
+        self.notify(server, json!({ "event": "teleport", "player": player_json(player), "to": [to.0, to.1, to.2] }));
+    }
+
+    fn on_xp_change(&self, server: &Server, player: &PlayerInfo, points: &mut i32) {
+        let (ok, reply) = self.call(server, json!({ "event": "xp_change", "player": player_json(player), "points": *points }));
+        if let Some(v) = reply.and_then(|r| r.trim().parse().ok()) { *points = v; }
+        let _ = ok;
+    }
+
+    fn on_sign_change(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32), front: &mut String, back: &mut String) -> bool {
+        let (ok, reply) = self.call(server, json!({ "event": "sign_change", "player": player_json(player), "pos": [pos.0, pos.1, pos.2], "front": front.as_str(), "back": back.as_str() }));
+        if let Some((f, b)) = reply.as_deref().and_then(|r| r.split_once('\n')) {
+            // reply "front\nback" rewrites both sides
+            *front = f.to_string();
+            *back = b.to_string();
+        }
+        ok
+    }
+
+    fn on_bed_enter(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32)) -> bool {
+        self.ask(server, json!({ "event": "bed_enter", "player": player_json(player), "pos": [pos.0, pos.1, pos.2] }))
+    }
+
+    fn on_bed_leave(&self, server: &Server, player: &PlayerInfo) {
+        self.notify(server, json!({ "event": "bed_leave", "player": player_json(player) }));
+    }
+
+    fn on_bucket_fill(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32), filled: &str) -> bool {
+        self.ask(server, json!({ "event": "bucket_fill", "player": player_json(player), "pos": [pos.0, pos.1, pos.2], "filled": filled }))
+    }
+
+    fn on_bucket_empty(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32), bucket: &str) -> bool {
+        self.ask(server, json!({ "event": "bucket_empty", "player": player_json(player), "pos": [pos.0, pos.1, pos.2], "bucket": bucket }))
+    }
+
+    fn on_fish(&self, server: &Server, player: &PlayerInfo, item: &str) -> bool {
+        self.ask(server, json!({ "event": "fish", "player": player_json(player), "item": item }))
+    }
+
+    fn on_glide(&self, server: &Server, player: &PlayerInfo, gliding: bool) {
+        self.notify(server, json!({ "event": "glide", "player": player_json(player), "gliding": gliding }));
+    }
+
+    fn on_swim(&self, server: &Server, player: &PlayerInfo, swimming: bool) {
+        self.notify(server, json!({ "event": "swim", "player": player_json(player), "swimming": swimming }));
+    }
+
+    fn on_container_close(&self, server: &Server, player: &PlayerInfo, kind: &str) {
+        self.notify(server, json!({ "event": "container_close", "player": player_json(player), "kind": kind }));
+    }
+
+    fn on_item_break(&self, server: &Server, player: &PlayerInfo, item: &str) {
+        self.notify(server, json!({ "event": "item_break", "player": player_json(player), "item": item }));
+    }
+
+    fn on_kick(&self, server: &Server, player: &PlayerInfo, message: &str) {
+        self.notify(server, json!({ "event": "kick", "player": player_json(player), "message": message }));
+    }
+
+    fn on_dismount(&self, server: &Server, player: &PlayerInfo) {
+        self.notify(server, json!({ "event": "dismount", "player": player_json(player) }));
+    }
+
+    fn on_craft(&self, server: &Server, player: &PlayerInfo, item: &str, count: i32) -> bool {
+        self.ask(server, json!({ "event": "craft", "player": player_json(player), "item": item, "count": count }))
+    }
+
+    fn on_projectile_hit(&self, server: &Server, shooter: &PlayerInfo, target: crate::plugin::Target) -> bool {
+        self.ask(server, json!({ "event": "projectile_hit", "shooter": player_json(shooter), "target": match target { crate::plugin::Target::Mob(i) => json!({"mob": i}), crate::plugin::Target::Player(i) => json!({"player": i}) } }))
+    }
+
+    fn on_block_grow(&self, server: &Server, pos: (i32, i32, i32), from: &str, to: &str) -> bool {
+        self.ask(server, json!({ "event": "block_grow", "pos": [pos.0, pos.1, pos.2], "from": from, "to": to }))
+    }
+
+    fn on_mob_target(&self, server: &Server, mob: i64, kind: &str, player: &PlayerInfo) -> bool {
+        self.ask(server, json!({ "event": "mob_target", "mob": mob, "kind": kind, "player": player_json(player) }))
+    }
+
+    fn on_block_burn(&self, server: &Server, pos: (i32, i32, i32), block: &str, spread: bool) -> bool {
+        self.ask(server, json!({ "event": "block_burn", "pos": [pos.0, pos.1, pos.2], "block": block, "spread": spread }))
+    }
+
+    fn on_explosion_blocks(&self, server: &Server, at: (f32, f32, f32), blocks: &mut Vec<(i32, i32, i32)>) {
+        let (ok, reply) = self.call(server, json!({ "event": "explosion_blocks", "at": [at.0, at.1, at.2], "blocks": blocks.iter().map(|p| [p.0, p.1, p.2]).collect::<Vec<_>>() }));
+        if let Some(v) = reply.and_then(|r| serde_json::from_str::<Vec<(i32, i32, i32)>>(&r).ok()) { *blocks = v; }
+        let _ = ok;
+    }
+
+    fn on_entity_tame(&self, server: &Server, player: &PlayerInfo, mob: i64, kind: &str) -> bool {
+        self.ask(server, json!({ "event": "entity_tame", "player": player_json(player), "mob": mob, "kind": kind }))
+    }
+
+    fn on_entity_breed(&self, server: &Server, kind: &str, parents: (i64, i64)) -> bool {
+        self.ask(server, json!({ "event": "entity_breed", "kind": kind, "parents": [parents.0, parents.1] }))
+    }
+
+    fn on_portal_create(&self, server: &Server, player: &PlayerInfo, kind: &str) -> bool {
+        self.ask(server, json!({ "event": "portal_create", "player": player_json(player), "kind": kind }))
+    }
+
+    fn on_mob_damage(&self, server: &Server, mob: i64, kind: &str, damage: f32, from: (f32, f32, f32)) -> bool {
+        self.ask(server, json!({ "event": "mob_damage", "mob": mob, "kind": kind, "damage": damage, "from": [from.0, from.1, from.2] }))
+    }
+
+    fn on_inventory_action(&self, server: &Server, player: &PlayerInfo, action: &str, container: &str) -> bool {
+        self.ask(server, json!({ "event": "inventory_action", "player": player_json(player), "action": action, "container": container }))
+    }
+
+    fn on_chunk_load(&self, server: &Server, player: &PlayerInfo, chunk: (i32, i32)) {
+        self.notify(server, json!({ "event": "chunk_load", "player": player_json(player), "chunk": [chunk.0, chunk.1] }));
+    }
+
+    fn on_entity_click(&self, server: &Server, player: &PlayerInfo, entity: i64, attack: bool) {
+        self.notify(server, json!({ "event": "entity_click", "player": player_json(player), "entity": entity, "attack": attack }));
+    }
+
 }
 
 #[cfg(test)]
@@ -344,6 +526,13 @@ mod tests {
         assert!(p.commands.is_empty());
         let server = Server::new();
         assert!(!p.ask(&server, json!({ "event": "block_break" })), "the plugin said no");
+        // every event reaches runtime plugins, not just the first few
+        let me = crate::players::tests::sample(1);
+        assert!(!p.on_craft(&server, &me, "minecraft:stick", 4));
+        assert!(!p.on_block_grow(&server, (0, 64, 0), "minecraft:wheat", "minecraft:wheat"));
+        let mut xp = 5;
+        p.on_xp_change(&server, &me, &mut xp);
+        assert_eq!(xp, 5, "no reply leaves it alone");
         assert!(load("junk", b"not wasm").is_err());
     }
 }

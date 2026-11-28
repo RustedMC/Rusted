@@ -46,6 +46,7 @@ See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands
   (also runtime plugins in `plugins/*.wasm`, about 60 events, camera control and NPC dialogs)
 - ✅ **0.6.1** Furnaces and brewing stands keep their progress over a restart
 - ✅ **0.6.2** Fire Protection works against lava and fire
+- ✅ **0.6.3** Runtime plugins get every event
 
 ## 1.0: stable
 

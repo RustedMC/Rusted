@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.3
+
+- Runtime plugins (`.wasm`) get every server event now, not just the first 16: crafting, fishing, mob spawns and deaths, explosions, signs, buckets, beds, XP, ticks and more. See [Runtime plugins](plugins/runtime.md) for the full list.
+
 ## 0.6.2
 
 - Fire Protection and Protection now reduce lava and fire damage, like vanilla.

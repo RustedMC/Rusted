@@ -3591,7 +3591,6 @@ impl Mobs {
     }
 
     /// Each chunk near a player gets one roll for a herd on grass; hostiles via spawn_hostiles.
-    // TODO: save mobs and rolled chunks, they reroll after a restart
     pub fn spawn_near_players(&self, server: &Server) {
         // Overworld: Bedrock's spawn rules (spawning.rs). Nether and End: the older spawner.
         crate::spawning::tick(server, &mut || self.rand());

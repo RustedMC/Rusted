@@ -679,7 +679,6 @@ fn post(p: &Piece, l: &mut Lvl, random: &mut NukkitRandom, cb: &BBox) {
             p.place(l, k.fence, 4, 8, 8, cb);
             let (vx, vy, vz) = (p.wx(3, 5), p.wy(5), p.wz(3, 5));
             if cb.inside(vx, vy, vz) {
-                // TODO: no blaze spawner block entity yet
                 l.set(vx, vy, vz, k.spawner);
             }
             for x in 0..=6 {
@@ -886,7 +885,6 @@ fn post(p: &Piece, l: &mut Lvl, random: &mut NukkitRandom, cb: &BBox) {
             p.fill(l, cb, 1, 3, 4, 1, 4, 4, k.fence, k.fence);
             p.fill(l, cb, 3, 3, 4, 3, 4, 4, k.fence, k.fence);
             if p.chest && cb.inside(p.wx(1, 3), p.wy(2), p.wz(1, 3)) {
-                // TODO: chest loot (needs block entities)
                 p.place(l, k.chest(p.orient), 1, 2, 3, cb);
             }
             p.fill(l, cb, 0, 6, 0, 4, 6, 4, k.bricks, k.bricks);
@@ -907,7 +905,6 @@ fn post(p: &Piece, l: &mut Lvl, random: &mut NukkitRandom, cb: &BBox) {
             p.fill(l, cb, 1, 3, 4, 1, 4, 4, k.fence, k.fence);
             p.fill(l, cb, 3, 3, 4, 3, 4, 4, k.fence, k.fence);
             if p.chest && cb.inside(p.wx(3, 3), p.wy(2), p.wz(3, 3)) {
-                // TODO: chest loot (needs block entities)
                 p.place(l, k.chest(p.orient), 3, 2, 3, cb);
             }
             p.fill(l, cb, 0, 6, 0, 4, 6, 4, k.bricks, k.bricks);

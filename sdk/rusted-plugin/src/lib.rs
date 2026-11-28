@@ -23,7 +23,8 @@
 //! Events: server_start, server_stop, join, leave, chat (message), command_preprocess (line),
 //! command (command, args), block_break / block_place (pos, block), interact (pos, item),
 //! player_damage (cause, amount), player_death (message), respawn, sneak (on), mount (mob),
-//! trade (villager, index, times). Player events carry `player`: id, name, xuid, pos, rot.
+//! trade (villager, index, times), and every other server event (see the runtime plugins
+//! page of the docs). Player events carry `player`: id, name, xuid, pos, rot.
 
 pub use serde_json::Value;
 
