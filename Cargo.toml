@@ -24,3 +24,5 @@ serde_json = "1"
 # Resource packs: reading .mcpack zips and the hash the game checks them against.
 zip = { version = "2", default-features = false, features = ["deflate"] }
 sha2 = "0.10"
+# Runtime plugins: plugins/*.wasm, sandboxed (see src/wasm.rs).
+wasmi = { version = "2.0.3", default-features = false, features = ["std", "stable", "validate", "auto-dispatch"] }

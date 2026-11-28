@@ -12,6 +12,7 @@
 # Plugins
 
 - [Your first plugin](plugins/first-plugin.md)
+- [Runtime plugins (.wasm)](plugins/runtime.md)
 - [Events](plugins/events.md)
 - [The server handle](plugins/server.md)
 - [Commands](plugins/commands.md)

@@ -1,0 +1,18 @@
+[package]
+name = "hello"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Build: cargo build --release --target wasm32-unknown-unknown
+# Then copy target/wasm32-unknown-unknown/release/hello.wasm into the server's plugins/ folder.
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+rusted-plugin = { path = "../../sdk/rusted-plugin" }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

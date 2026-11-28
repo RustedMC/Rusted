@@ -42,9 +42,9 @@ See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands
 
 ## 0.6: servers and plugins
 
-- ⏳ **0.6.0** The remaining vanilla commands (`/execute` came early, in 0.5.0)
-- ⏳ **0.6.1** Plugins loaded at runtime, more events
-- ⏳ **0.6.2** Camera control, NPC dialogs
+- ✅ **0.6.0** The remaining vanilla commands, carver caves, canyons and dungeons, every PNX world feature, trial spawners and vaults, villager gossip
+- ✅ **0.6.1** Plugins loaded at runtime (`plugins/*.wasm`, sandboxed), about 60 events
+- ✅ **0.6.2** Camera control, NPC dialogs
 
 ## 1.0: stable
 

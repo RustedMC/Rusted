@@ -69,6 +69,7 @@ mod world;
 mod multiworld;
 mod maps;
 mod trial;
+mod wasm;
 
 // Rusted: minimal Bedrock server. Based on bedrock-rs examples/server.rs (Apache-2.0).
 use bedrock::auth::Login;

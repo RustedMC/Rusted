@@ -1,0 +1,9 @@
+[package]
+name = "rusted-plugin"
+version = "0.1.0"
+edition = "2024"
+license = "LGPL-3.0-only"
+description = "Write Rusted server plugins that load at runtime as .wasm files"
+
+[dependencies]
+serde_json = "1"

@@ -39,3 +39,8 @@ TEST-LIST.md
 /resource_packs/
 crash-reports/
 !examples/**/manifest.json
+
+# Runtime plugins on this server, and plugin build output
+/plugins/
+/sdk/*/target/
+/examples/*/target/
