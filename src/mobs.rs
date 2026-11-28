@@ -3023,6 +3023,9 @@ impl Mobs {
     /// Bow/trident release (PNX ItemBow/ItemTrident). Arrows do 3 blocks a game tick at full draw.
     #[allow(clippy::too_many_arguments)]
     pub fn player_shoot(&self, server: &Server, owner: i64, eye: (f32, f32, f32), rot: (f32, f32), force: f32, trident: bool, power: i16, punch: i16, flame: bool, drop: Option<bedrock::protocol::v2168::types::NetworkItemStackDescriptorV2>, weapon: &[u8]) {
+        if let Some(p) = server.get(owner) {
+            server.plugins.projectile_launch(server, &p, trident, force);
+        }
         let (pitch, yaw) = (rot.0.to_radians(), rot.1.to_radians());
         let dir = (-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos());
         let speed = if trident { 5.0 } else { 6.0 * force }; // per 10 Hz tick

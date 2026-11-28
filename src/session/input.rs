@@ -52,18 +52,27 @@ impl Session {
                 Input::StopSwimming => self.swimming = false,
                 Input::StartCrawling => self.crawling = true,
                 Input::StopCrawling => self.crawling = false,
-                Input::StartFlying => self.flying = true,
+                Input::StartFlying | Input::StopFlying => {
+                    self.flying = matches!(flag, Input::StartFlying);
+                    if let Some(me) = self.server.get(self.id) {
+                        self.server.plugins.toggle_flight(&self.server, &me, self.flying);
+                    }
+                }
                 Input::StartGliding => self.gliding = true,
                 Input::StopGliding => self.gliding = false,
-                Input::StopFlying => self.flying = false,
                 Input::StartSprinting | Input::StopSprinting => {
                     self.sprinting = matches!(flag, Input::StartSprinting);
                     if let Some(me) = self.server.get(self.id) {
                         self.server.plugins.sprint(&self.server, &me, self.sprinting);
                     }
                 }
-                Input::StartJumping if survival_like(&self.mode) && self.food.exhaust(if self.sprinting { 0.2 } else { 0.05 }) => {
-                    let _ = self.conn.send(&[self.food.packet(self.id)]).await;
+                Input::StartJumping => {
+                    if let Some(me) = self.server.get(self.id) {
+                        self.server.plugins.jump(&self.server, &me);
+                    }
+                    if survival_like(&self.mode) && self.food.exhaust(if self.sprinting { 0.2 } else { 0.05 }) {
+                        let _ = self.conn.send(&[self.food.packet(self.id)]).await;
+                    }
                 }
                 _ => {}
             }

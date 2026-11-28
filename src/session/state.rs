@@ -202,7 +202,14 @@ impl Session {
     }
 
     pub async fn on_batch(&mut self, batch: Vec<Protocol>) -> Flow {
+        let watch = self.server.plugins.has_any();
         for packet in batch {
+            if watch
+                && let Some(me) = self.server.get(self.id)
+                && !self.server.plugins.packet_receive(&self.server, &me, &crate::plugin::packet_name(&packet))
+            {
+                continue;
+            }
             self.on_packet(packet).await?;
         }
         GO
@@ -213,6 +220,9 @@ impl Session {
             Protocol::RequestChunkRadiusPacket(r) => return self.on_chunk_radius(&r).await,
             Protocol::PlayerAuthInputPacket(input) => return self.on_input(&input).await,
             Protocol::ModalFormResponsePacket(f) => {
+                if let Some(me) = self.server.get(self.id) {
+                    self.server.plugins.form_response(&self.server, &me, f.form_id, f.json_response.as_deref());
+                }
                 ui::answered(&self.server, self.id, f.form_id, f.json_response.as_deref());
             }
             Protocol::NpcRequestPacket(r) => {
@@ -326,6 +336,11 @@ impl Session {
                 let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(Protocol::MobEquipmentPacket(m)) });
             }
             Protocol::AnimatePacket(a) => {
+                if let Some(me) = self.server.get(self.id)
+                    && !self.server.plugins.animation(&self.server, &me, a.action.clone() as i32)
+                {
+                    return GO;
+                }
                 let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(Protocol::AnimatePacket(a)) });
             }
             Protocol::BlockPickRequestPacket(r) => self.on_block_pick(&r).await,

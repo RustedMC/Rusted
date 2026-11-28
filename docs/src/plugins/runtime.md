@@ -109,6 +109,14 @@ Each event is JSON. `e.kind()` tells you which one; player events have `player` 
 | `inventory_action` | `action`, `container` | cancellable |
 | `chunk_load` | `chunk` |  |
 | `entity_click` | `entity`, `attack` |  |
+| `jump` |  |  |
+| `toggle_flight` | `flying` |  |
+| `animation` | `action` | cancellable (hides it from other players) |
+| `form_response` | `form_id`, `answer` | `answer` is the raw JSON, null when closed |
+| `packet_receive` | `packet` | cancellable; every packet but movement (use `move`) |
+| `world_save` |  |  |
+| `liquid_flow` | `pos`, `block` | cancellable |
+| `projectile_launch` | `trident`, `force` |  |
 
 ## What a plugin can do
 

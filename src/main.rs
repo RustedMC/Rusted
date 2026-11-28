@@ -281,6 +281,9 @@ async fn main() {
                     }
                 }
                 for ((x, y, z), b) in perf::time("liquids", || server.fluids.tick(&server.world, turn % 6 == 0)) {
+                    if server.plugins.has_any() && fluids::is_fluid(b) && !server.plugins.liquid_flow(&server, (x, y, z), blocks::entry(b).map_or("", |e| e.name.as_str())) {
+                        continue;
+                    }
                     // A torch, flower or rail the water washed away drops as an item.
                     let old = server.world.get(x, y, z);
                     if old != world::AIR && !fluids::is_fluid(old) && fluids::is_fluid(b) {
@@ -412,8 +415,10 @@ async fn main() {
             loop {
                 tick.tick().await;
                 perf::beat("autosave");
-                if let Err(e) = perf::time("world save", || world.save_if_dirty(&path)) {
-                    println!("autosave failed: {e}");
+                match perf::time("world save", || world.save_if_dirty(&path)) {
+                    Ok(true) => srv.plugins.world_save(&srv),
+                    Ok(false) => {}
+                    Err(e) => println!("autosave failed: {e}"),
                 }
                 if let Err(e) = chests.save_if_dirty(&chests_path) {
                     println!("container autosave failed: {e}");
@@ -444,7 +449,10 @@ async fn main() {
                     println!("final mob save failed: {e}");
                 }
                 match world.save_if_dirty(&path) {
-                    Ok(_) => println!("world saved, shutting down"),
+                    Ok(_) => {
+                        srv.plugins.world_save(&srv);
+                        println!("world saved, shutting down");
+                    }
                     Err(e) => println!("final save failed: {e}"),
                 }
                 std::process::exit(0);

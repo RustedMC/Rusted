@@ -491,6 +491,42 @@ impl Plugin for WasmPlugin {
         self.notify(server, json!({ "event": "entity_click", "player": player_json(player), "entity": entity, "attack": attack }));
     }
 
+    fn on_jump(&self, server: &Server, player: &PlayerInfo) {
+        self.notify(server, json!({ "event": "jump", "player": player_json(player) }));
+    }
+
+    fn on_toggle_flight(&self, server: &Server, player: &PlayerInfo, flying: bool) {
+        self.notify(server, json!({ "event": "toggle_flight", "player": player_json(player), "flying": flying }));
+    }
+
+    fn on_animation(&self, server: &Server, player: &PlayerInfo, action: i32) -> bool {
+        self.ask(server, json!({ "event": "animation", "player": player_json(player), "action": action }))
+    }
+
+    fn on_form_response(&self, server: &Server, player: &PlayerInfo, form_id: u32, answer: Option<&str>) {
+        self.notify(server, json!({ "event": "form_response", "player": player_json(player), "form_id": form_id, "answer": answer }));
+    }
+
+    fn on_packet_receive(&self, server: &Server, player: &PlayerInfo, packet: &str) -> bool {
+        // 20 a second per player; runtime plugins get `move` for those instead.
+        if packet == "PlayerAuthInputPacket" {
+            return true;
+        }
+        self.ask(server, json!({ "event": "packet_receive", "player": player_json(player), "packet": packet }))
+    }
+
+    fn on_world_save(&self, server: &Server) {
+        self.notify(server, json!({ "event": "world_save" }));
+    }
+
+    fn on_liquid_flow(&self, server: &Server, pos: (i32, i32, i32), block: &str) -> bool {
+        self.ask(server, json!({ "event": "liquid_flow", "pos": [pos.0, pos.1, pos.2], "block": block }))
+    }
+
+    fn on_projectile_launch(&self, server: &Server, player: &PlayerInfo, trident: bool, force: f32) {
+        self.notify(server, json!({ "event": "projectile_launch", "player": player_json(player), "trident": trident, "force": force }));
+    }
+
 }
 
 #[cfg(test)]

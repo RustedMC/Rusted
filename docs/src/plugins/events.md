@@ -106,6 +106,14 @@ Mob positions are `(f32, f32, f32)`.
 |---|---|
 | `on_server_start(server)` | Worlds loaded, about to accept players. A good place to start [scheduled tasks](scheduler.md). |
 | `on_server_stop(server)` | Server stopping, before the final save |
+| `on_jump(server, player)` | Player jumped | |
+| `on_toggle_flight(server, player, flying: bool)` | Started or stopped flying | |
+| `on_animation(server, player, action: i32)` | Arm swing and other animations | yes |
+| `on_form_response(server, player, form_id: u32, answer: Option<&str>)` | Answered or closed a form | |
+| `on_packet_receive(server, player, packet: &str)` | Any packet from the player, by name | yes |
+| `on_world_save(server)` | World saved | |
+| `on_liquid_flow(server, pos, block: &str)` | Water or lava about to flow | yes |
+| `on_projectile_launch(server, player, trident: bool, force: f32)` | Fired an arrow, trident or rocket | |
 
 ## Example: a no-grief zone
 

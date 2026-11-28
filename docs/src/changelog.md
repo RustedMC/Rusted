@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.7
+
+- 8 more plugin events (67 now): `on_jump`, `on_toggle_flight`, `on_animation` (cancellable), `on_form_response`, `on_packet_receive` (every packet by name, cancellable), `on_world_save`, `on_liquid_flow` (cancellable) and `on_projectile_launch`. Runtime `.wasm` plugins get them too.
+
 ## 0.6.6
 
 **Load testing**

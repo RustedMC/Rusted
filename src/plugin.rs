@@ -33,6 +33,29 @@ pub enum Target {
     Player(i64),
 }
 
+/// A packet's name ("TextPacket") from its Debug output, stopping at the first `(` so big
+/// packets (chunks) aren't formatted.
+pub fn packet_name<T: std::fmt::Debug>(p: &T) -> String {
+    struct Name(String);
+    impl std::fmt::Write for Name {
+        fn write_str(&mut self, s: &str) -> std::fmt::Result {
+            match s.find(['(', ' ', '{']) {
+                Some(i) => {
+                    self.0.push_str(&s[..i]);
+                    Err(std::fmt::Error)
+                }
+                None => {
+                    self.0.push_str(s);
+                    Ok(())
+                }
+            }
+        }
+    }
+    let mut n = Name(String::new());
+    let _ = std::fmt::write(&mut n, format_args!("{p:?}"));
+    n.0
+}
+
 /// Who gets a permission when nobody granted or denied it in `permissions.txt`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Access {
@@ -366,6 +389,37 @@ pub trait Plugin: Send + Sync {
     /// one of Rusted's mobs: a plugin's own NPC, say.
     fn on_entity_click(&self, _server: &Server, _player: &PlayerInfo, _entity: i64, _attack: bool) {}
 
+    /// Player jumped.
+    fn on_jump(&self, _server: &Server, _player: &PlayerInfo) {}
+
+    /// Player started (`true`) or stopped flying.
+    fn on_toggle_flight(&self, _server: &Server, _player: &PlayerInfo, _flying: bool) {}
+
+    /// Player swung their arm (or another animation, by Bedrock action id). Return false to hide it from others.
+    fn on_animation(&self, _server: &Server, _player: &PlayerInfo, _action: i32) -> bool {
+        true
+    }
+
+    /// Player answered (or closed, `answer` None) form `form_id`, raw JSON as the client sent it.
+    fn on_form_response(&self, _server: &Server, _player: &PlayerInfo, _form_id: u32, _answer: Option<&str>) {}
+
+    /// A packet arrived from the player (`packet` is its name, like "TextPacket"). Return false
+    /// to drop it before the server handles it. Only called when a plugin is loaded.
+    fn on_packet_receive(&self, _server: &Server, _player: &PlayerInfo, _packet: &str) -> bool {
+        true
+    }
+
+    /// The world was saved (autosave or shutdown).
+    fn on_world_save(&self, _server: &Server) {}
+
+    /// Water or lava is about to flow into `pos`, becoming `block`. Return false to stop it.
+    fn on_liquid_flow(&self, _server: &Server, _pos: (i32, i32, i32), _block: &str) -> bool {
+        true
+    }
+
+    /// Player fired a projectile (arrow, trident, crossbow bolt or rocket) with `force` 0-1.
+    fn on_projectile_launch(&self, _server: &Server, _player: &PlayerInfo, _trident: bool, _force: f32) {}
+
     /// (name, description) of commands this plugin handles, for autocomplete.
     fn commands(&self) -> Vec<(&'static str, &'static str)> {
         vec![]
@@ -615,6 +669,42 @@ impl Plugins {
 
     pub fn glide(&self, s: &Server, p: &PlayerInfo, on: bool) {
         self.each(|pl| pl.on_glide(s, p, on));
+    }
+
+    pub fn has_any(&self) -> bool {
+        !self.list.is_empty()
+    }
+
+    pub fn jump(&self, s: &Server, p: &PlayerInfo) {
+        self.each(|pl| pl.on_jump(s, p));
+    }
+
+    pub fn toggle_flight(&self, s: &Server, p: &PlayerInfo, on: bool) {
+        self.each(|pl| pl.on_toggle_flight(s, p, on));
+    }
+
+    pub fn animation(&self, s: &Server, p: &PlayerInfo, action: i32) -> bool {
+        self.cancellable(|pl| pl.on_animation(s, p, action))
+    }
+
+    pub fn form_response(&self, s: &Server, p: &PlayerInfo, form_id: u32, answer: Option<&str>) {
+        self.each(|pl| pl.on_form_response(s, p, form_id, answer));
+    }
+
+    pub fn packet_receive(&self, s: &Server, p: &PlayerInfo, packet: &str) -> bool {
+        self.cancellable(|pl| pl.on_packet_receive(s, p, packet))
+    }
+
+    pub fn world_save(&self, s: &Server) {
+        self.each(|pl| pl.on_world_save(s));
+    }
+
+    pub fn liquid_flow(&self, s: &Server, pos: (i32, i32, i32), block: &str) -> bool {
+        self.cancellable(|pl| pl.on_liquid_flow(s, pos, block))
+    }
+
+    pub fn projectile_launch(&self, s: &Server, p: &PlayerInfo, trident: bool, force: f32) {
+        self.each(|pl| pl.on_projectile_launch(s, p, trident, force));
     }
 
     pub fn swim(&self, s: &Server, p: &PlayerInfo, on: bool) {
@@ -1005,6 +1095,18 @@ impl Plugin for Welcome {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn packet_names_skip_the_contents() {
+        #[derive(Debug)]
+        #[allow(dead_code)]
+        enum P {
+            TextPacket(Vec<u8>),
+            Plain,
+        }
+        assert_eq!(super::packet_name(&P::TextPacket(vec![1; 100_000])), "TextPacket");
+        assert_eq!(super::packet_name(&P::Plain), "Plain");
+    }
+
     use super::*;
 
     struct NoDirt;
