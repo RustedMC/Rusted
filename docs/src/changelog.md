@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.18
+
+**Runtime plugins can do a lot more**
+- `.wasm` plugins could only chat and run commands. Now they can place blocks, give items, teleport players, spawn mobs, play sounds, give effects, hurt, give XP, kick, show titles and actionbars, and open forms.
+- They can ask the server things: what block is somewhere, who's online, where a player is, and the time.
+- Each plugin gets its own saved data (`get_data` and `set_data`), kept over restarts.
+- The example plugin shows them off: a once-per-player `/kit`, a join counter and a welcome title.
+
 ## 0.6.17
 
 **Item frames**

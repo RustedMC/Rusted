@@ -299,3 +299,20 @@ Events whose last field is a value to change (`damage_modify`, `block_drops`, `m
 | `run_as(player_id, line)` | runs a command as a player |
 | `reply(text)` | answers a command, or edits a chat or death message |
 | `register_command(name, description)` | adds a command (in `init` only) |
+| `set_block(x, y, z, block)` | places a block ("stone" or "minecraft:stone") |
+| `give(player_id, item, count)` | gives items, up to a full stack |
+| `teleport(player_id, x, y, z)` | moves a player |
+| `spawn_mob(kind, x, y, z)` | spawns a mob ("zombie") |
+| `play_sound(name, x, y, z)` | plays a sound there |
+| `effect(player_id, id, amplifier, seconds)` | gives an effect by Bedrock id |
+| `damage(player_id, amount)` | hurts a player |
+| `give_xp(player_id, points)` | gives (or takes) experience |
+| `kick(player_id, message)` | kicks a player |
+| `title(player_id, text)` / `actionbar(player_id, text)` | big screen text, or text over the hotbar |
+| `show_form(player_id, form_id, json)` | opens a Bedrock form; the answer arrives as a `form_response` event (use ids over 1000000) |
+| `query(request)` | asks the server: `"block x y z"`, `"player <name>"`, `"players"`, `"time"` |
+| `get_data(key)` / `set_data(key, value)` | the plugin's own saved data, kept in `plugins/<name>.data.json` (up to 1 MB) |
+
+Actions happen right after your event handler returns, in order. Queries answer straight away.
+The example plugin in `examples/wasm-hello` uses most of these: a once-per-player `/kit`, a
+join counter in saved data and a welcome title.

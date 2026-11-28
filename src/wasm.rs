@@ -8,6 +8,14 @@
 //!   run_as(player_id: i64, line) · register_command(name, description) (in rusted_init only)
 //!   reply(text): the answer to a command, or the new text of an editable event (chat, a
 //!   command line before it runs).
+//!   set_block(x, y, z, name) · give(player, item, count) · teleport(player, x, y, z)
+//!   spawn_mob(kind, x, y, z) · play_sound(name, x, y, z) · effect(player, id, amplifier, secs)
+//!   damage(player, amount) · give_xp(player, points) · kick(player, msg) · title(player, text)
+//!   actionbar(player, text) · show_form(player, form_id, json): the answer comes back as a
+//!   form_response event.
+//!   query(request) -> length, then answer(ptr) copies the answer into a buffer that long.
+//!   Requests: "block x y z", "player <name>", "players", "time", "get <key>", "set <key> <value>"
+//!   (a plugin's own saved data, plugins/<name>.data.json).
 //! Calls back into the server are queued and carried out once the plugin has returned, so a
 //! plugin can't block the server or loop back into itself. Each call gets a fuel budget, so a
 //! plugin stuck in a loop is cut off instead of freezing the server.
@@ -30,6 +38,17 @@ enum Action {
     Broadcast(String),
     Console(String),
     RunAs(i64, String),
+    SetBlock((i32, i32, i32), String),
+    Give(i64, String, i32),
+    Teleport(i64, (f32, f32, f32)),
+    Spawn(String, (f32, f32, f32)),
+    Sound(String, (f32, f32, f32)),
+    Effect(i64, i32, i32, i32),
+    Damage(i64, f32),
+    Xp(i64, i32),
+    Kick(i64, String),
+    Title(i64, String, bool),
+    Form(i64, u32, String),
 }
 
 #[derive(Default)]
@@ -38,6 +57,58 @@ struct Host {
     reply: Option<String>,
     commands: Vec<(String, String)>,
     initializing: bool,
+    /// The plugin's name, for its data file.
+    name: String,
+    /// Set for the length of each call, so queries can look at the world.
+    server: Option<Server>,
+    /// The last query's answer, waiting for `answer(ptr)`.
+    answer: String,
+}
+
+/// A plugin's saved data, plugins/<name>.data.json (a flat object of strings).
+fn data_path(name: &str) -> std::path::PathBuf {
+    std::path::Path::new("plugins").join(format!("{name}.data.json"))
+}
+
+/// Biggest data file a plugin may keep, so a buggy one can't fill the disk.
+const MAX_DATA: usize = 1 << 20;
+
+/// Answers one query (see the module docs). Unknown or bad requests answer "".
+fn answer(h: &Host, request: &str) -> String {
+    let f: Vec<&str> = request.split(' ').collect();
+    let num = |i: usize| f.get(i).and_then(|v| v.parse::<i32>().ok());
+    let data = || -> serde_json::Map<String, Value> {
+        std::fs::read_to_string(data_path(&h.name)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+    };
+    match (f.first().copied(), &h.server) {
+        (Some("block"), Some(s)) => match (num(1), num(2), num(3)) {
+            (Some(x), Some(y), Some(z)) => crate::blocks::entry(s.world.get(x, y, z)).map_or(String::new(), |e| e.name.clone()),
+            _ => String::new(),
+        },
+        (Some("player"), Some(s)) => f.get(1).and_then(|n| s.find_by_name(n)).and_then(|id| s.get(id)).map_or(String::new(), |p| player_json(&p).to_string()),
+        (Some("players"), Some(s)) => Value::Array(s.all().iter().map(player_json).collect()).to_string(),
+        (Some("time"), Some(s)) => s.time().to_string(),
+        (Some("get"), _) => f.get(1).and_then(|k| data().get(*k).and_then(|v| v.as_str().map(str::to_string))).unwrap_or_default(),
+        (Some("set"), _) if f.len() >= 2 && !f[1].is_empty() => {
+            let mut d = data();
+            let value = f[2..].join(" ");
+            if value.is_empty() {
+                d.remove(f[1]);
+            } else {
+                d.insert(f[1].to_string(), Value::String(value));
+            }
+            let text = Value::Object(d).to_string();
+            if text.len() > MAX_DATA {
+                return "too big".into();
+            }
+            let _ = std::fs::create_dir_all("plugins");
+            match std::fs::write(data_path(&h.name), text) {
+                Ok(()) => "ok".into(),
+                Err(_) => String::new(),
+            }
+        }
+        _ => String::new(),
+    }
 }
 
 struct Guest {
@@ -96,6 +167,72 @@ fn linker(engine: &Engine) -> Result<Linker<Host>, wasmi::Error> {
             c.data_mut().reply = Some(s);
         }
     })?;
+    l.func_wrap("rusted", "set_block", |mut c: Caller<'_, Host>, x: i32, y: i32, z: i32, p: i32, n: i32| {
+        if let Some(s) = read_str(&c, p, n) {
+            c.data_mut().actions.push(Action::SetBlock((x, y, z), s));
+        }
+    })?;
+    l.func_wrap("rusted", "give", |mut c: Caller<'_, Host>, to: i64, p: i32, n: i32, count: i32| {
+        if let Some(s) = read_str(&c, p, n) {
+            c.data_mut().actions.push(Action::Give(to, s, count));
+        }
+    })?;
+    l.func_wrap("rusted", "teleport", |mut c: Caller<'_, Host>, to: i64, x: f32, y: f32, z: f32| {
+        c.data_mut().actions.push(Action::Teleport(to, (x, y, z)));
+    })?;
+    l.func_wrap("rusted", "spawn_mob", |mut c: Caller<'_, Host>, p: i32, n: i32, x: f32, y: f32, z: f32| {
+        if let Some(s) = read_str(&c, p, n) {
+            c.data_mut().actions.push(Action::Spawn(s, (x, y, z)));
+        }
+    })?;
+    l.func_wrap("rusted", "play_sound", |mut c: Caller<'_, Host>, p: i32, n: i32, x: f32, y: f32, z: f32| {
+        if let Some(s) = read_str(&c, p, n) {
+            c.data_mut().actions.push(Action::Sound(s, (x, y, z)));
+        }
+    })?;
+    l.func_wrap("rusted", "effect", |mut c: Caller<'_, Host>, to: i64, id: i32, amplifier: i32, secs: i32| {
+        c.data_mut().actions.push(Action::Effect(to, id, amplifier, secs));
+    })?;
+    l.func_wrap("rusted", "damage", |mut c: Caller<'_, Host>, to: i64, amount: f32| {
+        c.data_mut().actions.push(Action::Damage(to, amount));
+    })?;
+    l.func_wrap("rusted", "give_xp", |mut c: Caller<'_, Host>, to: i64, points: i32| {
+        c.data_mut().actions.push(Action::Xp(to, points));
+    })?;
+    l.func_wrap("rusted", "kick", |mut c: Caller<'_, Host>, to: i64, p: i32, n: i32| {
+        if let Some(s) = read_str(&c, p, n) {
+            c.data_mut().actions.push(Action::Kick(to, s));
+        }
+    })?;
+    l.func_wrap("rusted", "title", |mut c: Caller<'_, Host>, to: i64, p: i32, n: i32| {
+        if let Some(s) = read_str(&c, p, n) {
+            c.data_mut().actions.push(Action::Title(to, s, false));
+        }
+    })?;
+    l.func_wrap("rusted", "actionbar", |mut c: Caller<'_, Host>, to: i64, p: i32, n: i32| {
+        if let Some(s) = read_str(&c, p, n) {
+            c.data_mut().actions.push(Action::Title(to, s, true));
+        }
+    })?;
+    l.func_wrap("rusted", "show_form", |mut c: Caller<'_, Host>, to: i64, id: i32, p: i32, n: i32| {
+        if let Some(s) = read_str(&c, p, n) {
+            c.data_mut().actions.push(Action::Form(to, id as u32, s));
+        }
+    })?;
+    l.func_wrap("rusted", "query", |mut c: Caller<'_, Host>, p: i32, n: i32| -> i32 {
+        let Some(req) = read_str(&c, p, n) else { return 0 };
+        let a = answer(c.data(), &req);
+        let len = a.len() as i32;
+        c.data_mut().answer = a;
+        len
+    })?;
+    l.func_wrap("rusted", "answer", |mut c: Caller<'_, Host>, p: i32| {
+        let a = std::mem::take(&mut c.data_mut().answer);
+        if let Some(Extern::Memory(mem)) = c.get_export("memory") {
+            // a bad pointer just fails to write; the plugin can't reach outside its memory
+            let _ = mem.write(&mut c, p as u32 as usize, a.as_bytes());
+        }
+    })?;
     l.func_wrap("rusted", "register_command", |mut c: Caller<'_, Host>, np: i32, nn: i32, dp: i32, dn: i32| {
         if let (Some(name), Some(desc)) = (read_str(&c, np, nn), read_str(&c, dp, dn)) {
             let h = c.data_mut();
@@ -114,7 +251,7 @@ pub fn load(name: &str, bytes: &[u8]) -> Result<WasmPlugin, String> {
     config.consume_fuel(true);
     let engine = Engine::new(&config);
     let module = Module::new(&engine, bytes).map_err(|e| format!("not a valid plugin: {e}"))?;
-    let mut store = Store::new(&engine, Host::default());
+    let mut store = Store::new(&engine, Host { name: name.to_string(), ..Host::default() });
     let instance = linker(&engine)
         .and_then(|l| l.instantiate_and_start(&mut store, &module))
         .map_err(|e| format!("could not start: {e}"))?;
@@ -159,6 +296,10 @@ pub fn load_dir(dir: &str) -> Vec<Box<dyn Plugin>> {
     out
 }
 
+fn name_of(item: &str) -> String {
+    if item.contains(':') { item.to_string() } else { format!("minecraft:{item}") }
+}
+
 fn player_json(p: &PlayerInfo) -> Value {
     json!({ "id": p.id, "name": p.name, "xuid": p.xuid, "pos": [p.pos.0, p.pos.1 - 1.62, p.pos.2], "rot": [p.rot.0, p.rot.1] })
 }
@@ -175,6 +316,7 @@ impl WasmPlugin {
             let Guest { store, instance, alloc, event, .. } = &mut *g;
             let _ = store.set_fuel(FUEL_PER_CALL);
             store.data_mut().reply = None;
+            store.data_mut().server = Some(server.clone());
             let len = i32::try_from(text.len()).map_err(|_| "event too big")?;
             let ptr = alloc.call(&mut *store, len).map_err(|e| e.to_string())?;
             let mem = instance.get_memory(&*store, "memory").ok_or("no memory")?;
@@ -208,6 +350,55 @@ impl WasmPlugin {
                 }
                 Action::RunAs(to, line) => {
                     let _ = server.events.send(Event::RunAs { to, line: line.trim_start_matches('/').to_string(), reply_to: to });
+                }
+                Action::SetBlock((x, y, z), name) => {
+                    if let Some(b) = crate::cmdargs::block_by_name(&name) {
+                        server.set_block(0, x, y, z, b);
+                    }
+                }
+                Action::Give(to, item, count) => {
+                    if let Some(it) = crate::items::item_by_name(&name_of(&item)) {
+                        let count = count.clamp(1, crate::items::max_stack(it.id) as i32) as i8;
+                        let _ = server.events.send(Event::Give { to, item: Box::new(crate::inventory::Stack { item: it, count, net_id: 0 }) });
+                    }
+                }
+                Action::Teleport(id, feet) => server.teleport(id, feet),
+                Action::Spawn(kind, at) => {
+                    if let Some(k) = crate::mobs::Kind::from_name(&kind) {
+                        server.mobs.spawn(server, k, at);
+                    }
+                }
+                Action::Sound(name, at) => {
+                    let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(crate::packets::play_sound(&name, at)) });
+                }
+                Action::Effect(to, effect, amplifier, secs) => {
+                    let _ = server.events.send(Event::Effect { to, effect, amplifier: amplifier.clamp(0, 255), ticks: secs.clamp(0, 1_000_000) * 20 });
+                }
+                Action::Damage(to, amount) if amount.is_finite() && amount > 0.0 => {
+                    let _ = server.events.send(Event::Damage { to, damage: crate::health::Damage::Magic(amount), knock: (0.0, 0.0, 0.0) });
+                }
+                Action::Damage(..) => {}
+                Action::Xp(to, points) => {
+                    let _ = server.events.send(Event::Xp { to, points });
+                }
+                Action::Kick(id, message) => server.kick(id, &message),
+                Action::Title(to, text, bar) => {
+                    use bedrock::protocol::v712::packets::{SetTitlePacket, TitleType};
+                    let packet = crate::Protocol::SetTitlePacket(Box::new(SetTitlePacket {
+                        title_type: if bar { TitleType::Actionbar } else { TitleType::Title },
+                        title_text: text.clone(),
+                        fade_in_time: 10,
+                        stay_time: 70,
+                        fade_out_time: 20,
+                        xuid: String::new(),
+                        platform_online_id: String::new(),
+                        filtered_title_text: text,
+                    }));
+                    let _ = server.events.send(Event::Packet { to, packet: Box::new(packet) });
+                }
+                Action::Form(to, form_id, json) => {
+                    let packet = crate::Protocol::ModalFormRequestPacket(Box::new(bedrock::protocol::v662::packets::ModalFormRequestPacket { form_id, form_ui_json: json }));
+                    let _ = server.events.send(Event::Packet { to, packet: Box::new(packet) });
                 }
             }
         }
@@ -1242,6 +1433,39 @@ mod tests {
         0x11, 0x01, 0x01, 0x7f, 0x23, 0x00, 0x21, 0x01, 0x23, 0x00, 0x20, 0x00, 0x6a, 0x24, 0x00, 0x20, 0x01, 0x0b,
         0x04, 0x00, 0x41, 0x00, 0x0b,
     ];
+
+    #[test]
+    fn queries_answer_and_data_saves() {
+        crate::blocks::init();
+        let name = format!("rusted_query_test_{}", std::process::id());
+        let h = Host { name: name.clone(), server: Some(Server::new()), ..Host::default() };
+        assert!(answer(&h, "time").parse::<i32>().is_ok());
+        assert_eq!(answer(&h, "players"), "[]");
+        assert!(!answer(&h, "block 0 -64 0").is_empty(), "a block name");
+        assert_eq!(answer(&h, "player Nobody"), "");
+        assert_eq!(answer(&h, "set coins 12 and more"), "ok");
+        assert_eq!(answer(&h, "get coins"), "12 and more");
+        answer(&h, "set coins");
+        assert_eq!(answer(&h, "get coins"), "", "an empty value deletes it");
+        assert_eq!(answer(&h, "nonsense"), "");
+        let _ = std::fs::remove_file(data_path(&name));
+    }
+
+    /// The example plugin, built for real (examples/wasm-hello), uses the new host calls.
+    /// Skipped when it hasn't been built.
+    #[test]
+    fn example_plugin_gives_a_kit_once() {
+        let Ok(bytes) = std::fs::read("examples/wasm-hello/target/wasm32-unknown-unknown/release/hello.wasm") else { return };
+        crate::blocks::init();
+        let name = format!("hello_test_{}", std::process::id());
+        let p = load(&name, &bytes).expect("the example loads");
+        assert!(p.commands.iter().any(|(c, _)| *c == "kit"));
+        let server = Server::new();
+        let me = crate::players::tests::sample(1);
+        assert_eq!(p.on_command(&server, &me, "kit", &[]).as_deref(), Some("§aEnjoy your kit!"));
+        assert_eq!(p.on_command(&server, &me, "kit", &[]).as_deref(), Some("§cYou already took your kit."), "saved data remembers");
+        let _ = std::fs::remove_file(data_path(&name));
+    }
 
     #[test]
     fn loads_a_plugin_and_it_can_cancel() {

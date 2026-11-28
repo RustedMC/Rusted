@@ -38,7 +38,105 @@ mod sys {
         pub fn run_as(to: i64, ptr: *const u8, len: usize);
         pub fn reply(ptr: *const u8, len: usize);
         pub fn register_command(np: *const u8, nn: usize, dp: *const u8, dn: usize);
+        pub fn set_block(x: i32, y: i32, z: i32, ptr: *const u8, len: usize);
+        pub fn give(to: i64, ptr: *const u8, len: usize, count: i32);
+        pub fn teleport(to: i64, x: f32, y: f32, z: f32);
+        pub fn spawn_mob(ptr: *const u8, len: usize, x: f32, y: f32, z: f32);
+        pub fn play_sound(ptr: *const u8, len: usize, x: f32, y: f32, z: f32);
+        pub fn effect(to: i64, id: i32, amplifier: i32, secs: i32);
+        pub fn damage(to: i64, amount: f32);
+        pub fn give_xp(to: i64, points: i32);
+        pub fn kick(to: i64, ptr: *const u8, len: usize);
+        pub fn title(to: i64, ptr: *const u8, len: usize);
+        pub fn actionbar(to: i64, ptr: *const u8, len: usize);
+        pub fn show_form(to: i64, form_id: i32, ptr: *const u8, len: usize);
+        pub fn query(ptr: *const u8, len: usize) -> i32;
+        pub fn answer(ptr: *mut u8);
     }
+}
+
+/// Puts a block (like "minecraft:stone", or "stone") at x, y, z.
+pub fn set_block(x: i32, y: i32, z: i32, block: &str) {
+    unsafe { sys::set_block(x, y, z, block.as_ptr(), block.len()) }
+}
+
+/// Gives a player items ("diamond" or "minecraft:diamond"); count is capped at a full stack.
+pub fn give(player: i64, item: &str, count: i32) {
+    unsafe { sys::give(player, item.as_ptr(), item.len(), count) }
+}
+
+/// Moves a player's feet to x, y, z.
+pub fn teleport(player: i64, x: f32, y: f32, z: f32) {
+    unsafe { sys::teleport(player, x, y, z) }
+}
+
+/// Spawns a mob ("zombie" or "minecraft:zombie") at x, y, z.
+pub fn spawn_mob(kind: &str, x: f32, y: f32, z: f32) {
+    unsafe { sys::spawn_mob(kind.as_ptr(), kind.len(), x, y, z) }
+}
+
+/// Plays a sound (like "random.levelup") at x, y, z for everyone near.
+pub fn play_sound(name: &str, x: f32, y: f32, z: f32) {
+    unsafe { sys::play_sound(name.as_ptr(), name.len(), x, y, z) }
+}
+
+/// Gives a player an effect by Bedrock id (1 speed, 10 regeneration...) for `secs` seconds.
+pub fn effect(player: i64, id: i32, amplifier: i32, secs: i32) {
+    unsafe { sys::effect(player, id, amplifier, secs) }
+}
+
+/// Hurts a player (magic damage, armor doesn't help).
+pub fn damage(player: i64, amount: f32) {
+    unsafe { sys::damage(player, amount) }
+}
+
+/// Gives (or, negative, takes) experience points.
+pub fn give_xp(player: i64, points: i32) {
+    unsafe { sys::give_xp(player, points) }
+}
+
+/// Kicks a player with a message.
+pub fn kick(player: i64, msg: &str) {
+    unsafe { sys::kick(player, msg.as_ptr(), msg.len()) }
+}
+
+/// Shows big text in the middle of a player's screen.
+pub fn title(player: i64, text: &str) {
+    unsafe { sys::title(player, text.as_ptr(), text.len()) }
+}
+
+/// Shows text above a player's hotbar.
+pub fn actionbar(player: i64, text: &str) {
+    unsafe { sys::actionbar(player, text.as_ptr(), text.len()) }
+}
+
+/// Opens a form (Bedrock form JSON). The answer comes back as a `form_response` event with
+/// this `form_id`; use ids above 1000000 so they don't clash with the server's own forms.
+pub fn show_form(player: i64, form_id: i32, json: &str) {
+    unsafe { sys::show_form(player, form_id, json.as_ptr(), json.len()) }
+}
+
+/// Asks the server something: "block x y z" (its name), "player <name>" (JSON or ""),
+/// "players" (JSON list), "time", "get <key>", "set <key> <value>" (your plugin's saved data;
+/// an empty value deletes the key).
+pub fn query(request: &str) -> String {
+    let len = unsafe { sys::query(request.as_ptr(), request.len()) };
+    if len <= 0 {
+        return String::new();
+    }
+    let mut buf = vec![0u8; len as usize];
+    unsafe { sys::answer(buf.as_mut_ptr()) };
+    String::from_utf8_lossy(&buf).into_owned()
+}
+
+/// Your plugin's saved value for `key` (kept in plugins/<name>.data.json), or "".
+pub fn get_data(key: &str) -> String {
+    query(&format!("get {key}"))
+}
+
+/// Saves `value` under `key` (no spaces in the key; "" deletes it).
+pub fn set_data(key: &str, value: &str) {
+    query(&format!("set {key} {value}"));
 }
 
 /// Writes a line to the server console, tagged with the plugin's name.
