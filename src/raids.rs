@@ -42,10 +42,14 @@ pub fn village_near(server: &Server, at: (f32, f32, f32)) -> Option<(f32, f32, f
 
 /// Starts a raid when a Bad Omen player reaches a village (unless one's already going).
 pub fn start(server: &Server, center: (f32, f32, f32)) -> bool {
-    let mut raids = RAIDS.lock();
-    if raids.iter().any(|r| (r.center.0 - center.0).powi(2) + (r.center.2 - center.2).powi(2) < 96.0 * 96.0) {
+    if RAIDS.lock().iter().any(|r| (r.center.0 - center.0).powi(2) + (r.center.2 - center.2).powi(2) < 96.0 * 96.0) {
         return false;
     }
+    // asked before locking, so the plugin can look at raids
+    if !server.plugins.raid_start(server, center) {
+        return false;
+    }
+    let mut raids = RAIDS.lock();
     let waves = match *crate::commands::DIFFICULTY.lock() {
         0 => return false,
         1 => 3,
@@ -78,6 +82,7 @@ pub fn tick(server: &Server, roll: u32) {
                 crate::ui::remove_boss_bar(server, p);
                 server.tell(p, "§cRaid - Defeat");
             }
+            crate::plugin::later(crate::plugin::Later::RaidEnd(r.center, false));
             finished.push(i);
             continue;
         }
@@ -88,6 +93,7 @@ pub fn tick(server: &Server, roll: u32) {
                     server.tell(p, "§aRaid - Victory");
                     let _ = server.events.send(Event::Effect { to: p, effect: crate::effects::HERO_OF_THE_VILLAGE, amplifier: 0, ticks: 48_000 });
                 }
+                crate::plugin::later(crate::plugin::Later::RaidEnd(r.center, true));
                 finished.push(i);
                 continue;
             }
@@ -110,6 +116,7 @@ pub fn tick(server: &Server, roll: u32) {
                 }
                 r.wave += 1;
                 r.wait = 15;
+                crate::plugin::later(crate::plugin::Later::RaidWave(r.center, r.wave as i32));
                 let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(crate::play_sound("raid.horn", r.center)) });
             }
         }

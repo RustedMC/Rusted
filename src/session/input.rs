@@ -50,8 +50,12 @@ impl Session {
             match flag {
                 Input::StartSwimming => self.swimming = true,
                 Input::StopSwimming => self.swimming = false,
-                Input::StartCrawling => self.crawling = true,
-                Input::StopCrawling => self.crawling = false,
+                Input::StartCrawling | Input::StopCrawling => {
+                    self.crawling = matches!(flag, Input::StartCrawling);
+                    if let Some(me) = self.server.get(self.id) {
+                        self.server.plugins.toggle_crawl(&self.server, &me, self.crawling);
+                    }
+                }
                 Input::StartFlying | Input::StopFlying => {
                     self.flying = matches!(flag, Input::StartFlying);
                     if let Some(me) = self.server.get(self.id) {
@@ -113,6 +117,7 @@ impl Session {
         if std::mem::take(&mut self.hp.landed) > 0.75 {
             let under = (feet.0, (pos.1 - 1.62 - 0.1).floor() as i32, feet.2);
             if blocks::entry(self.server.world.get(under.0, under.1, under.2)).is_some_and(|e| e.name == "minecraft:farmland")
+                && self.server.get(self.id).is_none_or(|me| self.server.plugins.farmland_trample(&self.server, &me, under))
                 && let Some(dirt) = blocks::any_state("minecraft:dirt")
             {
                 self.server.set_block(self.id, under.0, under.1, under.2, dirt);

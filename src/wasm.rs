@@ -611,6 +611,106 @@ impl Plugin for WasmPlugin {
         self.notify(server, json!({ "event": "chunk_unload", "player": player_json(player), "chunk": [chunk.0, chunk.1] }));
     }
 
+    fn on_toggle_crawl(&self, server: &Server, player: &PlayerInfo, crawling: bool) {
+        self.notify(server, json!({ "event": "toggle_crawl", "player": player_json(player), "crawling": crawling }));
+    }
+
+    fn on_player_spawn(&self, server: &Server, player: &PlayerInfo) {
+        self.notify(server, json!({ "event": "player_spawn", "player": player_json(player) }));
+    }
+
+    fn on_map_request(&self, server: &Server, player: &PlayerInfo, map: i64) -> bool {
+        self.ask(server, json!({ "event": "map_request", "player": player_json(player), "map": map }))
+    }
+
+    fn on_block_pick(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32), block: &str) -> bool {
+        self.ask(server, json!({ "event": "block_pick", "player": player_json(player), "pos": [pos.0, pos.1, pos.2], "block": block }))
+    }
+
+    fn on_lectern_page(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32), page: i32) {
+        self.notify(server, json!({ "event": "lectern_page", "player": player_json(player), "pos": [pos.0, pos.1, pos.2], "page": page }));
+    }
+
+    fn on_beacon_change(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32), primary: i32, secondary: i32) -> bool {
+        self.ask(server, json!({ "event": "beacon_change", "player": player_json(player), "pos": [pos.0, pos.1, pos.2], "primary": primary, "secondary": secondary }))
+    }
+
+    fn on_farmland_trample(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32)) -> bool {
+        self.ask(server, json!({ "event": "farmland_trample", "player": player_json(player), "pos": [pos.0, pos.1, pos.2] }))
+    }
+
+    fn on_crafter_craft(&self, server: &Server, pos: (i32, i32, i32), item: &str, count: i8) -> bool {
+        self.ask(server, json!({ "event": "crafter_craft", "pos": [pos.0, pos.1, pos.2], "item": item, "count": count }))
+    }
+
+    fn on_dispense(&self, server: &Server, pos: (i32, i32, i32), block: &str) -> bool {
+        self.ask(server, json!({ "event": "dispense", "pos": [pos.0, pos.1, pos.2], "block": block }))
+    }
+
+    fn on_note_play(&self, server: &Server, pos: (i32, i32, i32)) -> bool {
+        self.ask(server, json!({ "event": "note_play", "pos": [pos.0, pos.1, pos.2] }))
+    }
+
+    fn on_bell_ring(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.notify(server, json!({ "event": "bell_ring", "pos": [pos.0, pos.1, pos.2], "player": player }));
+    }
+
+    fn on_raid_start(&self, server: &Server, center: (f32, f32, f32)) -> bool {
+        self.ask(server, json!({ "event": "raid_start", "center": [center.0, center.1, center.2] }))
+    }
+
+    fn on_raid_wave(&self, server: &Server, center: (f32, f32, f32), wave: i32) {
+        self.notify(server, json!({ "event": "raid_wave", "center": [center.0, center.1, center.2], "wave": wave }));
+    }
+
+    fn on_raid_end(&self, server: &Server, center: (f32, f32, f32), victory: bool) {
+        self.notify(server, json!({ "event": "raid_end", "center": [center.0, center.1, center.2], "victory": victory }));
+    }
+
+    fn on_totem_use(&self, server: &Server, player: &PlayerInfo) -> bool {
+        self.ask(server, json!({ "event": "totem_use", "player": player_json(player) }))
+    }
+
+    fn on_sheep_shear(&self, server: &Server, player: i64, mob: i64) {
+        self.notify(server, json!({ "event": "sheep_shear", "player": player, "mob": mob }));
+    }
+
+    fn on_sheep_regrow(&self, server: &Server, mob: i64) {
+        self.notify(server, json!({ "event": "sheep_regrow", "mob": mob }));
+    }
+
+    fn on_leash(&self, server: &Server, player: i64, mob: i64, attached: bool) {
+        self.notify(server, json!({ "event": "leash", "player": player, "mob": mob, "attached": attached }));
+    }
+
+    fn on_villager_level_up(&self, server: &Server, villager: i64, tier: i32) {
+        self.notify(server, json!({ "event": "villager_level_up", "villager": villager, "tier": tier }));
+    }
+
+    fn on_spawner_spawn(&self, server: &Server, pos: (i32, i32, i32), kind: &str) -> bool {
+        self.ask(server, json!({ "event": "spawner_spawn", "pos": [pos.0, pos.1, pos.2], "kind": kind }))
+    }
+
+    fn on_creeper_power(&self, server: &Server, mob: i64) {
+        self.notify(server, json!({ "event": "creeper_power", "mob": mob }));
+    }
+
+    fn on_rcon_command(&self, server: &Server, addr: &str, line: &str) -> bool {
+        self.ask(server, json!({ "event": "rcon_command", "addr": addr, "line": line }))
+    }
+
+    fn on_console_command(&self, server: &Server, line: &str) -> bool {
+        self.ask(server, json!({ "event": "console_command", "line": line }))
+    }
+
+    fn on_furnace_smelt(&self, server: &Server, pos: (i32, i32, i32)) {
+        self.notify(server, json!({ "event": "furnace_smelt", "pos": [pos.0, pos.1, pos.2] }));
+    }
+
+    fn on_tnt_prime(&self, server: &Server, pos: (i32, i32, i32)) -> bool {
+        self.ask(server, json!({ "event": "tnt_prime", "pos": [pos.0, pos.1, pos.2] }))
+    }
+
 }
 
 #[cfg(test)]

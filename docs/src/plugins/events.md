@@ -135,6 +135,31 @@ Mob positions are `(f32, f32, f32)`.
 | `on_entity_transform(server, mob, from: &str, to: &str, new_mob)` | A mob turned into another (cured zombie villager) | |
 | `on_mob_shoot(server, mob, kind: &str)` | A mob fired a projectile | |
 | `on_chunk_unload(server, player, chunk)` | A chunk left the player's view | |
+| `on_toggle_crawl(server, player: &PlayerInfo, crawling: bool)` | Player started (`true`) or stopped crawling |  |
+| `on_player_spawn(server, player: &PlayerInfo)` | Player finished loading in and can play (after join, before they move) |  |
+| `on_map_request(server, player: &PlayerInfo, map: i64)` | Player's client asks for the pixels of map `map` | yes |
+| `on_block_pick(server, player: &PlayerInfo, pos: (i32, i32, i32), block: &str)` | Player middle-clicked `block` at `pos` to pick it | yes |
+| `on_lectern_page(server, player: &PlayerInfo, pos: (i32, i32, i32), page: i32)` | Player turned the book on the lectern at `pos` to `page` |  |
+| `on_beacon_change(server, player: &PlayerInfo, pos: (i32, i32, i32), primary: i32, secondary: i32)` | Player is setting the beacon at `pos` to effects `primary` and `secondary` (effect ids, 0 for none) | yes |
+| `on_farmland_trample(server, player: &PlayerInfo, pos: (i32, i32, i32))` | Player landed on the farmland at `pos` and is about to trample it | yes |
+| `on_crafter_craft(server, pos: (i32, i32, i32), item: &str, count: i8)` | The crafter at `pos` is about to craft `count` `item` | yes |
+| `on_dispense(server, pos: (i32, i32, i32), block: &str)` | The dispenser or dropper (`block`) at `pos` got a pulse and is about to fire | yes |
+| `on_note_play(server, pos: (i32, i32, i32))` | The note block at `pos` is about to play from redstone | yes |
+| `on_bell_ring(server, pos: (i32, i32, i32), player: Option<i64>)` | The bell at `pos` rang (`player` is who rang it, if a player did) |  |
+| `on_raid_start(server, center: (f32, f32, f32))` | A raid is about to start around `center` | yes |
+| `on_raid_wave(server, center: (f32, f32, f32), wave: i32)` | Wave `wave` (from 1) of the raid at `center` is coming in |  |
+| `on_raid_end(server, center: (f32, f32, f32), victory: bool)` | The raid at `center` ended: `victory` when every wave was beaten |  |
+| `on_totem_use(server, player: &PlayerInfo)` | Player is about to be saved by a totem of undying | yes |
+| `on_sheep_shear(server, player: i64, mob: i64)` | Player `player` (entity id) sheared sheep `mob` |  |
+| `on_sheep_regrow(server, mob: i64)` | Sheep `mob` grew its wool back |  |
+| `on_leash(server, player: i64, mob: i64, attached: bool)` | Player `player` tied (`attached`) or untied a lead on mob `mob` |  |
+| `on_villager_level_up(server, villager: i64, tier: i32)` | Villager `villager` levelled up to `tier` (1 novice to 5 master) from trading |  |
+| `on_spawner_spawn(server, pos: (i32, i32, i32), kind: &str)` | The mob spawner at `pos` is about to spawn a `kind` | yes |
+| `on_creeper_power(server, mob: i64)` | Creeper `mob` was struck by lightning and is now charged |  |
+| `on_rcon_command(server, addr: &str, line: &str)` | `line` came in over RCON from `addr` | yes |
+| `on_console_command(server, line: &str)` | `line` was typed into the server console | yes |
+| `on_furnace_smelt(server, pos: (i32, i32, i32))` | The furnace, smoker or blast furnace at `pos` finished smelting an item |  |
+| `on_tnt_prime(server, pos: (i32, i32, i32))` | TNT at `pos` is about to be lit (by fire, redstone, an explosion or a player) | yes |
 
 ## Example: a no-grief zone
 

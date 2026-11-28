@@ -159,6 +159,9 @@ fn game_tick(server: &players::Server, plates: &mut HashMap<(i32, i32, i32), Ins
         mobs::ignite_tnt(server, p, 40);
     }
     for p in step.notes {
+        if !server.plugins.note_play(server, p) {
+            continue;
+        }
         apply_use(server, 0, p, &useblock::play_note(&server.world, p));
     }
     for (p, s) in step.sounds {
@@ -205,6 +208,9 @@ fn craft(server: &players::Server, p: (i32, i32, i32), b: i32) {
         let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(level_event(1001, p)) }); // nothing to craft
         return;
     };
+    if !server.plugins.crafter_craft(server, p, items::name_of(item.id).unwrap_or(""), count) {
+        return;
+    }
     // Use up one of each input.
     let mut left = slots;
     for s in left.iter_mut().take(9) {
@@ -246,6 +252,9 @@ pub(crate) fn dispense(server: &players::Server, p: (i32, i32, i32)) {
     let Some(kind) = containers::kind(b) else { return };
     if kind == containers::Kind::Crafter {
         return craft(server, p, b);
+    }
+    if !server.plugins.dispense(server, p, blocks::entry(b).map_or("", |e| e.name.as_str())) {
+        return;
     }
     let face = match blocks::state(b, "facing_direction") {
         Some(blocks::State::Int(f)) => *f as u8,

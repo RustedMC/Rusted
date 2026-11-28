@@ -275,6 +275,9 @@ impl Session {
                 }
             }
             Protocol::SetLocalPlayerAsInitializedPacket(_) => {
+                if let Some(me) = self.server.get(self.id) {
+                    self.server.plugins.player_spawn(&self.server, &me);
+                }
                 // Physics flags (gravity, collision), attributes, abilities, inventory.
                 let _ = self.conn.send(&spawn::after_load(self.id, &self.name, self.inv.all_packets(), &self.mode)).await;
                 // Back to how they left: health, hunger, air, fire, held slot and effects.
@@ -305,7 +308,9 @@ impl Session {
             Protocol::InteractPacket(i) if matches!(i.action, InteractAction::StopRiding) => self.get_off(),
             // Holding a map: the client asks for its picture.
             Protocol::MapInfoRequestPacket(m) => {
-                if let Some(p) = crate::maps::packet(&self.server, m.map_unique_id.0) {
+                if self.server.get(self.id).is_none_or(|me| self.server.plugins.map_request(&self.server, &me, m.map_unique_id.0))
+                    && let Some(p) = crate::maps::packet(&self.server, m.map_unique_id.0)
+                {
                     let _ = self.conn.send(&[p]).await;
                 }
             }
@@ -316,6 +321,9 @@ impl Session {
                 if let Some(book) = self.server.containers.get(pos).into_iter().next().flatten() {
                     let page = (l.new_page_to_show as i32).clamp(0, crate::lectern::pages(&book).max(1) - 1);
                     crate::lectern::pages_open().lock().insert(pos, page);
+                    if let Some(me) = self.server.get(self.id) {
+                        self.server.plugins.lectern_page(&self.server, &me, pos, page);
+                    }
                     crate::redstone::mark(pos); // comparators read the page
                     let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(crate::lectern::data(pos, Some(&book), page)) });
                 }

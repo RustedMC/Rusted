@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.11
+
+- 25 more plugin events (113 now):
+  - Players: `on_toggle_crawl`, `on_player_spawn`, `on_map_request`, `on_block_pick`, `on_lectern_page`, `on_beacon_change`, `on_farmland_trample`, `on_totem_use`
+  - Blocks: `on_crafter_craft`, `on_dispense`, `on_note_play`, `on_bell_ring`, `on_furnace_smelt`, `on_tnt_prime`
+  - Raids: `on_raid_start`, `on_raid_wave`, `on_raid_end`
+  - Mobs: `on_sheep_shear`, `on_sheep_regrow`, `on_leash`, `on_villager_level_up`, `on_spawner_spawn`, `on_creeper_power`
+  - Server: `on_rcon_command`, `on_console_command`
+- 13 of them can be cancelled (stop TNT, totems, trampling, raids, spawners, dispensers and more). Runtime `.wasm` plugins get them all.
+
 ## 0.6.10
 
 - Emotes and in-game skin changes now show to other players (they were dropped before).

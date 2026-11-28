@@ -308,6 +308,7 @@ impl Session {
                 let r = self.inv.handle(req, items::creative_item);
                 thrown.append(&mut self.inv.dropped);
                 if let (Some((primary, secondary)), Some(pos)) = (self.inv.beacon.take(), self.open_table)
+                    && self.server.get(self.id).is_none_or(|me| self.server.plugins.beacon_change(&self.server, &me, pos, primary, secondary))
                     && !crate::beacon::configure(&self.server.world, pos, primary, secondary)
                 {
                     let _ = self.server.events.send(Event::Tell { to: self.id, message: "§cThis beacon's pyramid isn't big enough for that effect".into() });

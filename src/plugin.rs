@@ -41,6 +41,13 @@ pub enum Later {
     Piston((i32, i32, i32), bool),
     Transform(i64, &'static str, &'static str, i64),
     MobShoot(i64, &'static str),
+    RaidWave((f32, f32, f32), i32),
+    RaidEnd((f32, f32, f32), bool),
+    Shear(i64, i64),
+    Regrow(i64),
+    Leash(i64, i64, bool),
+    CreeperPower(i64),
+    Smelt((i32, i32, i32)),
 }
 
 static LATER: parking_lot::Mutex<Vec<Later>> = parking_lot::Mutex::new(Vec::new());
@@ -493,6 +500,108 @@ pub trait Plugin: Send + Sync {
     /// Player's client dropped the chunk at `chunk` (it's out of their view now).
     fn on_chunk_unload(&self, _server: &Server, _player: &PlayerInfo, _chunk: (i32, i32)) {}
 
+    /// Player started (`true`) or stopped crawling.
+    fn on_toggle_crawl(&self, _server: &Server, _player: &PlayerInfo, _crawling: bool) {}
+
+    /// Player finished loading in and can play (after join, before they move).
+    fn on_player_spawn(&self, _server: &Server, _player: &PlayerInfo) {}
+
+    /// Player's client asks for the pixels of map `map`. Return false to send nothing.
+    fn on_map_request(&self, _server: &Server, _player: &PlayerInfo, _map: i64) -> bool {
+        true
+    }
+
+    /// Player middle-clicked `block` at `pos` to pick it. Return false to stop it.
+    fn on_block_pick(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32), _block: &str) -> bool {
+        true
+    }
+
+    /// Player turned the book on the lectern at `pos` to `page`.
+    fn on_lectern_page(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32), _page: i32) {}
+
+    /// Player is setting the beacon at `pos` to effects `primary` and `secondary` (effect ids,
+    /// 0 for none). Return false to stop it.
+    fn on_beacon_change(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32), _primary: i32, _secondary: i32) -> bool {
+        true
+    }
+
+    /// Player landed on the farmland at `pos` and is about to trample it. Return false to stop it.
+    fn on_farmland_trample(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32)) -> bool {
+        true
+    }
+
+    /// The crafter at `pos` is about to craft `count` `item`. Return false to stop it.
+    fn on_crafter_craft(&self, _server: &Server, _pos: (i32, i32, i32), _item: &str, _count: i8) -> bool {
+        true
+    }
+
+    /// The dispenser or dropper (`block`) at `pos` got a pulse and is about to fire. Return false to stop it.
+    fn on_dispense(&self, _server: &Server, _pos: (i32, i32, i32), _block: &str) -> bool {
+        true
+    }
+
+    /// The note block at `pos` is about to play from redstone. Return false to keep it quiet.
+    fn on_note_play(&self, _server: &Server, _pos: (i32, i32, i32)) -> bool {
+        true
+    }
+
+    /// The bell at `pos` rang (`player` is who rang it, if a player did).
+    fn on_bell_ring(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
+
+    /// A raid is about to start around `center`. Return false to stop it (the player keeps Bad Omen).
+    fn on_raid_start(&self, _server: &Server, _center: (f32, f32, f32)) -> bool {
+        true
+    }
+
+    /// Wave `wave` (from 1) of the raid at `center` is coming in. Fired after the raid tick.
+    fn on_raid_wave(&self, _server: &Server, _center: (f32, f32, f32), _wave: i32) {}
+
+    /// The raid at `center` ended: `victory` when every wave was beaten. Fired after the raid tick.
+    fn on_raid_end(&self, _server: &Server, _center: (f32, f32, f32), _victory: bool) {}
+
+    /// Player is about to be saved by a totem of undying. Return false and they die.
+    fn on_totem_use(&self, _server: &Server, _player: &PlayerInfo) -> bool {
+        true
+    }
+
+    /// Player `player` (entity id) sheared sheep `mob`. Fired after the mob tick.
+    fn on_sheep_shear(&self, _server: &Server, _player: i64, _mob: i64) {}
+
+    /// Sheep `mob` grew its wool back. Fired after the mob tick.
+    fn on_sheep_regrow(&self, _server: &Server, _mob: i64) {}
+
+    /// Player `player` tied (`attached`) or untied a lead on mob `mob`. Fired after the mob tick.
+    fn on_leash(&self, _server: &Server, _player: i64, _mob: i64, _attached: bool) {}
+
+    /// Villager `villager` levelled up to `tier` (1 novice to 5 master) from trading.
+    fn on_villager_level_up(&self, _server: &Server, _villager: i64, _tier: i32) {}
+
+    /// The mob spawner at `pos` is about to spawn a `kind`. Return false to stop it.
+    fn on_spawner_spawn(&self, _server: &Server, _pos: (i32, i32, i32), _kind: &str) -> bool {
+        true
+    }
+
+    /// Creeper `mob` was struck by lightning and is now charged. Fired after the mob tick.
+    fn on_creeper_power(&self, _server: &Server, _mob: i64) {}
+
+    /// `line` came in over RCON from `addr`. Return false to refuse it.
+    fn on_rcon_command(&self, _server: &Server, _addr: &str, _line: &str) -> bool {
+        true
+    }
+
+    /// `line` was typed into the server console. Return false to ignore it.
+    fn on_console_command(&self, _server: &Server, _line: &str) -> bool {
+        true
+    }
+
+    /// The furnace, smoker or blast furnace at `pos` finished smelting an item.
+    fn on_furnace_smelt(&self, _server: &Server, _pos: (i32, i32, i32)) {}
+
+    /// TNT at `pos` is about to be lit (by fire, redstone, an explosion or a player). Return false to stop it.
+    fn on_tnt_prime(&self, _server: &Server, _pos: (i32, i32, i32)) -> bool {
+        true
+    }
+
     /// Player jumped.
     fn on_jump(&self, _server: &Server, _player: &PlayerInfo) {}
 
@@ -808,6 +917,13 @@ impl Plugins {
                 Later::Piston(pos, ext) => self.each(|pl| pl.on_piston(s, pos, ext)),
                 Later::Transform(id, from, to, new) => self.each(|pl| pl.on_entity_transform(s, id, from, to, new)),
                 Later::MobShoot(id, kind) => self.each(|pl| pl.on_mob_shoot(s, id, kind)),
+                Later::RaidWave(c, w) => self.each(|pl| pl.on_raid_wave(s, c, w)),
+                Later::RaidEnd(c, v) => self.each(|pl| pl.on_raid_end(s, c, v)),
+                Later::Shear(p, m) => self.each(|pl| pl.on_sheep_shear(s, p, m)),
+                Later::Regrow(m) => self.each(|pl| pl.on_sheep_regrow(s, m)),
+                Later::Leash(p, m, on) => self.each(|pl| pl.on_leash(s, p, m, on)),
+                Later::CreeperPower(m) => self.each(|pl| pl.on_creeper_power(s, m)),
+                Later::Smelt(pos) => self.each(|pl| pl.on_furnace_smelt(s, pos)),
             }
         }
     }
@@ -863,6 +979,78 @@ impl Plugins {
 
     pub fn chunk_unload(&self, s: &Server, p: &PlayerInfo, chunk: (i32, i32)) {
         self.each(|pl| pl.on_chunk_unload(s, p, chunk));
+    }
+
+    pub fn toggle_crawl(&self, s: &Server, p: &PlayerInfo, on: bool) {
+        self.each(|pl| pl.on_toggle_crawl(s, p, on));
+    }
+
+    pub fn player_spawn(&self, s: &Server, p: &PlayerInfo) {
+        self.each(|pl| pl.on_player_spawn(s, p));
+    }
+
+    pub fn map_request(&self, s: &Server, p: &PlayerInfo, map: i64) -> bool {
+        self.cancellable(|pl| pl.on_map_request(s, p, map))
+    }
+
+    pub fn block_pick(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32), block: &str) -> bool {
+        self.cancellable(|pl| pl.on_block_pick(s, p, pos, block))
+    }
+
+    pub fn lectern_page(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32), page: i32) {
+        self.each(|pl| pl.on_lectern_page(s, p, pos, page));
+    }
+
+    pub fn beacon_change(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32), primary: i32, secondary: i32) -> bool {
+        self.cancellable(|pl| pl.on_beacon_change(s, p, pos, primary, secondary))
+    }
+
+    pub fn farmland_trample(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32)) -> bool {
+        self.cancellable(|pl| pl.on_farmland_trample(s, p, pos))
+    }
+
+    pub fn crafter_craft(&self, s: &Server, pos: (i32, i32, i32), item: &str, count: i8) -> bool {
+        self.cancellable(|pl| pl.on_crafter_craft(s, pos, item, count))
+    }
+
+    pub fn dispense(&self, s: &Server, pos: (i32, i32, i32), block: &str) -> bool {
+        self.cancellable(|pl| pl.on_dispense(s, pos, block))
+    }
+
+    pub fn note_play(&self, s: &Server, pos: (i32, i32, i32)) -> bool {
+        self.cancellable(|pl| pl.on_note_play(s, pos))
+    }
+
+    pub fn bell_ring(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.each(|pl| pl.on_bell_ring(s, pos, player));
+    }
+
+    pub fn raid_start(&self, s: &Server, center: (f32, f32, f32)) -> bool {
+        self.cancellable(|pl| pl.on_raid_start(s, center))
+    }
+
+    pub fn totem_use(&self, s: &Server, p: &PlayerInfo) -> bool {
+        self.cancellable(|pl| pl.on_totem_use(s, p))
+    }
+
+    pub fn villager_level_up(&self, s: &Server, villager: i64, tier: i32) {
+        self.each(|pl| pl.on_villager_level_up(s, villager, tier));
+    }
+
+    pub fn spawner_spawn(&self, s: &Server, pos: (i32, i32, i32), kind: &str) -> bool {
+        self.cancellable(|pl| pl.on_spawner_spawn(s, pos, kind))
+    }
+
+    pub fn rcon_command(&self, s: &Server, addr: &str, line: &str) -> bool {
+        self.cancellable(|pl| pl.on_rcon_command(s, addr, line))
+    }
+
+    pub fn console_command(&self, s: &Server, line: &str) -> bool {
+        self.cancellable(|pl| pl.on_console_command(s, line))
+    }
+
+    pub fn tnt_prime(&self, s: &Server, pos: (i32, i32, i32)) -> bool {
+        self.cancellable(|pl| pl.on_tnt_prime(s, pos))
     }
 
     pub fn jump(&self, s: &Server, p: &PlayerInfo) {
@@ -1330,6 +1518,28 @@ mod tests {
         fn on_leaves_decay(&self, _: &Server, _: (i32, i32, i32), _: &str) -> bool {
             false
         }
+    }
+
+    struct NoBoom;
+    impl Plugin for NoBoom {
+        fn name(&self) -> &str {
+            "noboom"
+        }
+        fn on_tnt_prime(&self, _: &Server, _: (i32, i32, i32)) -> bool {
+            false
+        }
+        fn on_raid_start(&self, _: &Server, _: (f32, f32, f32)) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn tnt_and_raids_can_be_stopped() {
+        let plugins = Plugins::new(vec![Box::new(NoBoom)]);
+        let server = Server::new();
+        assert!(!plugins.tnt_prime(&server, (0, 0, 0)));
+        assert!(!plugins.raid_start(&server, (0.0, 0.0, 0.0)));
+        assert!(plugins.dispense(&server, (0, 0, 0), "minecraft:dispenser"), "others still go through");
     }
 
     #[test]

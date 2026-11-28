@@ -70,9 +70,13 @@ pub fn start(server: Server) {
                             let line = body.trim().trim_start_matches('/');
                             println!("RCON ({addr}): {line}");
                             let args: Vec<&str> = line.split_whitespace().collect();
-                            let text = match crate::commands::run(&server, crate::commands::CONSOLE, &args) {
-                                Some(r) => crate::strip_colors(&r),
-                                None => "Unknown command. Type \"help\" for help.".into(),
+                            let text = if !server.plugins.rcon_command(&server, &addr.to_string(), line) {
+                                "Refused by a plugin".to_string()
+                            } else {
+                                match crate::commands::run(&server, crate::commands::CONSOLE, &args) {
+                                    Some(r) => crate::strip_colors(&r),
+                                    None => "Unknown command. Type \"help\" for help.".into(),
+                                }
                             };
                             packet(id, RESPONSE, &text)
                         }

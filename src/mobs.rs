@@ -1073,6 +1073,7 @@ impl Mobs {
         // along as a caravan, each following the one ahead (vanilla, up to 10).
         if m.leash == Some(player) && held != "minecraft:lead" {
             m.leash = None;
+            crate::plugin::later(crate::plugin::Later::Leash(player, m.id, false));
             let (pos, packet) = (m.pos, data_packet(m));
             drop(mobs);
             broadcast(server, packet);
@@ -1084,6 +1085,7 @@ impl Mobs {
         if held == "minecraft:lead" && m.leash.is_none() && !m.kind.hostile() && !m.kind.aquatic() && !matches!(m.kind, Kind::Villager | Kind::WanderingTrader | Kind::Boat | Kind::Minecart | Kind::ChestMinecart | Kind::EnderDragon | Kind::EndCrystal | Kind::Shulker | Kind::Wither) {
             m.leash = Some(player);
             m.kept = true;
+            crate::plugin::later(crate::plugin::Later::Leash(player, m.id, true));
             let (kind, pos) = (m.kind, m.pos);
             let mut packets = vec![data_packet(m)];
             if matches!(kind, Kind::Llama | Kind::TraderLlama) {
@@ -1135,6 +1137,7 @@ impl Mobs {
         if m.kind == Kind::Sheep && held.ends_with(":shears") && !m.sheared && m.baby == 0 {
             m.sheared = true;
             m.regrow = 3 * 60 * TPS;
+            crate::plugin::later(crate::plugin::Later::Shear(player, m.id));
             let (pos, color) = (m.pos, m.color);
             let p = data_packet(m);
             drop(mobs);
@@ -1350,6 +1353,7 @@ impl Mobs {
         for m in self.mobs.lock().values_mut() {
             if m.kind == Kind::Creeper && !m.charged && m.dying == 0 && dist2(m.pos, at) <= 16.0 {
                 m.charged = true;
+                crate::plugin::later(crate::plugin::Later::CreeperPower(m.id));
                 out.push(data_packet(m));
             }
         }
@@ -1512,6 +1516,7 @@ impl Mobs {
         drop(mobs);
         broadcast(server, packet);
         if up {
+            server.plugins.villager_level_up(server, id, job.tier as i32);
             broadcast(server, sound("random.levelup", pos));
             broadcast(server, event(id, bedrock::protocol::v975::enums::ActorEvent::VillagerHappy));
         }
@@ -1908,6 +1913,7 @@ impl Mobs {
                 m.regrow = m.regrow.saturating_sub(1);
                 if m.regrow == 0 {
                     m.sheared = false; // grazed and grew its wool back
+                    crate::plugin::later(crate::plugin::Later::Regrow(m.id));
                     out.push(data_packet(&m));
                 }
             }
@@ -1998,6 +2004,9 @@ impl Mobs {
         for (at, kind) in spawn {
             if blocks::short(server.world.get(at.0, at.1, at.2)) != "mob_spawner" {
                 crate::loot::spawners().lock().remove(&at); // broken
+                continue;
+            }
+            if !server.plugins.spawner_spawn(server, at, kind.identifier()) {
                 continue;
             }
             let centre = (at.0 as f32 + 0.5, at.1 as f32, at.2 as f32 + 0.5);
@@ -3749,6 +3758,9 @@ static PRIMED: Mutex<Vec<(i64, (f32, f32, f32), (f32, f32, f32), u32)>> = Mutex:
 
 /// Primes the TNT at `p` (PNX BlockTNT.prime), going off with power 4 after `fuse` 10 Hz ticks.
 pub fn ignite_tnt(server: &Server, p: (i32, i32, i32), fuse: u32) {
+    if !server.plugins.tnt_prime(server, p) {
+        return;
+    }
     server.set_block_quiet(0, p.0, p.1, p.2, crate::world::AIR);
     let id = crate::players::next_id();
     let pos = (p.0 as f32 + 0.5, p.1 as f32, p.2 as f32 + 0.5);

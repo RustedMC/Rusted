@@ -217,6 +217,11 @@ impl Session {
 
     pub(super) async fn on_block_pick(&mut self, r: &BlockPick) {
         let p = &r.position;
+        if let Some(me) = self.server.get(self.id)
+            && !self.server.plugins.block_pick(&self.server, &me, (p.x, p.y, p.z), blocks::entry(self.server.world.get(p.x, p.y, p.z)).map_or("", |e| e.name.as_str()))
+        {
+            return;
+        }
         if let Some(item) = items::item_for_block(self.server.world.get(p.x, p.y, p.z))
             && let Some(stack) = self.inv.set_slot(self.selected_slot as usize, item.clone(), items::max_stack(item.id))
         {

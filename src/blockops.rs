@@ -130,6 +130,9 @@ pub(crate) fn container_anim(server: &players::Server, (x, y, z): (i32, i32, i32
 }
 
 pub(crate) fn apply_use(server: &players::Server, id: i64, p: (i32, i32, i32), o: &useblock::Outcome) {
+    if o.sound.as_ref().is_some_and(|(s, _)| s == "block.bell.hit") {
+        server.plugins.bell_ring(server, p, (id != 0).then_some(id));
+    }
     let center = (p.0 as f32 + 0.5, p.1 as f32 + 0.5, p.2 as f32 + 0.5);
     for &((x, y, z), b) in &o.changes {
         server.set_block(id, x, y, z, b);

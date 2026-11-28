@@ -138,6 +138,31 @@ Each event is JSON. `e.kind()` tells you which one; player events have `player` 
 | `entity_transform` | `mob`, `from`, `to`, `new_mob` |  |
 | `mob_shoot` | `mob`, `kind` |  |
 | `chunk_unload` | `chunk` |  |
+| `toggle_crawl` | `crawling` |  |
+| `player_spawn` |  |  |
+| `map_request` | `map` | cancellable |
+| `block_pick` | `pos`, `block` | cancellable |
+| `lectern_page` | `pos`, `page` |  |
+| `beacon_change` | `pos`, `primary`, `secondary` | cancellable |
+| `farmland_trample` | `pos` | cancellable |
+| `crafter_craft` | `pos`, `item`, `count` | cancellable |
+| `dispense` | `pos`, `block` | cancellable |
+| `note_play` | `pos` | cancellable |
+| `bell_ring` | `pos`, `player` |  |
+| `raid_start` | `center` | cancellable |
+| `raid_wave` | `center`, `wave` |  |
+| `raid_end` | `center`, `victory` |  |
+| `totem_use` |  | cancellable |
+| `sheep_shear` | `player`, `mob` |  |
+| `sheep_regrow` | `mob` |  |
+| `leash` | `player`, `mob`, `attached` |  |
+| `villager_level_up` | `villager`, `tier` |  |
+| `spawner_spawn` | `pos`, `kind` | cancellable |
+| `creeper_power` | `mob` |  |
+| `rcon_command` | `addr`, `line` | cancellable |
+| `console_command` | `line` | cancellable |
+| `furnace_smelt` | `pos` |  |
+| `tnt_prime` | `pos` | cancellable |
 
 ## What a plugin can do
 

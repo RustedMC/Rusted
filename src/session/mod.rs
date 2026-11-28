@@ -240,7 +240,7 @@ pub(crate) async fn hurt(conn: &mut dims::DimConn, server: &players::Server, id:
     }
     // A totem of undying cheats death, except from the void and /kill (vanilla).
     let lethal = hp.health - damage_cause(damage).1 <= 0.0 && !matches!(damage, D::Void | D::Kill);
-    if lethal && !hp.dead && inv.use_totem() {
+    if lethal && !hp.dead && server.get(id).is_none_or(|me| server.plugins.totem_use(server, &me)) && inv.use_totem() {
         use bedrock::protocol::v975::enums::ActorEvent as E;
         hp.health = 1.0;
         for (effect, amplifier, ticks) in [(effects::REGENERATION, 1, 45 * 20), (effects::ABSORPTION, 1, 5 * 20), (effects::FIRE_RESISTANCE, 0, 40 * 20)] {

@@ -248,6 +248,10 @@ impl Containers {
                 state.catch_up(slots, secs);
                 if slots.iter().take(3).map(|s| s.as_ref().map(|s| s.count)).collect::<Vec<_>>() != before {
                     self.dirty.store(true, Ordering::Relaxed);
+                    // the output slot grew: something finished smelting
+                    if slots[2].as_ref().map_or(0, |s| s.count) > before[2].unwrap_or(0) {
+                        crate::plugin::later(crate::plugin::Later::Smelt(*pos));
+                    }
                 }
             } else {
                 state.burn_left = (state.burn_left - secs).max(0.0);

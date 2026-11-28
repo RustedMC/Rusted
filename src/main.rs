@@ -498,7 +498,7 @@ async fn main() {
         std::thread::spawn(move || {
             for line in std::io::stdin().lines().map_while(Result::ok) {
                 let line = line.trim().trim_start_matches('/');
-                if line.is_empty() {
+                if line.is_empty() || !server.plugins.console_command(&server, line) {
                     continue;
                 }
                 let args: Vec<&str> = line.split_whitespace().collect();
