@@ -312,6 +312,13 @@ impl Session {
                 {
                     let _ = self.server.events.send(Event::Tell { to: self.id, message: "§cThis beacon's pyramid isn't big enough for that effect".into() });
                 }
+                if let (Some((kind, _)), Some(item)) = (&self.open_kind, self.inv.last_created.take())
+                    && containers::ui_only(*kind)
+                    && let Some(me) = self.server.get(self.id)
+                {
+                    let levels = if self.inv.gained_xp > 0 { -self.inv.gained_xp } else { self.inv.spent_levels };
+                    self.server.plugins.table_craft(&self.server, &me, &format!("{kind:?}"), &item, levels);
+                }
                 if self.inv.spent_levels > 0 {
                     self.xp.add_levels(-self.inv.spent_levels);
                     self.table_changed = true;

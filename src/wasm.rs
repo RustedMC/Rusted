@@ -527,6 +527,34 @@ impl Plugin for WasmPlugin {
         self.notify(server, json!({ "event": "projectile_launch", "player": player_json(player), "trident": trident, "force": force }));
     }
 
+    fn on_table_craft(&self, server: &Server, player: &PlayerInfo, table: &str, item: &str, levels: i32) {
+        self.notify(server, json!({ "event": "table_craft", "player": player_json(player), "table": table, "item": item, "levels": levels }));
+    }
+
+    fn on_brew(&self, server: &Server, pos: (i32, i32, i32)) {
+        self.notify(server, json!({ "event": "brew", "pos": [pos.0, pos.1, pos.2] }));
+    }
+
+    fn on_entity_combust(&self, server: &Server, mob: i64, kind: &str) {
+        self.notify(server, json!({ "event": "entity_combust", "mob": mob, "kind": kind }));
+    }
+
+    fn on_entity_despawn(&self, server: &Server, mob: i64, kind: &str) {
+        self.notify(server, json!({ "event": "entity_despawn", "mob": mob, "kind": kind }));
+    }
+
+    fn on_piston(&self, server: &Server, pos: (i32, i32, i32), extending: bool) {
+        self.notify(server, json!({ "event": "piston", "pos": [pos.0, pos.1, pos.2], "extending": extending }));
+    }
+
+    fn on_health_regain(&self, server: &Server, player: &PlayerInfo, health: f32) -> bool {
+        self.ask(server, json!({ "event": "health_regain", "player": player_json(player), "health": health }))
+    }
+
+    fn on_food_change(&self, server: &Server, player: &PlayerInfo, food: i32) {
+        self.notify(server, json!({ "event": "food_change", "player": player_json(player), "food": food }));
+    }
+
 }
 
 #[cfg(test)]

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.8
+
+- 7 more plugin events (74 now): `on_table_craft` (enchanting, anvil, grindstone, smithing, loom, stonecutter, cartography and crafting tables, with the XP cost), `on_brew`, `on_entity_combust`, `on_entity_despawn`, `on_piston`, `on_health_regain` (cancellable) and `on_food_change`. Runtime `.wasm` plugins get them too.
+- Mob and piston events are fired once per tick, after the mob list is unlocked, so plugins can look at mobs from them safely.
+
 ## 0.6.7
 
 - 8 more plugin events (67 now): `on_jump`, `on_toggle_flight`, `on_animation` (cancellable), `on_form_response`, `on_packet_receive` (every packet by name, cancellable), `on_world_save`, `on_liquid_flow` (cancellable) and `on_projectile_launch`. Runtime `.wasm` plugins get them too.

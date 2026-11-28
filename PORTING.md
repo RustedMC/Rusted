@@ -16,7 +16,7 @@ This file tracks how far each part of PNX has come over.
 | `entity` (villagers) | jobs, trading, raids | 🟡 trading uses PNX's tables; breeding, wandering traders, gossip and reputation prices |
 | redstone | dust, diodes, pistons, observers | 🟡 works for common builds; rails (powered, detector, activator), repeater locking and lectern comparator output and sculk sensors work |
 | `command` | vanilla commands | 🟡 nearly every vanilla command, `/execute`, `/camera` and target selectors; `/dialogue` from scene files |
-| `event` + `plugin` | plugin API | 🟡 67 of PNX's ~200 events, scheduler, config files; compiled-in or runtime `.wasm` plugins, which get every event |
+| `event` + `plugin` | plugin API | 🟡 74 of PNX's ~200 events, scheduler, config files; compiled-in or runtime `.wasm` plugins, which get every event |
 | `form`, `scoreboard` | server UI | 🟡 forms, scoreboards, boss bars, camera control, NPC dialogs |
 | loot tables | chest loot, spawners | 🟡 chests in 16 structures fill on first open, with enchanted books; structure spawners; trial spawner and vault rewards; `/loot`; dungeons |
 

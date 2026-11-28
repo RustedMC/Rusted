@@ -87,6 +87,8 @@ pub struct Inventory {
     created: Option<Stack>,
     /// Open container, its slots live here until it's closed.
     pub open: Option<Vec<Option<Stack>>>,
+    /// What the last item request crafted (tables report it to plugins).
+    pub last_created: Option<String>,
     /// Stuff thrown out during the last `handle`, the session spawns it on the ground.
     pub dropped: Vec<Stack>,
     craft: Vec<Option<Stack>>,
@@ -114,7 +116,7 @@ pub struct Inventory {
 impl Default for Inventory {
     fn default() -> Self {
         Self {
-            slots: vec![None; SLOTS], cursor: None, created: None, open: None, dropped: vec![], craft: vec![None; CRAFT_SLOTS], next_net_id: 1, selected: 0, sneaking: false,
+            slots: vec![None; SLOTS], cursor: None, created: None, open: None, last_created: None, dropped: vec![], craft: vec![None; CRAFT_SLOTS], next_net_id: 1, selected: 0, sneaking: false,
             levels: 0, creative: false, spent_levels: 0, gained_xp: 0, beacon: None, offers: vec![], trading: None, traded: vec![],
         }
     }
@@ -846,7 +848,7 @@ impl Inventory {
             }
         }
         // creative output slot is scratch space, never leave stuff in it
-        self.created = None;
+        self.last_created = self.created.take().filter(|_| ok).and_then(|s| crate::items::name_of(s.item.id)).map(str::to_string);
 
         if !ok {
             (self.slots, self.cursor, self.created, self.open, self.craft) = backup;

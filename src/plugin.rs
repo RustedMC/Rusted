@@ -33,6 +33,23 @@ pub enum Target {
     Player(i64),
 }
 
+/// Events raised where calling plugins right away isn't safe (inside the mob list's lock) or
+/// there's no server at hand (redstone); fired once per game tick by `fire_later`.
+pub enum Later {
+    Combust(i64, &'static str),
+    Despawn(i64, &'static str),
+    Piston((i32, i32, i32), bool),
+}
+
+static LATER: parking_lot::Mutex<Vec<Later>> = parking_lot::Mutex::new(Vec::new());
+
+pub fn later(e: Later) {
+    let mut q = LATER.lock();
+    if q.len() < 10_000 {
+        q.push(e);
+    }
+}
+
 /// A packet's name ("TextPacket") from its Debug output, stopping at the first `(` so big
 /// packets (chunks) aren't formatted.
 pub fn packet_name<T: std::fmt::Debug>(p: &T) -> String {
@@ -389,6 +406,31 @@ pub trait Plugin: Send + Sync {
     /// one of Rusted's mobs: a plugin's own NPC, say.
     fn on_entity_click(&self, _server: &Server, _player: &PlayerInfo, _entity: i64, _attack: bool) {}
 
+    /// Player took the result of a table: `table` is "Enchanting", "Anvil", "Grindstone",
+    /// "Smithing", "Loom", "Stonecutter", "Cartography" or "Workbench"; `levels` the XP levels
+    /// it cost (negative when a grindstone gave XP back).
+    fn on_table_craft(&self, _server: &Server, _player: &PlayerInfo, _table: &str, _item: &str, _levels: i32) {}
+
+    /// A brewing stand at `pos` finished a brew.
+    fn on_brew(&self, _server: &Server, _pos: (i32, i32, i32)) {}
+
+    /// Mob `mob` caught fire (sunlight, lava, fire). Fired after the mob tick.
+    fn on_entity_combust(&self, _server: &Server, _mob: i64, _kind: &str) {}
+
+    /// Mob `mob` despawned (too far from players, or peaceful). Fired after the mob tick.
+    fn on_entity_despawn(&self, _server: &Server, _mob: i64, _kind: &str) {}
+
+    /// The piston at `pos` started extending (`true`) or retracting.
+    fn on_piston(&self, _server: &Server, _pos: (i32, i32, i32), _extending: bool) {}
+
+    /// Player is about to heal from a full food bar. Return false to stop it.
+    fn on_health_regain(&self, _server: &Server, _player: &PlayerInfo, _health: f32) -> bool {
+        true
+    }
+
+    /// Player's food level changed to `food` (0-20).
+    fn on_food_change(&self, _server: &Server, _player: &PlayerInfo, _food: i32) {}
+
     /// Player jumped.
     fn on_jump(&self, _server: &Server, _player: &PlayerInfo) {}
 
@@ -673,6 +715,37 @@ impl Plugins {
 
     pub fn has_any(&self) -> bool {
         !self.list.is_empty()
+    }
+
+    pub fn table_craft(&self, s: &Server, p: &PlayerInfo, table: &str, item: &str, levels: i32) {
+        self.each(|pl| pl.on_table_craft(s, p, table, item, levels));
+    }
+
+    pub fn brew(&self, s: &Server, pos: (i32, i32, i32)) {
+        self.each(|pl| pl.on_brew(s, pos));
+    }
+
+    pub fn health_regain(&self, s: &Server, p: &PlayerInfo, health: f32) -> bool {
+        self.cancellable(|pl| pl.on_health_regain(s, p, health))
+    }
+
+    pub fn food_change(&self, s: &Server, p: &PlayerInfo, food: i32) {
+        self.each(|pl| pl.on_food_change(s, p, food));
+    }
+
+    /// Fires the events queued with `later` (from code that holds locks or has no server).
+    pub fn fire_later(&self, s: &Server) {
+        let queued = std::mem::take(&mut *LATER.lock());
+        if !self.has_any() {
+            return;
+        }
+        for e in queued {
+            match e {
+                Later::Combust(id, kind) => self.each(|pl| pl.on_entity_combust(s, id, kind)),
+                Later::Despawn(id, kind) => self.each(|pl| pl.on_entity_despawn(s, id, kind)),
+                Later::Piston(pos, ext) => self.each(|pl| pl.on_piston(s, pos, ext)),
+            }
+        }
     }
 
     pub fn jump(&self, s: &Server, p: &PlayerInfo) {
@@ -1095,6 +1168,15 @@ impl Plugin for Welcome {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn later_events_queue_and_clear() {
+        super::later(super::Later::Piston((1, 2, 3), true));
+        super::later(super::Later::Despawn(7, "minecraft:zombie"));
+        let server = crate::players::Server::new();
+        server.plugins.fire_later(&server); // no plugins: just drains
+        assert!(super::LATER.lock().is_empty());
+    }
+
     #[test]
     fn packet_names_skip_the_contents() {
         #[derive(Debug)]

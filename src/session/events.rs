@@ -96,6 +96,7 @@ impl Session {
             let mut out: Vec<Protocol> = self.inv.open_packet(self.window_id as u32, cname).into_iter().collect();
             out.extend([set(0, ticks), set(1, fuel), set(2, total)]);
             if done {
+                self.server.plugins.brew(&self.server, pos);
                 out.push(play_sound("random.potion.brewed", (pos.0 as f32 + 0.5, pos.1 as f32 + 0.5, pos.2 as f32 + 0.5)));
             }
             let _ = self.conn.send(&out).await;
@@ -213,11 +214,18 @@ impl Session {
             let before = (self.food.food, self.food.saturation, self.food.exhaustion);
             let difficulty = *commands::DIFFICULTY.lock();
             match self.food.tick(difficulty, self.hp.health, rule_on) {
-                hunger::Step::Heal if self.hp.regenerate() => {
+                hunger::Step::Heal
+                    if self.server.get(self.id).is_none_or(|me| self.server.plugins.health_regain(&self.server, &me, self.hp.health)) && self.hp.regenerate() =>
+                {
                     let _ = self.conn.send(&[spawn::health_packet(self.id, self.hp.health)]).await;
                 }
                 hunger::Step::Starve => hurt(&mut self.conn, &self.server, self.id, &self.name, &mut self.hp, health::Damage::Starve, &mut self.inv, &self.effects, &self.mode).await,
                 _ => {}
+            }
+            if self.food.food as i32 != before.0 as i32
+                && let Some(me) = self.server.get(self.id)
+            {
+                self.server.plugins.food_change(&self.server, &me, self.food.food as i32);
             }
             if (self.food.food, self.food.saturation, self.food.exhaustion) != before {
                 let _ = self.conn.send(&[self.food.packet(self.id)]).await;

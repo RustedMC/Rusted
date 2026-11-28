@@ -338,6 +338,7 @@ async fn main() {
                     rng ^= rng << 17;
                     raids::tick(&server, rng as u32);
                     for pos in server.containers.tick_closed_brew() {
+                        server.plugins.brew(&server, pos);
                         let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(play_sound("random.potion.brewed", (pos.0 as f32 + 0.5, pos.1 as f32 + 0.5, pos.2 as f32 + 0.5))) });
                     }
                 }

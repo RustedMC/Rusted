@@ -803,6 +803,7 @@ fn evaluate(w: &World, e: &mut Engine, p: Pos, wired: &mut HashSet<Pos>, step: &
             {
                 e.moving.insert(p, mv);
                 sched(e, p, Job::Piston, 1);
+                crate::plugin::later(crate::plugin::Later::Piston((p.0, p.1, p.2), on));
             }
         }
         "hopper" => {

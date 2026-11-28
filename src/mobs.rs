@@ -2125,6 +2125,9 @@ impl Mobs {
         m.fire = m.fire.saturating_sub(1);
         let burning = (m.kind.spec().burns && day && open_sky && !in_water && m.baby == 0) || m.fire > 0;
         if burning != m.burning {
+            if burning {
+                crate::plugin::later(crate::plugin::Later::Combust(m.id, m.kind.identifier()));
+            }
             m.burning = burning;
             out.push(data_packet(m));
         }
@@ -2334,6 +2337,9 @@ impl Mobs {
         let feet = (m.pos.0.floor() as i32, m.pos.1.floor() as i32, m.pos.2.floor() as i32);
         let burning = m.kind.spec().burns && day && sky(&server.world, feet);
         if burning != m.burning {
+            if burning {
+                crate::plugin::later(crate::plugin::Later::Combust(m.id, m.kind.identifier()));
+            }
             m.burning = burning;
             out.push(data_packet(m));
         }
@@ -2880,7 +2886,11 @@ impl Mobs {
             return *crate::commands::DIFFICULTY.lock() == 0; // nobody online: keep them
         }
         let nearest = players.iter().map(|p| dist2(p.pos, m.pos)).fold(f32::MAX, f32::min);
-        nearest > 128.0 * 128.0 || (nearest > 32.0 * 32.0 && self.rand().is_multiple_of(800)) || *crate::commands::DIFFICULTY.lock() == 0
+        let gone = nearest > 128.0 * 128.0 || (nearest > 32.0 * 32.0 && self.rand().is_multiple_of(800)) || *crate::commands::DIFFICULTY.lock() == 0;
+        if gone {
+            crate::plugin::later(crate::plugin::Later::Despawn(m.id, m.kind.identifier()));
+        }
+        gone
     }
 
     fn shoot(&self, server: &Server, m: &Mob, at: (f32, f32, f32), out: &mut Vec<Protocol>) {

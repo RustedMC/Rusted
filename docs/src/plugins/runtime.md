@@ -117,6 +117,13 @@ Each event is JSON. `e.kind()` tells you which one; player events have `player` 
 | `world_save` |  |  |
 | `liquid_flow` | `pos`, `block` | cancellable |
 | `projectile_launch` | `trident`, `force` |  |
+| `table_craft` | `table`, `item`, `levels` | enchanting, anvil, grindstone, smithing, loom, stonecutter, cartography, crafting table |
+| `brew` | `pos` |  |
+| `entity_combust` | `mob`, `kind` |  |
+| `entity_despawn` | `mob`, `kind` |  |
+| `piston` | `pos`, `extending` |  |
+| `health_regain` | `health` | cancellable |
+| `food_change` | `food` |  |
 
 ## What a plugin can do
 

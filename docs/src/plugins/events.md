@@ -114,6 +114,13 @@ Mob positions are `(f32, f32, f32)`.
 | `on_world_save(server)` | World saved | |
 | `on_liquid_flow(server, pos, block: &str)` | Water or lava about to flow | yes |
 | `on_projectile_launch(server, player, trident: bool, force: f32)` | Fired an arrow, trident or rocket | |
+| `on_table_craft(server, player, table: &str, item: &str, levels: i32)` | Took a result from an enchanting table, anvil, grindstone, smithing table, loom, stonecutter, cartography table or crafting table | |
+| `on_brew(server, pos)` | A brewing stand finished | |
+| `on_entity_combust(server, mob, kind: &str)` | A mob caught fire (after the mob tick) | |
+| `on_entity_despawn(server, mob, kind: &str)` | A mob despawned (after the mob tick) | |
+| `on_piston(server, pos, extending: bool)` | A piston started moving | |
+| `on_health_regain(server, player, health: f32)` | About to heal from food | yes |
+| `on_food_change(server, player, food: i32)` | Food level changed | |
 
 ## Example: a no-grief zone
 
