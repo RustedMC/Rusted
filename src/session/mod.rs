@@ -277,6 +277,12 @@ pub(crate) async fn hurt(conn: &mut dims::DimConn, server: &players::Server, id:
             player_runtime_id: ActorRuntimeID(id as u64),
         })));
         let mut msg = health::death_message(name, damage);
+        // Killed by another player (PvP hits are named after the attacker).
+        if let health::Damage::Mob(_, by) = damage
+            && let (Some(killer), Some(victim)) = (server.find_by_name(by).and_then(|k| server.get(k)), server.get(id))
+        {
+            server.plugins.player_kill(server, &killer, &victim);
+        }
         if let Some(me) = server.get(id) {
             server.plugins.player_death(server, &me, &mut msg);
         }

@@ -238,6 +238,31 @@ Each event is JSON. `e.kind()` tells you which one; player events have `player` 
 | `pumpkin_carve` | `pos`, `player` |  |
 | `berry_pick` | `pos`, `player` |  |
 | `spawn_egg_use` | `kind`, `pos` | cancellable |
+| `mob_feed` | `player`, `mob` |  |
+| `baby_feed` | `player`, `mob` |  |
+| `mob_saddle` | `player`, `mob` |  |
+| `cow_milk` | `mob` | cancellable |
+| `creeper_ignite` | `player`, `mob` |  |
+| `cure_start` | `player`, `mob` |  |
+| `map_create` |  | cancellable |
+| `dialog_open` | `npc` | cancellable |
+| `dialog_answer` | `scene`, `button` |  |
+| `player_kill` | `killer`, `victim` |  |
+| `say_command` | `sender`, `args` | cancellable |
+| `me_command` | `sender`, `args` | cancellable |
+| `whisper_command` | `sender`, `args` | cancellable |
+| `give_command` | `sender`, `args` | cancellable |
+| `summon_command` | `sender`, `args` | cancellable |
+| `setblock_command` | `sender`, `args` | cancellable |
+| `fill_command` | `sender`, `args` | cancellable |
+| `kill_command` | `sender`, `args` | cancellable |
+| `enchant_command` | `sender`, `args` | cancellable |
+| `clear_command` | `sender`, `args` | cancellable |
+| `setworldspawn_command` | `sender`, `args` | cancellable |
+| `title_command` | `sender`, `args` | cancellable |
+| `tellraw_command` | `sender`, `args` | cancellable |
+| `scoreboard_command` | `sender`, `args` | cancellable |
+| `effect_command` | `sender`, `args` | cancellable |
 
 ## What a plugin can do
 

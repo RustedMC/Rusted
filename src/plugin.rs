@@ -58,6 +58,11 @@ pub enum Later {
     TargetHit((i32, i32, i32), i32),
     Restock(i64),
     Hopper((i32, i32, i32), (i32, i32, i32)),
+    Feed(i64, i64),
+    BabyFeed(i64, i64),
+    Saddle(i64, i64),
+    CreeperIgnite(i64, i64),
+    CureStart(i64, i64),
 }
 
 static LATER: parking_lot::Mutex<Vec<Later>> = parking_lot::Mutex::new(Vec::new());
@@ -910,6 +915,117 @@ pub trait Plugin: Send + Sync {
         true
     }
 
+    /// Player `player` fed `mob` its breeding food, so it's ready to breed. Fired after the mob tick.
+    fn on_mob_feed(&self, _server: &Server, _player: i64, _mob: i64) {}
+
+    /// Player `player` fed the baby `mob`, making it grow faster. Fired after the mob tick.
+    fn on_baby_feed(&self, _server: &Server, _player: i64, _mob: i64) {}
+
+    /// Player `player` put a saddle on `mob`. Fired after the mob tick.
+    fn on_mob_saddle(&self, _server: &Server, _player: i64, _mob: i64) {}
+
+    /// Player is about to milk cow `mob` with a bucket. Return false to stop it.
+    fn on_cow_milk(&self, _server: &Server, _player: &PlayerInfo, _mob: i64) -> bool {
+        true
+    }
+
+    /// Player `player` lit creeper `mob` with flint and steel. Fired after the mob tick.
+    fn on_creeper_ignite(&self, _server: &Server, _player: i64, _mob: i64) {}
+
+    /// Player `player` gave zombie villager `mob` a golden apple and the cure started. Fired after the mob tick.
+    fn on_cure_start(&self, _server: &Server, _player: i64, _mob: i64) {}
+
+    /// Player is about to turn an empty map into a map of the area. Return false to stop it.
+    fn on_map_create(&self, _server: &Server, _player: &PlayerInfo) -> bool {
+        true
+    }
+
+    /// An NPC dialog from `npc` (its name) is about to open for the player. Return false to stop it.
+    fn on_dialog_open(&self, _server: &Server, _player: &PlayerInfo, _npc: &str) -> bool {
+        true
+    }
+
+    /// Player answered NPC dialog `scene` with `button` (None when closed).
+    fn on_dialog_answer(&self, _server: &Server, _player: &PlayerInfo, _scene: &str, _button: Option<usize>) {}
+
+    /// Player `killer` killed player `victim`.
+    fn on_player_kill(&self, _server: &Server, _killer: &PlayerInfo, _victim: &PlayerInfo) {}
+
+    /// `sender` (a player's name, or CONSOLE) is about to run /say with `args`. Return false to stop it.
+    fn on_say_command(&self, _server: &Server, _sender: &str, _args: &str) -> bool {
+        true
+    }
+
+    /// `sender` (a player's name, or CONSOLE) is about to run /me with `args`. Return false to stop it.
+    fn on_me_command(&self, _server: &Server, _sender: &str, _args: &str) -> bool {
+        true
+    }
+
+    /// `sender` (a player's name, or CONSOLE) is about to run /tell, /msg and /w with `args`. Return false to stop it.
+    fn on_whisper_command(&self, _server: &Server, _sender: &str, _args: &str) -> bool {
+        true
+    }
+
+    /// `sender` (a player's name, or CONSOLE) is about to run /give with `args`. Return false to stop it.
+    fn on_give_command(&self, _server: &Server, _sender: &str, _args: &str) -> bool {
+        true
+    }
+
+    /// `sender` (a player's name, or CONSOLE) is about to run /summon with `args`. Return false to stop it.
+    fn on_summon_command(&self, _server: &Server, _sender: &str, _args: &str) -> bool {
+        true
+    }
+
+    /// `sender` (a player's name, or CONSOLE) is about to run /setblock with `args`. Return false to stop it.
+    fn on_setblock_command(&self, _server: &Server, _sender: &str, _args: &str) -> bool {
+        true
+    }
+
+    /// `sender` (a player's name, or CONSOLE) is about to run /fill with `args`. Return false to stop it.
+    fn on_fill_command(&self, _server: &Server, _sender: &str, _args: &str) -> bool {
+        true
+    }
+
+    /// `sender` (a player's name, or CONSOLE) is about to run /kill with `args`. Return false to stop it.
+    fn on_kill_command(&self, _server: &Server, _sender: &str, _args: &str) -> bool {
+        true
+    }
+
+    /// `sender` (a player's name, or CONSOLE) is about to run /enchant with `args`. Return false to stop it.
+    fn on_enchant_command(&self, _server: &Server, _sender: &str, _args: &str) -> bool {
+        true
+    }
+
+    /// `sender` (a player's name, or CONSOLE) is about to run /clear with `args`. Return false to stop it.
+    fn on_clear_command(&self, _server: &Server, _sender: &str, _args: &str) -> bool {
+        true
+    }
+
+    /// `sender` (a player's name, or CONSOLE) is about to run /setworldspawn with `args`. Return false to stop it.
+    fn on_setworldspawn_command(&self, _server: &Server, _sender: &str, _args: &str) -> bool {
+        true
+    }
+
+    /// `sender` (a player's name, or CONSOLE) is about to run /title and /titleraw with `args`. Return false to stop it.
+    fn on_title_command(&self, _server: &Server, _sender: &str, _args: &str) -> bool {
+        true
+    }
+
+    /// `sender` (a player's name, or CONSOLE) is about to run /tellraw with `args`. Return false to stop it.
+    fn on_tellraw_command(&self, _server: &Server, _sender: &str, _args: &str) -> bool {
+        true
+    }
+
+    /// `sender` (a player's name, or CONSOLE) is about to run /scoreboard with `args`. Return false to stop it.
+    fn on_scoreboard_command(&self, _server: &Server, _sender: &str, _args: &str) -> bool {
+        true
+    }
+
+    /// `sender` (a player's name, or CONSOLE) is about to run /effect with `args`. Return false to stop it.
+    fn on_effect_command(&self, _server: &Server, _sender: &str, _args: &str) -> bool {
+        true
+    }
+
     /// Player jumped.
     fn on_jump(&self, _server: &Server, _player: &PlayerInfo) {}
 
@@ -1242,6 +1358,11 @@ impl Plugins {
                 Later::TargetHit(pos, signal) => self.each(|pl| pl.on_target_hit(s, pos, signal)),
                 Later::Restock(v) => self.each(|pl| pl.on_villager_restock(s, v)),
                 Later::Hopper(from, to) => self.each(|pl| pl.on_hopper_move(s, from, to)),
+                Later::Feed(p, m) => self.each(|pl| pl.on_mob_feed(s, p, m)),
+                Later::BabyFeed(p, m) => self.each(|pl| pl.on_baby_feed(s, p, m)),
+                Later::Saddle(p, m) => self.each(|pl| pl.on_mob_saddle(s, p, m)),
+                Later::CreeperIgnite(p, m) => self.each(|pl| pl.on_creeper_ignite(s, p, m)),
+                Later::CureStart(p, m) => self.each(|pl| pl.on_cure_start(s, p, m)),
             }
         }
     }
@@ -1641,6 +1762,130 @@ impl Plugins {
 
     pub fn spawn_egg_use(&self, s: &Server, player: &PlayerInfo, kind: &str, pos: (f32, f32, f32)) -> bool {
         self.cancellable(|pl| pl.on_spawn_egg_use(s, player, kind, pos))
+    }
+
+    pub fn mob_feed(&self, s: &Server, player: i64, mob: i64) {
+        self.each(|pl| pl.on_mob_feed(s, player, mob));
+    }
+
+    pub fn baby_feed(&self, s: &Server, player: i64, mob: i64) {
+        self.each(|pl| pl.on_baby_feed(s, player, mob));
+    }
+
+    pub fn mob_saddle(&self, s: &Server, player: i64, mob: i64) {
+        self.each(|pl| pl.on_mob_saddle(s, player, mob));
+    }
+
+    pub fn cow_milk(&self, s: &Server, player: &PlayerInfo, mob: i64) -> bool {
+        self.cancellable(|pl| pl.on_cow_milk(s, player, mob))
+    }
+
+    pub fn creeper_ignite(&self, s: &Server, player: i64, mob: i64) {
+        self.each(|pl| pl.on_creeper_ignite(s, player, mob));
+    }
+
+    pub fn cure_start(&self, s: &Server, player: i64, mob: i64) {
+        self.each(|pl| pl.on_cure_start(s, player, mob));
+    }
+
+    pub fn map_create(&self, s: &Server, player: &PlayerInfo) -> bool {
+        self.cancellable(|pl| pl.on_map_create(s, player))
+    }
+
+    pub fn dialog_open(&self, s: &Server, player: &PlayerInfo, npc: &str) -> bool {
+        self.cancellable(|pl| pl.on_dialog_open(s, player, npc))
+    }
+
+    pub fn dialog_answer(&self, s: &Server, player: &PlayerInfo, scene: &str, button: Option<usize>) {
+        self.each(|pl| pl.on_dialog_answer(s, player, scene, button));
+    }
+
+    pub fn player_kill(&self, s: &Server, killer: &PlayerInfo, victim: &PlayerInfo) {
+        self.each(|pl| pl.on_player_kill(s, killer, victim));
+    }
+
+    pub fn say_command(&self, s: &Server, sender: &str, args: &str) -> bool {
+        self.cancellable(|pl| pl.on_say_command(s, sender, args))
+    }
+
+    pub fn me_command(&self, s: &Server, sender: &str, args: &str) -> bool {
+        self.cancellable(|pl| pl.on_me_command(s, sender, args))
+    }
+
+    pub fn whisper_command(&self, s: &Server, sender: &str, args: &str) -> bool {
+        self.cancellable(|pl| pl.on_whisper_command(s, sender, args))
+    }
+
+    pub fn give_command(&self, s: &Server, sender: &str, args: &str) -> bool {
+        self.cancellable(|pl| pl.on_give_command(s, sender, args))
+    }
+
+    pub fn summon_command(&self, s: &Server, sender: &str, args: &str) -> bool {
+        self.cancellable(|pl| pl.on_summon_command(s, sender, args))
+    }
+
+    pub fn setblock_command(&self, s: &Server, sender: &str, args: &str) -> bool {
+        self.cancellable(|pl| pl.on_setblock_command(s, sender, args))
+    }
+
+    pub fn fill_command(&self, s: &Server, sender: &str, args: &str) -> bool {
+        self.cancellable(|pl| pl.on_fill_command(s, sender, args))
+    }
+
+    pub fn kill_command(&self, s: &Server, sender: &str, args: &str) -> bool {
+        self.cancellable(|pl| pl.on_kill_command(s, sender, args))
+    }
+
+    pub fn enchant_command(&self, s: &Server, sender: &str, args: &str) -> bool {
+        self.cancellable(|pl| pl.on_enchant_command(s, sender, args))
+    }
+
+    pub fn clear_command(&self, s: &Server, sender: &str, args: &str) -> bool {
+        self.cancellable(|pl| pl.on_clear_command(s, sender, args))
+    }
+
+    pub fn setworldspawn_command(&self, s: &Server, sender: &str, args: &str) -> bool {
+        self.cancellable(|pl| pl.on_setworldspawn_command(s, sender, args))
+    }
+
+    pub fn title_command(&self, s: &Server, sender: &str, args: &str) -> bool {
+        self.cancellable(|pl| pl.on_title_command(s, sender, args))
+    }
+
+    pub fn tellraw_command(&self, s: &Server, sender: &str, args: &str) -> bool {
+        self.cancellable(|pl| pl.on_tellraw_command(s, sender, args))
+    }
+
+    pub fn scoreboard_command(&self, s: &Server, sender: &str, args: &str) -> bool {
+        self.cancellable(|pl| pl.on_scoreboard_command(s, sender, args))
+    }
+
+    pub fn effect_command(&self, s: &Server, sender: &str, args: &str) -> bool {
+        self.cancellable(|pl| pl.on_effect_command(s, sender, args))
+    }
+
+    /// The matching command event for a command line, before it runs. False if a plugin stopped it.
+    pub fn command_event(&self, s: &Server, sender: &str, args: &[&str]) -> bool {
+        let Some((cmd, rest)) = args.split_first() else { return true };
+        let rest = rest.join(" ");
+        match cmd.trim_start_matches('/') {
+            "say" => self.say_command(s, sender, &rest),
+            "me" => self.me_command(s, sender, &rest),
+            "give" => self.give_command(s, sender, &rest),
+            "summon" => self.summon_command(s, sender, &rest),
+            "setblock" => self.setblock_command(s, sender, &rest),
+            "fill" => self.fill_command(s, sender, &rest),
+            "kill" => self.kill_command(s, sender, &rest),
+            "enchant" => self.enchant_command(s, sender, &rest),
+            "clear" => self.clear_command(s, sender, &rest),
+            "setworldspawn" => self.setworldspawn_command(s, sender, &rest),
+            "tellraw" => self.tellraw_command(s, sender, &rest),
+            "scoreboard" => self.scoreboard_command(s, sender, &rest),
+            "effect" => self.effect_command(s, sender, &rest),
+            "tell" | "msg" | "w" => self.whisper_command(s, sender, &rest),
+            "title" | "titleraw" => self.title_command(s, sender, &rest),
+            _ => true,
+        }
     }
 
     pub fn jump(&self, s: &Server, p: &PlayerInfo) {
@@ -2170,6 +2415,26 @@ mod tests {
         assert!(!plugins.pvp_attack(&server, &a, &b, 5.0));
         assert!(!plugins.spawn_protection(&server, "Builder", (0, 64, 0)), "Builder may build at spawn");
         assert!(plugins.spawn_protection(&server, "Steve", (0, 64, 0)));
+    }
+
+    struct NoGive;
+    impl Plugin for NoGive {
+        fn name(&self) -> &str {
+            "nogive"
+        }
+        fn on_give_command(&self, _: &Server, sender: &str, _: &str) -> bool {
+            sender == "Admin"
+        }
+    }
+
+    #[test]
+    fn commands_go_to_their_events() {
+        let server = Server::new();
+        let plugins = Plugins::new(vec![Box::new(NoGive)]);
+        assert!(!plugins.command_event(&server, "Steve", &["give", "diamond", "64"]), "only Admin may /give");
+        assert!(plugins.command_event(&server, "Admin", &["/give", "diamond"]));
+        assert!(plugins.command_event(&server, "Steve", &["say", "hi"]), "other commands go through");
+        assert!(plugins.command_event(&server, "Steve", &[]));
     }
 
     #[test]

@@ -58,6 +58,7 @@ See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands
 - ✅ **0.6.12** 25 more plugin events: effects, pearls, item drops, golems, traders, patrols, sculk, trials, admin commands, backups
 - ✅ **0.6.13** 25 more plugin events: XP, shields, armor, death drops, portals, throwing, cake, dragon egg, composters, slow ticks and more
 - ✅ **0.6.14** 25 more plugin events: redstone inputs, tools on blocks, PvP, idle kicks, spawn protection, saplings and more
+- ✅ **0.6.15** 25 more plugin events (213, past PNX's ~200): mob care, PvP kills, maps, dialogs, every admin command
 
 ## 1.0: stable
 

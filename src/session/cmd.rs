@@ -58,6 +58,8 @@ impl Session {
         let denied = false; // checked when the command was issued
         let reply = if let Some(r) = plugin_reply { r } else if denied {
             "§cYou do not have permission to use this command".to_string()
+        } else if !self.server.plugins.command_event(&self.server, &self.name, &args) {
+            "§cA plugin stopped that".to_string()
         } else if let Some(r) = commands::run(&self.server, &self.name, &args) {
             r
         } else if let Some(r) = self.player_command(&args, here).await {

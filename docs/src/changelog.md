@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.15
+
+- 25 more plugin events: 213 now, past PowerNukkitX's ~200.
+  - Mobs: `on_mob_feed`, `on_baby_feed`, `on_mob_saddle`, `on_cow_milk`, `on_creeper_ignite`, `on_cure_start`
+  - Players: `on_player_kill` (PvP kills), `on_map_create`, `on_dialog_open`, `on_dialog_answer`
+  - Commands, for players, the console and RCON alike: `on_say_command`, `on_me_command`, `on_whisper_command`, `on_give_command`, `on_summon_command`, `on_setblock_command`, `on_fill_command`, `on_kill_command`, `on_enchant_command`, `on_clear_command`, `on_setworldspawn_command`, `on_title_command`, `on_tellraw_command`, `on_scoreboard_command`, `on_effect_command`
+- 18 of them can be cancelled (every command one), so a plugin can limit who may /give, /fill or /summon without a permissions plugin. Runtime `.wasm` plugins get them all.
+
 ## 0.6.14
 
 - 25 more plugin events (188 now):

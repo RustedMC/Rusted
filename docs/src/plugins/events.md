@@ -235,6 +235,31 @@ Mob positions are `(f32, f32, f32)`.
 | `on_pumpkin_carve(server, pos: (i32, i32, i32), player: Option<i64>)` | The pumpkin at `pos` was carved with shears |  |
 | `on_berry_pick(server, pos: (i32, i32, i32), player: Option<i64>)` | Berries were picked from the bush or cave vines at `pos` |  |
 | `on_spawn_egg_use(server, player: &PlayerInfo, kind: &str, pos: (f32, f32, f32))` | Player is about to use a spawn egg for `kind` at `pos` | yes |
+| `on_mob_feed(server, player: i64, mob: i64)` | Player `player` fed `mob` its breeding food, so it's ready to breed |  |
+| `on_baby_feed(server, player: i64, mob: i64)` | Player `player` fed the baby `mob`, making it grow faster |  |
+| `on_mob_saddle(server, player: i64, mob: i64)` | Player `player` put a saddle on `mob` |  |
+| `on_cow_milk(server, player: &PlayerInfo, mob: i64)` | Player is about to milk cow `mob` with a bucket | yes |
+| `on_creeper_ignite(server, player: i64, mob: i64)` | Player `player` lit creeper `mob` with flint and steel |  |
+| `on_cure_start(server, player: i64, mob: i64)` | Player `player` gave zombie villager `mob` a golden apple and the cure started |  |
+| `on_map_create(server, player: &PlayerInfo)` | Player is about to turn an empty map into a map of the area | yes |
+| `on_dialog_open(server, player: &PlayerInfo, npc: &str)` | An NPC dialog from `npc` (its name) is about to open for the player | yes |
+| `on_dialog_answer(server, player: &PlayerInfo, scene: &str, button: Option<usize>)` | Player answered NPC dialog `scene` with `button` (None when closed) |  |
+| `on_player_kill(server, killer: &PlayerInfo, victim: &PlayerInfo)` | Player `killer` killed player `victim` |  |
+| `on_say_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /say with `args` | yes |
+| `on_me_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /me with `args` | yes |
+| `on_whisper_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /tell, /msg and /w with `args` | yes |
+| `on_give_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /give with `args` | yes |
+| `on_summon_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /summon with `args` | yes |
+| `on_setblock_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /setblock with `args` | yes |
+| `on_fill_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /fill with `args` | yes |
+| `on_kill_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /kill with `args` | yes |
+| `on_enchant_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /enchant with `args` | yes |
+| `on_clear_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /clear with `args` | yes |
+| `on_setworldspawn_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /setworldspawn with `args` | yes |
+| `on_title_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /title and /titleraw with `args` | yes |
+| `on_tellraw_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /tellraw with `args` | yes |
+| `on_scoreboard_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /scoreboard with `args` | yes |
+| `on_effect_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /effect with `args` | yes |
 
 ## Example: a no-grief zone
 

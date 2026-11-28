@@ -36,7 +36,7 @@ impl Session {
                 self.inv.use_one(slot);
                 true
             }
-            mobs::Use::Milk if survival_like(&self.mode) => {
+            mobs::Use::Milk if survival_like(&self.mode) && self.server.get(self.id).is_none_or(|me| self.server.plugins.cow_milk(&self.server, &me, e.actor_runtime_id as i64)) => {
                 self.inv.use_one(slot);
                 if let Some(milk) = items::item_by_name("minecraft:milk_bucket") {
                     if self.inv.held(slot).is_none() {

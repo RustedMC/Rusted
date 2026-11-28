@@ -145,6 +145,7 @@ impl Session {
             && u.action_type == 1
             && self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id)) == Some("minecraft:empty_map")
             && let Some(me) = self.server.get(self.id)
+            && self.server.plugins.map_create(&self.server, &me)
             && let Some(map) = crate::maps::filled_map(crate::maps::create(me.pos.0, me.pos.2, self.conn.dim))
         {
             let slot = self.selected_slot as usize;

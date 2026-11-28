@@ -1013,6 +1013,106 @@ impl Plugin for WasmPlugin {
         self.ask(server, json!({ "event": "spawn_egg_use", "player": player_json(player), "kind": kind, "pos": [pos.0, pos.1, pos.2] }))
     }
 
+    fn on_mob_feed(&self, server: &Server, player: i64, mob: i64) {
+        self.notify(server, json!({ "event": "mob_feed", "player": player, "mob": mob }));
+    }
+
+    fn on_baby_feed(&self, server: &Server, player: i64, mob: i64) {
+        self.notify(server, json!({ "event": "baby_feed", "player": player, "mob": mob }));
+    }
+
+    fn on_mob_saddle(&self, server: &Server, player: i64, mob: i64) {
+        self.notify(server, json!({ "event": "mob_saddle", "player": player, "mob": mob }));
+    }
+
+    fn on_cow_milk(&self, server: &Server, player: &PlayerInfo, mob: i64) -> bool {
+        self.ask(server, json!({ "event": "cow_milk", "player": player_json(player), "mob": mob }))
+    }
+
+    fn on_creeper_ignite(&self, server: &Server, player: i64, mob: i64) {
+        self.notify(server, json!({ "event": "creeper_ignite", "player": player, "mob": mob }));
+    }
+
+    fn on_cure_start(&self, server: &Server, player: i64, mob: i64) {
+        self.notify(server, json!({ "event": "cure_start", "player": player, "mob": mob }));
+    }
+
+    fn on_map_create(&self, server: &Server, player: &PlayerInfo) -> bool {
+        self.ask(server, json!({ "event": "map_create", "player": player_json(player) }))
+    }
+
+    fn on_dialog_open(&self, server: &Server, player: &PlayerInfo, npc: &str) -> bool {
+        self.ask(server, json!({ "event": "dialog_open", "player": player_json(player), "npc": npc }))
+    }
+
+    fn on_dialog_answer(&self, server: &Server, player: &PlayerInfo, scene: &str, button: Option<usize>) {
+        self.notify(server, json!({ "event": "dialog_answer", "player": player_json(player), "scene": scene, "button": button }));
+    }
+
+    fn on_player_kill(&self, server: &Server, killer: &PlayerInfo, victim: &PlayerInfo) {
+        self.notify(server, json!({ "event": "player_kill", "killer": player_json(killer), "victim": player_json(victim) }));
+    }
+
+    fn on_say_command(&self, server: &Server, sender: &str, args: &str) -> bool {
+        self.ask(server, json!({ "event": "say_command", "sender": sender, "args": args }))
+    }
+
+    fn on_me_command(&self, server: &Server, sender: &str, args: &str) -> bool {
+        self.ask(server, json!({ "event": "me_command", "sender": sender, "args": args }))
+    }
+
+    fn on_whisper_command(&self, server: &Server, sender: &str, args: &str) -> bool {
+        self.ask(server, json!({ "event": "whisper_command", "sender": sender, "args": args }))
+    }
+
+    fn on_give_command(&self, server: &Server, sender: &str, args: &str) -> bool {
+        self.ask(server, json!({ "event": "give_command", "sender": sender, "args": args }))
+    }
+
+    fn on_summon_command(&self, server: &Server, sender: &str, args: &str) -> bool {
+        self.ask(server, json!({ "event": "summon_command", "sender": sender, "args": args }))
+    }
+
+    fn on_setblock_command(&self, server: &Server, sender: &str, args: &str) -> bool {
+        self.ask(server, json!({ "event": "setblock_command", "sender": sender, "args": args }))
+    }
+
+    fn on_fill_command(&self, server: &Server, sender: &str, args: &str) -> bool {
+        self.ask(server, json!({ "event": "fill_command", "sender": sender, "args": args }))
+    }
+
+    fn on_kill_command(&self, server: &Server, sender: &str, args: &str) -> bool {
+        self.ask(server, json!({ "event": "kill_command", "sender": sender, "args": args }))
+    }
+
+    fn on_enchant_command(&self, server: &Server, sender: &str, args: &str) -> bool {
+        self.ask(server, json!({ "event": "enchant_command", "sender": sender, "args": args }))
+    }
+
+    fn on_clear_command(&self, server: &Server, sender: &str, args: &str) -> bool {
+        self.ask(server, json!({ "event": "clear_command", "sender": sender, "args": args }))
+    }
+
+    fn on_setworldspawn_command(&self, server: &Server, sender: &str, args: &str) -> bool {
+        self.ask(server, json!({ "event": "setworldspawn_command", "sender": sender, "args": args }))
+    }
+
+    fn on_title_command(&self, server: &Server, sender: &str, args: &str) -> bool {
+        self.ask(server, json!({ "event": "title_command", "sender": sender, "args": args }))
+    }
+
+    fn on_tellraw_command(&self, server: &Server, sender: &str, args: &str) -> bool {
+        self.ask(server, json!({ "event": "tellraw_command", "sender": sender, "args": args }))
+    }
+
+    fn on_scoreboard_command(&self, server: &Server, sender: &str, args: &str) -> bool {
+        self.ask(server, json!({ "event": "scoreboard_command", "sender": sender, "args": args }))
+    }
+
+    fn on_effect_command(&self, server: &Server, sender: &str, args: &str) -> bool {
+        self.ask(server, json!({ "event": "effect_command", "sender": sender, "args": args }))
+    }
+
 }
 
 #[cfg(test)]

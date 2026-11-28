@@ -160,7 +160,7 @@ impl Plugin for NoGrief {
 }
 ```
 
-About 60 events, custom commands, permissions, per-player config, chest menus, forms,
+213 events (more than PowerNukkitX), custom commands, permissions, per-player config, chest menus, forms,
 scoreboards and boss bars. Add your plugin to `plugin::all()` in [`src/plugin.rs`](src/plugin.rs),
 and see the [plugin docs](https://rustedmc.github.io/Rusted/plugins/first-plugin.html).
 

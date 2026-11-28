@@ -144,6 +144,9 @@ pub fn show_dialog(server: &Server, to: i64, dialog: Dialog, then: impl FnOnce(&
     use bedrock::protocol::v662::types::{ActorRuntimeID, ActorUniqueID, DataItem, PropertySyncData};
     use bedrock::protocol::v924::enums::ActorDataIDs as Id;
     let Some(me) = server.get(to) else { return };
+    if !server.plugins.dialog_open(server, &me, &dialog.npc_name) {
+        return;
+    }
     let npc = crate::players::next_id();
     let scene = format!("rusted:{}", NEXT_SCENE.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
     let actions = json!(dialog.buttons.iter().map(|b| json!({
@@ -188,6 +191,9 @@ pub fn show_dialog(server: &Server, to: i64, dialog: Dialog, then: impl FnOnce(&
 
 /// The client answered a dialog: a button (`button` = Some(index)) or closing it (None).
 pub fn dialog_answered(server: &Server, player: i64, scene: &str, button: Option<usize>) {
+    if let Some(p) = server.get(player) {
+        server.plugins.dialog_answer(server, &p, scene, button);
+    }
     let Some((npc, then)) = DIALOGS.lock().as_mut().and_then(|d| d.remove(&(player, scene.to_string()))) else { return };
     let close = Protocol::NpcDialoguePacket(Box::new(bedrock::protocol::v662::packets::NpcDialoguePacket {
         npc_raw_id: npc as u64,

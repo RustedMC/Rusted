@@ -70,7 +70,7 @@ pub fn start(server: Server) {
                             let line = body.trim().trim_start_matches('/');
                             println!("RCON ({addr}): {line}");
                             let args: Vec<&str> = line.split_whitespace().collect();
-                            let text = if !server.plugins.rcon_command(&server, &addr.to_string(), line) {
+                            let text = if !server.plugins.rcon_command(&server, &addr.to_string(), line) || !server.plugins.command_event(&server, crate::commands::CONSOLE, &args) {
                                 "Refused by a plugin".to_string()
                             } else {
                                 match crate::commands::run(&server, crate::commands::CONSOLE, &args) {

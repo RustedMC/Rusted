@@ -506,6 +506,10 @@ async fn main() {
                     continue;
                 }
                 let args: Vec<&str> = line.split_whitespace().collect();
+                if !server.plugins.command_event(&server, commands::CONSOLE, &args) {
+                    println!("A plugin stopped that");
+                    continue;
+                }
                 match commands::run(&server, commands::CONSOLE, &args) {
                     Some(r) if r.is_empty() => {}
                     Some(r) => println!("{}", strip_colors(&r)),

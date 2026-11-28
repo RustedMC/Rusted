@@ -1111,6 +1111,7 @@ impl Mobs {
         }
         if m.kind == Kind::Creeper && held == "minecraft:flint_and_steel" {
             m.lit = true;
+            crate::plugin::later(crate::plugin::Later::CreeperIgnite(player, id));
             return Use::Wear;
         }
         if m.kind == Kind::ChestMinecart {
@@ -1130,6 +1131,7 @@ impl Mobs {
         // A golden apple on a weakened zombie villager starts curing it (3-5 minutes).
         if m.kind == Kind::ZombieVillager && held == "minecraft:golden_apple" && m.weak > 0 && m.curing == 0 {
             m.curing = (180 + self.rand() % 120) * TPS;
+            crate::plugin::later(crate::plugin::Later::CureStart(player, id));
             if let Some(p) = server.get(player) {
                 CURED_BY.lock().insert(id, p.name);
             }
@@ -1155,6 +1157,7 @@ impl Mobs {
             // A saddle goes on tamed horses, and on any adult pig, strider or camel.
             if held == "minecraft:saddle" && !m.saddled && tame {
                 m.saddled = true;
+                crate::plugin::later(crate::plugin::Later::Saddle(player, id));
                 broadcast(server, data_packet(m));
                 broadcast(server, sound("mob.horse.armor", m.pos));
                 return Use::Consume;
@@ -1226,11 +1229,13 @@ impl Mobs {
             m.kept = true;
             if m.baby > 0 {
                 m.baby = m.baby.saturating_sub(m.baby / 10); // feeding babies speeds growth 10%
+                crate::plugin::later(crate::plugin::Later::BabyFeed(player, id));
                 broadcast(server, event(id, ActorEvent::Feed));
                 return Use::Consume;
             }
             if m.love == 0 && m.cooldown == 0 {
                 m.love = LOVE;
+                crate::plugin::later(crate::plugin::Later::Feed(player, id));
                 broadcast(server, event(id, ActorEvent::InLoveHearts));
                 return Use::Consume;
             }
