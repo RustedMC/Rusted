@@ -263,6 +263,24 @@ Each event is JSON. `e.kind()` tells you which one; player events have `player` 
 | `tellraw_command` | `sender`, `args` | cancellable |
 | `scoreboard_command` | `sender`, `args` | cancellable |
 | `effect_command` | `sender`, `args` | cancellable |
+| `damage_modify` | `cause`, `amount` | `reply("2.5")` sets the damage; 0 cancels it |
+| `mob_damage_modify` | `mob`, `kind`, `attacker`, `amount` | `reply("2.5")` sets the damage |
+| `block_drops` | `pos`, `block`, `drops` | `reply('[["minecraft:diamond", 1]]')` replaces the drops; `[]` for none |
+| `mob_drops` | `kind`, `pos`, `killer`, `drops` | same as `block_drops` |
+| `block_xp` | `pos`, `block`, `xp` | `reply("10")` sets the XP |
+| `mob_xp` | `kind`, `pos`, `killer`, `xp` | `reply("10")` sets the XP |
+| `knockback` | `knock` | `reply("[0, 0.4, 0]")` sets the motion |
+| `packet_send` | `packet` | cancellable; not sent for chunks, movement and other busy packets |
+| `permission_check` | `player`, `node`, `allowed` | `reply("true")` or `reply("false")` decides |
+| `plugin_enable` | `name` |  |
+| `book_edit` | `page`, `text` | cancellable |
+| `book_sign` | `title` | cancellable |
+
+### Changing values
+
+Events whose last field is a value to change (`damage_modify`, `block_drops`, `mob_xp`,
+`knockback`, `permission_check` and the like) take the new value as your `reply(...)`: a number,
+`true`/`false`, or JSON for lists and positions, as the table shows. No reply leaves it as it is.
 
 ## What a plugin can do
 

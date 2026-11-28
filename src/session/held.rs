@@ -220,6 +220,60 @@ impl Session {
         }
     }
 
+    /// Book and quill: write, add, delete and move pages, or sign it into a written book.
+    pub(super) async fn on_book_edit(&mut self, b: &<Protocol as bedrock::protocol::ProtoVersionPackets>::BookEditPacket) {
+        use bedrock::protocol::v924::enums::BookEditAction as A;
+        let slot = b.book_slot.max(0) as usize;
+        let Some(st) = self.inv.held(slot).cloned() else { return };
+        if items::name_of(st.item.id) != Some("minecraft:writable_book") {
+            return;
+        }
+        let Some(me) = self.server.get(self.id) else { return };
+        let at = |i: &i32| (*i).max(0) as usize;
+        let e = match &b.action {
+            A::ReplacePage { page_index, text, .. } => crate::books::Edit::Replace(at(page_index), text.clone()),
+            A::AddPage { page_index, text, .. } => crate::books::Edit::Add(at(page_index), text.clone()),
+            A::DeletePage { page_index } => crate::books::Edit::Delete(at(page_index)),
+            A::SwapPages { page_index_a, page_index_b } => crate::books::Edit::Swap(at(page_index_a), at(page_index_b)),
+            A::Finalize { title, .. } => crate::books::Edit::Sign { title: title.clone(), author: me.name.clone(), xuid: me.xuid.clone() },
+        };
+        let changed = match &e {
+            crate::books::Edit::Sign { title, author, xuid } => {
+                // The author is who signed it, whatever name the client sent.
+                if self.server.plugins.book_sign(&self.server, &me, title)
+                    && let Some(mut written) = items::item_by_name("minecraft:written_book")
+                {
+                    written.user_data_buffer = crate::books::sign(&st.item.user_data_buffer, title, author, xuid);
+                    self.inv.set_slot(slot, written, 1);
+                    true
+                } else {
+                    false
+                }
+            }
+            other => {
+                let (page, text) = match other {
+                    crate::books::Edit::Replace(i, t) | crate::books::Edit::Add(i, t) => (*i as i32, t.as_str()),
+                    crate::books::Edit::Delete(i) | crate::books::Edit::Swap(i, _) => (*i as i32, ""),
+                    crate::books::Edit::Sign { .. } => (0, ""),
+                };
+                match crate::books::edit(&st.item.user_data_buffer, other).filter(|_| self.server.plugins.book_edit(&self.server, &me, page, text)) {
+                    Some(data) => {
+                        let mut item = st.item.clone();
+                        item.user_data_buffer = data;
+                        self.inv.set_slot(slot, item, st.count);
+                        true
+                    }
+                    None => false,
+                }
+            }
+        };
+        let _ = changed; // refused or not, the client gets the server's copy back
+        let item = self.inv.held(slot).map_or_else(spawn::air, inventory::Stack::to_network);
+        let _ = self.conn.send(&[Protocol::InventorySlotPacket(Box::new(InventorySlotPacket {
+            container_id: 0, slot: slot as u32, container_name_data: None, storage_item: None, item,
+        }))]).await;
+    }
+
     pub(super) async fn on_block_pick(&mut self, r: &BlockPick) {
         let p = &r.position;
         if let Some(me) = self.server.get(self.id)

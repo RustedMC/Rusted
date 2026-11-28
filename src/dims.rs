@@ -65,6 +65,8 @@ pub const fn range(dim: u8) -> (i32, i32) {
 pub struct DimConn {
     pub conn: Connection<Protocol>,
     pub dim: u8,
+    /// Set once the player is in, for the packet-send plugin event.
+    pub owner: Option<(crate::players::Server, i64)>,
 }
 
 /// Entities further than this from the client's band are in another dimension and get dropped.
@@ -72,7 +74,7 @@ const BAND: std::ops::Range<f32> = -400.0..800.0;
 
 impl DimConn {
     pub fn new(conn: Connection<Protocol>) -> Self {
-        DimConn { conn, dim: OVERWORLD }
+        DimConn { conn, dim: OVERWORLD, owner: None }
     }
 
     fn dy(&self) -> f32 {
@@ -81,7 +83,13 @@ impl DimConn {
 
     pub async fn send(&mut self, packets: &[Protocol]) -> Result<(), ConnectionError> {
         let dy = self.dy();
-        let out: Vec<Protocol> = packets.iter().filter_map(|p| shift(p.clone(), -dy)).collect();
+        let mut out: Vec<Protocol> = packets.iter().filter_map(|p| shift(p.clone(), -dy)).collect();
+        if let Some((s, id)) = &self.owner
+            && s.plugins.has_any()
+            && let Some(me) = s.get(*id)
+        {
+            out.retain(|p| s.plugins.packet_send(s, &me, &crate::plugin::packet_name(p)));
+        }
         if out.is_empty() {
             return Ok(());
         }

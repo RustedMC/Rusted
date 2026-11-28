@@ -38,6 +38,23 @@ pub enum Damage {
     Wither(f32),
 }
 
+impl Damage {
+    /// The same damage with a different amount (fixed-amount kinds stay as they are).
+    pub fn with_amount(self, a: f32) -> Damage {
+        match self {
+            Damage::Fall(_) => Damage::Fall(a),
+            Damage::Lava(_) => Damage::Lava(a),
+            Damage::Fire(_) => Damage::Fire(a),
+            Damage::Mob(_, by) => Damage::Mob(a, by),
+            Damage::Shot(_, by) => Damage::Shot(a, by),
+            Damage::Explosion(_, by) => Damage::Explosion(a, by),
+            Damage::Magic(_) => Damage::Magic(a),
+            Damage::Wither(_) => Damage::Wither(a),
+            other => other,
+        }
+    }
+}
+
 pub struct Health {
     pub health: f32,
     /// this player's max health (20 unless a plugin changed it)

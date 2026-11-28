@@ -102,6 +102,7 @@ impl Session {
         mode: GameType,
     ) -> Option<Session> {
         let (id, name) = (me.id, me.name.clone());
+        conn.owner = Some((server.clone(), id));
         // Logged in again while the old connection is still around (a client retry): drop the old one.
         for old in server.all().into_iter().filter(|p| p.name == name && p.id != id) {
             server.kick(old.id, "Logged in from another location");
@@ -355,6 +356,7 @@ impl Session {
             Protocol::RespawnPacket(r) if self.hp.dead && matches!(r.state, PlayerRespawnState::ClientReadyToSpawn) => return self.on_respawn().await,
             Protocol::PlayerActionPacket(a) if self.hp.dead && matches!(a.action, PlayerActionType::Respawn) => return self.on_respawn().await,
             Protocol::PlayerActionPacket(a) => self.on_player_action(&a).await,
+            Protocol::BookEditPacket(b) => self.on_book_edit(&b).await,
             // Emotes and skin changes go to everyone else (they were dropped before).
             Protocol::EmotePacket(e) => {
                 if let Some(me) = self.server.get(self.id)

@@ -1548,6 +1548,15 @@ impl Mobs {
         {
             return;
         }
+        let mut damage = damage;
+        if server.plugins.has_any()
+            && let Some(kind) = self.kind_of(id)
+        {
+            server.plugins.mob_damage_modify(server, id, kind.identifier(), attacker, &mut damage);
+            if damage <= 0.0 {
+                return;
+            }
+        }
         let mut mobs = self.mobs.lock();
         let Some(m) = mobs.get_mut(&id) else { return };
         // A player hitting a villager is talked about (PNX EntityVillagerV2.attack).
@@ -1670,11 +1679,12 @@ impl Mobs {
             }
             // XP only for a player kill, as orbs at the body (vanilla), not straight into the bar.
             if attacker.is_some_and(|a| server.get(a).is_some()) && !baby {
-                let points = match kind {
+                let mut points = match kind {
                     Kind::IronGolem | Kind::Villager | Kind::Boat | Kind::Minecart | Kind::ChestMinecart => 0,
                     k if k.hostile() => 5,
                     _ => 1 + (self.rand() % 3) as i32,
                 };
+                server.plugins.mob_xp(server, kind.identifier(), pos, attacker, &mut points);
                 if points > 0 {
                     server.entities.drop_xp(server, pos, points);
                 }
@@ -1682,12 +1692,19 @@ impl Mobs {
             if kind == Kind::Boat && let Some(it) = crate::items::item_by_name(&if home.is_some() { chest_boat_item(slime) } else { boat_item(slime) }) {
                 server.entities.drop_item(server, it, 1, (pos.0, pos.1 + 0.5, pos.2));
             }
+            let mut drops = Vec::new();
             for &(item, lo, hi) in kind.drops() {
                 // Looting raises the most of each drop by its level (PNX `EntityLiving.getDrops`).
                 let hi = hi + hit.looting as i8;
                 let n = lo + (self.rand() % (hi - lo + 1) as u32) as i8;
+                if n > 0 {
+                    drops.push((item.to_string(), n));
+                }
+            }
+            server.plugins.mob_drops(server, kind.identifier(), pos, attacker, &mut drops);
+            for (item, n) in drops {
                 if n > 0
-                    && let Some(it) = crate::items::item_by_name(item)
+                    && let Some(it) = crate::items::item_by_name(&item)
                 {
                     server.entities.drop_item(server, it, n, (pos.0, pos.1 + 0.5, pos.2));
                 }

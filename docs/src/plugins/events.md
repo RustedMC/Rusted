@@ -260,6 +260,18 @@ Mob positions are `(f32, f32, f32)`.
 | `on_tellraw_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /tellraw with `args` | yes |
 | `on_scoreboard_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /scoreboard with `args` | yes |
 | `on_effect_command(server, sender: &str, args: &str)` | `sender` (a player's name, or CONSOLE) is about to run /effect with `args` | yes |
+| `on_damage_modify(server, player, cause: &str, amount: &mut f32)` | Change how much damage the player takes | |
+| `on_mob_damage_modify(server, mob, kind: &str, attacker: Option<i64>, amount: &mut f32)` | Change how much damage a mob takes | |
+| `on_block_drops(server, player, pos, block: &str, drops: &mut Vec<(String, i8)>)` | Change what a broken block drops | |
+| `on_mob_drops(server, kind: &str, pos, killer: Option<i64>, drops: &mut Vec<(String, i8)>)` | Change what a dying mob drops | |
+| `on_block_xp(server, player, pos, block: &str, xp: &mut i32)` | Change the XP from breaking a block | |
+| `on_mob_xp(server, kind: &str, pos, killer: Option<i64>, xp: &mut i32)` | Change the XP a killed mob drops | |
+| `on_knockback(server, player, knock: &mut (f32, f32, f32))` | Change the knockback from a hit | |
+| `on_packet_send(server, player, packet: &str)` | A packet is about to go to the player | yes |
+| `on_permission_check(server, player: &str, node: &str, allowed: &mut bool)` | Decide whether a player has a permission | |
+| `on_plugin_enable(server, name: &str)` | A plugin was loaded, at startup | |
+| `on_book_edit(server, player, page: i32, text: &str)` | Writing in a book and quill | yes |
+| `on_book_sign(server, player, title: &str)` | Signing a book and quill | yes |
 
 ## Example: a no-grief zone
 

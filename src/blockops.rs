@@ -311,7 +311,20 @@ pub(crate) fn break_block(server: &players::Server, id: i64, p: (i32, i32, i32),
     }
     let drops = if is_shulker { None } else { drops };
     if let Some(held) = drops && game_rule_on(server, "doTileDrops", true) {
-        let normal = drops::drops(old, p, held);
+        let mut normal = drops::drops(old, p, held);
+        let block_name = blocks::entry(old).map_or("", |e| e.name.as_str());
+        let breaker = server.get(id);
+        if server.plugins.has_any()
+            && let Some(me) = &breaker
+        {
+            let before: Vec<(String, i8)> = normal.iter().map(|(it, n)| (items::name_of(it.id).unwrap_or("").to_string(), *n)).collect();
+            let mut list = before.clone();
+            server.plugins.block_drops(server, me, p, block_name, &mut list);
+            // Only rebuilt when a plugin changed something, so items keep their data otherwise.
+            if list != before {
+                normal = list.into_iter().filter(|(_, c)| *c > 0).filter_map(|(n, c)| items::item_by_name(&n).map(|it| (it, c))).collect();
+            }
+        }
         let block_item = items::item_for_block(old);
         // Silk touch drops the block itself (when it drops anything at all with this tool).
         let silk = enchant::level(tool, enchant::SILK_TOUCH) > 0 && !normal.is_empty() && containers::kind(old).is_none();
@@ -320,7 +333,10 @@ pub(crate) fn break_block(server: &players::Server, id: i64, p: (i32, i32, i32),
             server.entities.drop_item(server, it, 1, center);
         } else {
             let roll = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos() / 7;
-            let points = xp::from_block(blocks::entry(old).map_or("", |e| e.name.as_str()), roll);
+            let mut points = xp::from_block(block_name, roll);
+            if let Some(me) = &breaker {
+                server.plugins.block_xp(server, me, p, block_name, &mut points);
+            }
             if points > 0 {
                 let _ = server.events.send(players::Event::Xp { to: id, points });
             }

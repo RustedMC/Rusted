@@ -1026,6 +1026,52 @@ pub trait Plugin: Send + Sync {
         true
     }
 
+    /// Change how much damage the player takes (`cause` like "fall", "lava" or a mob's name).
+    /// Runs after `on_player_damage` allowed the hit. Set `amount` to 0 to make it harmless.
+    fn on_damage_modify(&self, _server: &Server, _player: &PlayerInfo, _cause: &str, _amount: &mut f32) {}
+
+    /// Change how much damage mob `mob` takes (`attacker` is the entity id of who hit it, if anyone).
+    fn on_mob_damage_modify(&self, _server: &Server, _mob: i64, _kind: &str, _attacker: Option<i64>, _amount: &mut f32) {}
+
+    /// Change what the `block` the player broke at `pos` drops: (item name, count) pairs. Clear it for no drops.
+    fn on_block_drops(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32), _block: &str, _drops: &mut Vec<(String, i8)>) {}
+
+    /// Change what a dying mob of `kind` drops at `pos`: (item name, count) pairs.
+    fn on_mob_drops(&self, _server: &Server, _kind: &str, _pos: (f32, f32, f32), _killer: Option<i64>, _drops: &mut Vec<(String, i8)>) {}
+
+    /// Change the XP the player gets for breaking `block` (ores, spawners and the like).
+    fn on_block_xp(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32), _block: &str, _xp: &mut i32) {}
+
+    /// Change the XP a mob of `kind` killed by a player drops at `pos`.
+    fn on_mob_xp(&self, _server: &Server, _kind: &str, _pos: (f32, f32, f32), _killer: Option<i64>, _xp: &mut i32) {}
+
+    /// Change the knockback the player gets from a hit, as (x, y, z) motion. Zero it for none.
+    fn on_knockback(&self, _server: &Server, _player: &PlayerInfo, _knock: &mut (f32, f32, f32)) {}
+
+    /// A packet is about to go to the player (`packet` is its name, like "TextPacket"). Return
+    /// false to hold it back. Only called when a plugin is loaded.
+    fn on_packet_send(&self, _server: &Server, _player: &PlayerInfo, _packet: &str) -> bool {
+        true
+    }
+
+    /// The server is checking whether `player` has permission `node`. `allowed` holds the
+    /// answer from permissions.txt and plugin defaults; change it to decide yourself.
+    fn on_permission_check(&self, _server: &Server, _player: &str, _node: &str, _allowed: &mut bool) {}
+
+    /// Plugin `name` was loaded (every plugin hears about every plugin, itself included), at startup.
+    fn on_plugin_enable(&self, _server: &Server, _name: &str) {}
+
+    /// Player is writing `text` on page `page` of a book and quill (or deleting or moving pages,
+    /// with empty `text`). Return false to undo it.
+    fn on_book_edit(&self, _server: &Server, _player: &PlayerInfo, _page: i32, _text: &str) -> bool {
+        true
+    }
+
+    /// Player is signing their book and quill as `title`. Return false to stop it.
+    fn on_book_sign(&self, _server: &Server, _player: &PlayerInfo, _title: &str) -> bool {
+        true
+    }
+
     /// Player jumped.
     fn on_jump(&self, _server: &Server, _player: &PlayerInfo) {}
 
@@ -1180,6 +1226,9 @@ impl Plugins {
     }
 
     pub fn server_start(&self, s: &Server) {
+        for loaded in &self.list {
+            self.list.iter().for_each(|pl| pl.on_plugin_enable(s, loaded.name()));
+        }
         self.list.iter().for_each(|pl| pl.on_server_start(s));
     }
 
@@ -1888,6 +1937,53 @@ impl Plugins {
         }
     }
 
+    pub fn damage_modify(&self, s: &Server, p: &PlayerInfo, cause: &str, amount: &mut f32) {
+        self.each(|pl| pl.on_damage_modify(s, p, cause, amount));
+    }
+
+    pub fn mob_damage_modify(&self, s: &Server, mob: i64, kind: &str, attacker: Option<i64>, amount: &mut f32) {
+        self.each(|pl| pl.on_mob_damage_modify(s, mob, kind, attacker, amount));
+    }
+
+    pub fn block_drops(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32), block: &str, drops: &mut Vec<(String, i8)>) {
+        self.each(|pl| pl.on_block_drops(s, p, pos, block, drops));
+    }
+
+    pub fn mob_drops(&self, s: &Server, kind: &str, pos: (f32, f32, f32), killer: Option<i64>, drops: &mut Vec<(String, i8)>) {
+        self.each(|pl| pl.on_mob_drops(s, kind, pos, killer, drops));
+    }
+
+    pub fn block_xp(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32), block: &str, xp: &mut i32) {
+        self.each(|pl| pl.on_block_xp(s, p, pos, block, xp));
+    }
+
+    pub fn mob_xp(&self, s: &Server, kind: &str, pos: (f32, f32, f32), killer: Option<i64>, xp: &mut i32) {
+        self.each(|pl| pl.on_mob_xp(s, kind, pos, killer, xp));
+    }
+
+    pub fn knockback(&self, s: &Server, p: &PlayerInfo, knock: &mut (f32, f32, f32)) {
+        self.each(|pl| pl.on_knockback(s, p, knock));
+    }
+
+    pub fn packet_send(&self, s: &Server, p: &PlayerInfo, packet: &str) -> bool {
+        self.cancellable(|pl| pl.on_packet_send(s, p, packet))
+    }
+
+    pub fn book_edit(&self, s: &Server, p: &PlayerInfo, page: i32, text: &str) -> bool {
+        self.cancellable(|pl| pl.on_book_edit(s, p, page, text))
+    }
+
+    pub fn book_sign(&self, s: &Server, p: &PlayerInfo, title: &str) -> bool {
+        self.cancellable(|pl| pl.on_book_sign(s, p, title))
+    }
+
+    /// `allowed`, then plugins get the last word (`on_permission_check`).
+    pub fn allowed_for(&self, s: &Server, player: &str, node: &str) -> bool {
+        let mut ok = self.allowed(player, node);
+        self.each(|pl| pl.on_permission_check(s, player, node, &mut ok));
+        ok
+    }
+
     pub fn jump(&self, s: &Server, p: &PlayerInfo) {
         self.each(|pl| pl.on_jump(s, p));
     }
@@ -2027,7 +2123,7 @@ impl Plugins {
     pub fn command(&self, s: &Server, p: &PlayerInfo, name: &str, args: &[&str]) -> Option<String> {
         let owner = self.list.iter().find(|pl| pl.commands().iter().any(|(n, _)| *n == name))?;
         if let Some(node) = owner.command_permission(name)
-            && !self.allowed(&p.name, node)
+            && !self.allowed_for(s, &p.name, node)
         {
             return Some("§cYou do not have permission to use this command".into());
         }
@@ -2425,6 +2521,61 @@ mod tests {
         fn on_give_command(&self, _: &Server, sender: &str, _: &str) -> bool {
             sender == "Admin"
         }
+    }
+
+    struct Editor;
+    impl Plugin for Editor {
+        fn name(&self) -> &str {
+            "editor"
+        }
+        fn on_damage_modify(&self, _: &Server, _: &PlayerInfo, cause: &str, amount: &mut f32) {
+            if cause == "fall" {
+                *amount = 0.0;
+            } else {
+                *amount /= 2.0;
+            }
+        }
+        fn on_block_drops(&self, _: &Server, _: &PlayerInfo, _: (i32, i32, i32), block: &str, drops: &mut Vec<(String, i8)>) {
+            if block == "minecraft:stone" {
+                *drops = vec![("minecraft:diamond".into(), 1)];
+            }
+        }
+        fn on_mob_xp(&self, _: &Server, _: &str, _: (f32, f32, f32), _: Option<i64>, xp: &mut i32) {
+            *xp *= 2;
+        }
+        fn on_knockback(&self, _: &Server, _: &PlayerInfo, knock: &mut (f32, f32, f32)) {
+            *knock = (0.0, 0.0, 0.0);
+        }
+        fn on_permission_check(&self, _: &Server, player: &str, node: &str, allowed: &mut bool) {
+            if player == "Vip" && node == "vip.fly" {
+                *allowed = true;
+            }
+        }
+    }
+
+    #[test]
+    fn plugins_can_edit_damage_drops_xp_knockback_and_permissions() {
+        let server = Server::new();
+        let plugins = Plugins::new(vec![Box::new(Editor)]);
+        let me = crate::players::tests::sample(1);
+        let mut a = 8.0;
+        plugins.damage_modify(&server, &me, "minecraft:zombie", &mut a);
+        assert_eq!(a, 4.0);
+        let mut f = 5.0;
+        plugins.damage_modify(&server, &me, "fall", &mut f);
+        assert_eq!(f, 0.0);
+        let mut d = vec![("minecraft:cobblestone".to_string(), 1)];
+        plugins.block_drops(&server, &me, (0, 0, 0), "minecraft:stone", &mut d);
+        assert_eq!(d, vec![("minecraft:diamond".to_string(), 1)]);
+        let mut xp = 5;
+        plugins.mob_xp(&server, "minecraft:zombie", (0.0, 0.0, 0.0), Some(1), &mut xp);
+        assert_eq!(xp, 10);
+        let mut k = (0.4, 0.4, 0.4);
+        plugins.knockback(&server, &me, &mut k);
+        assert_eq!(k, (0.0, 0.0, 0.0));
+        assert!(plugins.allowed_for(&server, "Vip", "vip.fly"), "the plugin granted it");
+        assert!(!plugins.allowed_for(&server, "Steve", "vip.fly"), "undeclared nodes stay ops-only");
+        assert_eq!(crate::health::Damage::Mob(6.0, "zombie").with_amount(2.0), crate::health::Damage::Mob(2.0, "zombie"));
     }
 
     #[test]

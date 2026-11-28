@@ -171,12 +171,21 @@ pub(crate) async fn hurt(conn: &mut dims::DimConn, server: &players::Server, id:
     if fx.level(effects::FIRE_RESISTANCE).is_some() && matches!(damage, D::Lava(_) | D::Fire(_)) || fx.level(effects::WATER_BREATHING).is_some() && damage == D::Drown {
         return;
     }
-    if let Some(me) = server.get(id) {
-        let (cause, amount) = damage_cause(damage);
-        if !server.plugins.player_damage(server, &me, cause, amount) {
-            return;
+    let damage = match server.get(id) {
+        Some(me) => {
+            let (cause, amount) = damage_cause(damage);
+            if !server.plugins.player_damage(server, &me, cause, amount) {
+                return;
+            }
+            let mut a = amount;
+            server.plugins.damage_modify(server, &me, cause, &mut a);
+            if a <= 0.0 {
+                return;
+            }
+            if a != amount { damage.with_amount(a) } else { damage }
         }
-    }
+        None => damage,
+    };
     // A raised shield stops mob hits and projectiles, and wears instead (1 + damage).
     // shortcut: blocks from every side, vanilla only blocks hits from the front; needs the attacker's position in Damage.
     if let D::Mob(d, _) | D::Shot(d, _) = damage

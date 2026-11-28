@@ -1113,6 +1113,83 @@ impl Plugin for WasmPlugin {
         self.ask(server, json!({ "event": "effect_command", "sender": sender, "args": args }))
     }
 
+    fn on_damage_modify(&self, server: &Server, player: &PlayerInfo, cause: &str, amount: &mut f32) {
+        let (_, reply) = self.call(server, json!({ "event": "damage_modify", "player": player_json(player), "cause": cause, "amount": *amount }));
+        if let Some(v) = reply.and_then(|r| r.trim().parse::<f32>().ok()).filter(|v| v.is_finite()) {
+            *amount = v;
+        }
+    }
+
+    fn on_mob_damage_modify(&self, server: &Server, mob: i64, kind: &str, attacker: Option<i64>, amount: &mut f32) {
+        let (_, reply) = self.call(server, json!({ "event": "mob_damage_modify", "mob": mob, "kind": kind, "attacker": attacker, "amount": *amount }));
+        if let Some(v) = reply.and_then(|r| r.trim().parse::<f32>().ok()).filter(|v| v.is_finite()) {
+            *amount = v;
+        }
+    }
+
+    fn on_block_drops(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32), block: &str, drops: &mut Vec<(String, i8)>) {
+        let (_, reply) = self.call(server, json!({ "event": "block_drops", "player": player_json(player), "pos": [pos.0, pos.1, pos.2], "block": block, "drops": drops }));
+        if let Some(v) = reply.and_then(|r| serde_json::from_str::<Vec<(String, i8)>>(&r).ok()) {
+            *drops = v;
+        }
+    }
+
+    fn on_mob_drops(&self, server: &Server, kind: &str, pos: (f32, f32, f32), killer: Option<i64>, drops: &mut Vec<(String, i8)>) {
+        let (_, reply) = self.call(server, json!({ "event": "mob_drops", "kind": kind, "pos": [pos.0, pos.1, pos.2], "killer": killer, "drops": drops }));
+        if let Some(v) = reply.and_then(|r| serde_json::from_str::<Vec<(String, i8)>>(&r).ok()) {
+            *drops = v;
+        }
+    }
+
+    fn on_block_xp(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32), block: &str, xp: &mut i32) {
+        let (ok, reply) = self.call(server, json!({ "event": "block_xp", "player": player_json(player), "pos": [pos.0, pos.1, pos.2], "block": block, "xp": *xp }));
+        if let Some(v) = reply.and_then(|r| r.trim().parse().ok()) { *xp = v; }
+        let _ = ok;
+    }
+
+    fn on_mob_xp(&self, server: &Server, kind: &str, pos: (f32, f32, f32), killer: Option<i64>, xp: &mut i32) {
+        let (ok, reply) = self.call(server, json!({ "event": "mob_xp", "kind": kind, "pos": [pos.0, pos.1, pos.2], "killer": killer, "xp": *xp }));
+        if let Some(v) = reply.and_then(|r| r.trim().parse().ok()) { *xp = v; }
+        let _ = ok;
+    }
+
+    fn on_knockback(&self, server: &Server, player: &PlayerInfo, knock: &mut (f32, f32, f32)) {
+        let (_, reply) = self.call(server, json!({ "event": "knockback", "player": player_json(player), "knock": [knock.0, knock.1, knock.2] }));
+        if let Some(v) = reply.and_then(|r| serde_json::from_str::<(f32, f32, f32)>(&r).ok()).filter(|v| v.0.is_finite() && v.1.is_finite() && v.2.is_finite()) {
+            *knock = v;
+        }
+    }
+
+    fn on_packet_send(&self, server: &Server, player: &PlayerInfo, packet: &str) -> bool {
+        // The busy ones (chunks, movement, block and entity updates) don't go to runtime plugins:
+        // a sandbox call per packet would cost more than the packet.
+        if matches!(packet, "LevelChunkPacket" | "MoveActorAbsolutePacket" | "MoveActorDeltaPacket" | "SetActorMotionPacket" | "UpdateBlockPacket" | "SetActorDataPacket" | "NetworkChunkPublisherUpdatePacket" | "MovePlayerPacket" | "UpdateAttributesPacket" | "LevelSoundEventPacket" | "AnimatePacket") {
+            return true;
+        }
+        self.ask(server, json!({ "event": "packet_send", "player": player_json(player), "packet": packet }))
+    }
+
+    fn on_permission_check(&self, server: &Server, player: &str, node: &str, allowed: &mut bool) {
+        let (_, reply) = self.call(server, json!({ "event": "permission_check", "player": player, "node": node, "allowed": *allowed }));
+        match reply.as_deref().map(str::trim) {
+            Some("true") => *allowed = true,
+            Some("false") => *allowed = false,
+            _ => {}
+        }
+    }
+
+    fn on_plugin_enable(&self, server: &Server, name: &str) {
+        self.notify(server, json!({ "event": "plugin_enable", "name": name }));
+    }
+
+    fn on_book_edit(&self, server: &Server, player: &PlayerInfo, page: i32, text: &str) -> bool {
+        self.ask(server, json!({ "event": "book_edit", "player": player_json(player), "page": page, "text": text }))
+    }
+
+    fn on_book_sign(&self, server: &Server, player: &PlayerInfo, title: &str) -> bool {
+        self.ask(server, json!({ "event": "book_sign", "player": player_json(player), "title": title }))
+    }
+
 }
 
 #[cfg(test)]

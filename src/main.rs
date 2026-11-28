@@ -1,6 +1,7 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)] // game code passes a lot of state around
 
 mod blocks;
+mod books;
 mod perf;
 mod spawning;
 mod login;

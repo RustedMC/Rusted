@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.16
+
+**Books work**
+- Write in a book and quill: add, change, delete and move pages. Sign it to make a written book with your name as the author.
+
+**Plugins can change things, not just stop them**
+- `on_damage_modify` and `on_mob_damage_modify`: change how much damage players and mobs take (0 makes it harmless)
+- `on_block_drops` and `on_mob_drops`: change, add or remove drops
+- `on_block_xp` and `on_mob_xp`: change the XP from blocks and mobs
+- `on_knockback`: change or remove knockback
+- `on_permission_check`: plugins can decide permissions themselves (ranks, VIP perks), on top of `permissions.txt`
+
+**More plugin events (225 in all)**
+- `on_packet_send`: see every packet going to a player, and hold it back
+- `on_plugin_enable`: every plugin hears which plugins loaded
+- `on_book_edit` and `on_book_sign`
+- Runtime `.wasm` plugins get all of these. They change values with `reply(...)`, see [Runtime plugins](plugins/runtime.md).
+
 ## 0.6.15
 
 - 25 more plugin events: 213 now, past PowerNukkitX's ~200.
