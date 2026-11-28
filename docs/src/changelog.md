@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.6
+
+**Load testing**
+- New load tester (`loadtest`) that connects fake players who walk around and keep loading new chunks, and reads the server's tick times over RCON: `loadtest 127.0.0.1:19132 50 180 25575 <rcon password>` (address, bots, seconds, RCON port, password).
+- `/status` and `logs/perf.log` show tick times for the last minute (p50, p95, p99, max), mobs and RAM.
+
+**Faster with many players** (found with the load tester, 50 players on one PC)
+- Chunk generation is shared fairly between players: at most one chunk per CPU core at once, instead of every player starting their own threads. Work for players who left is dropped.
+- The chunk caches grow with the number of players and keep the chunks nearest to players, so chunks people stand in aren't thrown away and built again.
+- A chunk wanted by several players at once is only generated once.
+- Springs wait until the chunks around them exist before flowing. In 0.6.4 they could make the world loop generate terrain for up to 15 seconds.
+- Result: 50 of 50 players joined with none dropped (45 of 50 before), almost 3x the chunks delivered, normal ticks under 1 ms at the 95th percentile, and no more 16 s stalls.
+
 ## 0.6.5
 
 - Ominous bottles can be drunk. They give Bad Omen at the bottle's level (I to V) for 100 minutes, so you can start a raid without hunting a patrol captain.

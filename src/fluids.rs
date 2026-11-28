@@ -259,8 +259,23 @@ impl Fluids {
     /// One fluid step, lava only moves on `lava_turn`. The caller applies the changes,
     /// which queues the next step.
     pub fn tick(&self, world: &World, lava_turn: bool) -> Vec<((i32, i32, i32), i32)> {
+        // A spring flows once the chunks around it exist; flowing into missing ones would make
+        // this loop generate terrain, which spread chunk by chunk and stalled it for 15 s.
+        let mut waiting = Vec::new();
         for p in std::mem::take(&mut *SPRINGS.lock()) {
-            self.notify(p);
+            let ready = crate::dims::of(p.1) != crate::dims::OVERWORLD || (-1..=1).all(|dx| (-1..=1).all(|dz| world.chunk_ready(p.0 + dx * 16, p.2 + dz * 16)));
+            if ready {
+                self.notify(p);
+            } else {
+                waiting.push(p);
+            }
+        }
+        {
+            let mut s = SPRINGS.lock();
+            s.extend(waiting);
+            // shortcut: far-off springs past this many are forgotten (they flow once touched).
+            let over = s.len().saturating_sub(20_000);
+            s.drain(..over);
         }
         let batch: Vec<_> = {
             let mut p = self.pending.lock();

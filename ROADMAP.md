@@ -49,6 +49,7 @@ See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands
 - ✅ **0.6.3** Runtime plugins get every event
 - ✅ **0.6.4** Overworld springs flow
 - ✅ **0.6.5** Drinkable ominous bottles
+- ✅ **0.6.6** Load tester; chunk generation shared fairly, caches sized to players, no world-loop stalls
 
 ## 1.0: stable
 

@@ -258,6 +258,7 @@ pub struct Overworld {
     clay_bands: [i32; 192],
     /// Undecorated terrain, shared by neighbouring chunks' decoration.
     terrain: parking_lot::Mutex<HashMap<(i32, i32), std::sync::Arc<Chunk>>>,
+    terrain_busy: crate::world::Inflight<(i32, i32)>,
     /// Built structures, shared by every chunk they reach.
     structures: structures::Cache,
 }
@@ -277,7 +278,7 @@ impl Overworld {
         let seed = seed as i64;
         let router = Router::new(seed);
         let clay_bands = clay_bands(seed);
-        Self { seed, router, clay_bands, terrain: Default::default(), structures: Default::default() }
+        Self { seed, router, clay_bands, terrain: Default::default(), terrain_busy: Default::default(), structures: Default::default() }
     }
 
     /// A finished chunk: terrain plus features (trees, ores, plants) from it and its neighbours.
@@ -294,20 +295,14 @@ impl Overworld {
     }
 
     fn terrain_chunk(&self, cx: i32, cz: i32) -> std::sync::Arc<Chunk> {
-        if let Some(c) = self.terrain.lock().get(&(cx, cz)) {
-            return c.clone();
-        }
-        let c = std::sync::Arc::new(self.generate_terrain(cx, cz));
-        let mut m = self.terrain.lock();
-        if m.len() >= TERRAIN_CACHE_LIMIT {
-            // TODO: drops half at the cap, switch to LRU if regen shows up in profiles.
-            let keys: Vec<_> = m.keys().copied().step_by(2).collect();
-            for k in keys {
-                m.remove(&k);
+        crate::world::cached_once(&self.terrain, &self.terrain_busy, (cx, cz), || self.generate_terrain(cx, cz), |m| {
+            // Terrain is the expensive part and each decorated chunk needs its 8 neighbours too.
+            if m.len() >= TERRAIN_CACHE_LIMIT.max(crate::world::cache_limit()) {
+                crate::world::evict(m, |&k| k);
             }
-        }
-        m.entry((cx, cz)).or_insert(c).clone()
+        })
     }
+
 
     /// Terrain only (no features).
     pub fn generate_terrain(&self, cx: i32, cz: i32) -> Chunk {

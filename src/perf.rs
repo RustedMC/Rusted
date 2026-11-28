@@ -167,8 +167,29 @@ pub fn toggle(server: &Server, id: i64) -> bool {
     }
 }
 
+/// The last minute of tick times (1200 ticks), for percentiles.
+static RECENT: Mutex<std::collections::VecDeque<Duration>> = Mutex::new(std::collections::VecDeque::new());
+
+/// (p50, p95, p99, max) tick work over the last minute, in ms.
+pub fn tick_percentiles() -> (f32, f32, f32, f32) {
+    let mut v: Vec<Duration> = RECENT.lock().iter().copied().collect();
+    if v.is_empty() {
+        return (0.0, 0.0, 0.0, 0.0);
+    }
+    v.sort_unstable();
+    let at = |q: f32| v[((v.len() - 1) as f32 * q).round() as usize].as_secs_f32() * 1000.0;
+    (at(0.5), at(0.95), at(0.99), at(1.0))
+}
+
 /// Called after every game tick with how long its work took.
 pub fn tick(server: &Server, work: Duration) {
+    {
+        let mut r = RECENT.lock();
+        if r.len() >= 1200 {
+            r.pop_front();
+        }
+        r.push_back(work);
+    }
     let mut win = WINDOW.lock();
     let win = win.get_or_insert_with(|| Window { since: Instant::now(), ticks: 0, work: Duration::ZERO });
     win.ticks += 1;
@@ -190,7 +211,8 @@ pub fn tick(server: &Server, work: Duration) {
     static SECONDS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     if SECONDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 60 == 0 {
         let top: Vec<String> = LAST_PARTS.lock().iter().take(5).map(|(n, t, _, m)| format!("{n} {:.1}ms (max {:.1})", t.as_secs_f32() * 1000.0, m.as_secs_f32() * 1000.0)).collect();
-        log("perf.log", &format!("TPS {tps:.1} MSPT {mspt:.2} RAM {} MB players {} mobs {} | {}", memory_mb().map_or("?".into(), |m| format!("{m:.0}")), server.all().len(), server.mobs.count(), top.join(", ")));
+        let (p50, p95, p99, max) = tick_percentiles();
+        log("perf.log", &format!("TPS {tps:.1} MSPT {mspt:.2} p50 {p50:.2} p95 {p95:.2} p99 {p99:.2} max {max:.2} RAM {} MB players {} mobs {} | {}", memory_mb().map_or("?".into(), |m| format!("{m:.0}")), server.all().len(), server.mobs.count(), top.join(", ")));
     }
     let ids: Vec<i64> = WATCHERS.lock().as_ref().map(|w| w.iter().copied().collect()).unwrap_or_default();
     if ids.is_empty() {
@@ -252,6 +274,16 @@ pub fn memory_mb() -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn percentiles_of_recent_ticks() {
+        super::RECENT.lock().clear();
+        for ms in 1..=100 {
+            super::RECENT.lock().push_back(std::time::Duration::from_millis(ms));
+        }
+        let (p50, p95, p99, max) = super::tick_percentiles();
+        assert!((p50 - 51.0).abs() < 1.5 && (p95 - 95.0).abs() < 1.5 && (p99 - 99.0).abs() < 1.5 && max == 100.0, "{p50} {p95} {p99} {max}");
+    }
+
     #[test]
     fn dates() {
         assert_eq!(super::date(0), "1970-01-01 00:00:00 UTC");

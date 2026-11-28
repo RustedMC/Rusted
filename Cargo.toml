@@ -1,7 +1,8 @@
 [package]
 name = "rusted"
-version = "0.6.5"
+version = "0.6.6"
 edition = "2024"
+default-run = "rusted"
 license = "LGPL-3.0-only"
 authors = ["SXCULPZ", "Claude"]
 description = "A fast Minecraft: Bedrock Edition server written in Rust"

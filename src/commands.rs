@@ -878,14 +878,21 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
         ),
         ["status"] => {
             let up = started().elapsed().as_secs();
+            let p = crate::perf::tick_percentiles();
             format!(
-                "§6---- §fServer status §6----\n§6Uptime: §a{}h {}m {}s\n§6Players: §a{}/{}\n§6Chunks cached: §a{}",
+                "§6---- §fServer status §6----\n§6Uptime: §a{}h {}m {}s\n§6Players: §a{}/{}\n§6Chunks cached: §a{}\n§6Mobs: §a{}\n§6RAM: §a{} MB\n§6Tick ms (last minute): §ap50 {:.2} p95 {:.2} p99 {:.2} max {:.2}",
                 up / 3600,
                 up / 60 % 60,
                 up % 60,
                 server.all().len(),
                 max_players(),
                 server.world.edited_chunks(),
+                server.mobs.count(),
+                crate::perf::memory_mb().map_or("?".into(), |m| format!("{m:.0}")),
+                p.0,
+                p.1,
+                p.2,
+                p.3,
             )
         }
         ["help" | "?", ..] => {

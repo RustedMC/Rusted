@@ -78,14 +78,23 @@ impl ChunkTracker {
         sign_data.extend(chest_pairs_in(world, &coords));
         let world = world.clone();
         let dim = conn.dim;
+        // A background batch is dropped once the player is gone (their receiver closes).
+        let gone = self.ready_tx.clone();
         let generate = move || {
-            // Leave a core for the game tick and the other players.
-            let threads = std::thread::available_parallelism().map_or(2, |n| n.get()).saturating_sub(1).max(1).min(coords.len().max(1));
+            let threads = gen_slots().min(coords.len().max(1));
             let per = coords.len().div_ceil(threads.max(1)).max(1);
             std::thread::scope(|scope| {
                 coords
                     .chunks(per)
-                    .map(|part| scope.spawn(|| part.iter().map(|&(x, z)| ((x, z), world.chunk_payload_dim(x, z, dim))).collect::<Vec<_>>()))
+                    .map(|part| {
+                        let (world, gone) = (&world, &gone);
+                        scope.spawn(move || {
+                            part.iter()
+                                .take_while(|_| !gone.is_closed())
+                                .map(|&(x, z)| ((x, z), with_gen_slot(|| world.chunk_payload_dim(x, z, dim))))
+                                .collect::<Vec<_>>()
+                        })
+                    })
                     .collect::<Vec<_>>()
                     .into_iter()
                     .flat_map(|h| h.join().unwrap_or_default())
@@ -108,6 +117,36 @@ impl ChunkTracker {
         packets.extend(sign_data);
         conn.send(&packets).await
     }
+}
+
+/// Chunks generating at once across every player: one per core, leaving one for the game tick.
+/// Without this each player's batch started its own threads and 45 players meant hundreds of
+/// threads fighting over the CPU (found with the load tester).
+fn gen_slots() -> usize {
+    std::thread::available_parallelism().map_or(2, |n| n.get()).saturating_sub(1).max(1)
+}
+
+static GEN_BUSY: std::sync::Mutex<usize> = std::sync::Mutex::new(0);
+static GEN_FREE: std::sync::Condvar = std::sync::Condvar::new();
+
+/// Runs `f` once a generation slot is free.
+fn with_gen_slot<T>(f: impl FnOnce() -> T) -> T {
+    {
+        let mut busy = GEN_BUSY.lock().unwrap_or_else(|e| e.into_inner());
+        while *busy >= gen_slots() {
+            busy = GEN_FREE.wait(busy).unwrap_or_else(|e| e.into_inner());
+        }
+        *busy += 1;
+    }
+    struct Release;
+    impl Drop for Release {
+        fn drop(&mut self) {
+            *GEN_BUSY.lock().unwrap_or_else(|e| e.into_inner()) -= 1;
+            GEN_FREE.notify_one();
+        }
+    }
+    let _release = Release; // freed even if generation panics
+    f()
 }
 
 fn chunk_packets(encoded: Vec<((i32, i32), (Vec<u8>, u32))>, dim: u8) -> Vec<Protocol> {
