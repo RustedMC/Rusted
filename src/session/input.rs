@@ -45,6 +45,7 @@ impl Session {
             }
         }
         let (swim, crawl) = (self.swimming, self.crawling);
+        let glide = self.gliding;
         for flag in &input.input_data {
             match flag {
                 Input::StartSwimming => self.swimming = true,
@@ -69,6 +70,14 @@ impl Session {
         }
         if (swim, crawl) != (self.swimming, self.crawling) {
             self.update_pose().await;
+        }
+        if let Some(me) = self.server.get(self.id) {
+            if swim != self.swimming {
+                self.server.plugins.swim(&self.server, &me, self.swimming);
+            }
+            if glide != self.gliding {
+                self.server.plugins.glide(&self.server, &me, self.gliding);
+            }
         }
         let pos = input.player_position;
         // Plugins can stop a move (regions, frozen players): send them back to where they were.

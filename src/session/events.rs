@@ -368,6 +368,9 @@ impl Session {
                 return GO;
             }
             Ok(Event::Kick { id: who, message, reason }) if who == self.id || who == 0 => {
+                if let Some(me) = self.server.get(self.id) {
+                    self.server.plugins.kick(&self.server, &me, &message);
+                }
                 let _ = self.conn.send(&[disconnect_packet(reason, &message)]).await;
                 println!("{}: kicked ({reason:?}): {message}", self.name);
                 return END;

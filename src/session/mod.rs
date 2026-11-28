@@ -132,10 +132,12 @@ pub(crate) async fn wear(conn: &mut dims::DimConn, server: &players::Server, id:
     if !survival_like(mode) || uses <= 0 {
         return;
     }
+    let name = inv.held(slot).and_then(|s| items::name_of(s.item.id)).unwrap_or("");
     let Some(broke) = inv.wear(slot, uses) else { return };
     let _ = conn.send(&[inv.content_packet()]).await;
     if broke && let Some(me) = server.get(id) {
         let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(play_sound("random.break", me.pos)) });
+        server.plugins.item_break(server, &me, name);
     }
 }
 

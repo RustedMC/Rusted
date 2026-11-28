@@ -126,6 +126,7 @@ impl Session {
             }
             if let Some((item, from, xp)) = crate::fishing::reel(&self.server, self.id)
                 && let Some(it) = items::item_by_name(item)
+                && self.server.plugins.fish(&self.server, &me, item)
             {
                 // The catch flies out of the water at you (PNX reelLine).
                 let vel = crate::fishing::fling(from, (me.pos.0, me.pos.1 - 1.0, me.pos.2));
@@ -513,6 +514,23 @@ impl Session {
             let target = (p.x + dx, p.y + dy, p.z + dz);
             let clicked = self.server.world.get(p.x, p.y, p.z);
             let at = (p.x as f32 + 0.5, p.y as f32 + 0.5, p.z as f32 + 0.5);
+            // Plugins may stop it: put the blocks and the bucket back on the player's screen.
+            let allowed = self.server.get(self.id).is_none_or(|me| {
+                if held == "minecraft:bucket" {
+                    let filled = if clicked == fluids::Kind::Lava.source() { "minecraft:lava_bucket" } else { "minecraft:water_bucket" };
+                    self.server.plugins.bucket_fill(&self.server, &me, (p.x, p.y, p.z), filled)
+                } else {
+                    self.server.plugins.bucket_empty(&self.server, &me, target, held)
+                }
+            });
+            if !allowed {
+                let _ = self.conn.send(&[
+                    update_block(p.x, p.y, p.z, clicked),
+                    update_block(target.0, target.1, target.2, self.server.world.get(target.0, target.1, target.2)),
+                    self.inv.content_packet(),
+                ]).await;
+                return;
+            }
             // Waterlogging: water goes into a slab, stair, fence... instead of on top of it.
             if held == "minecraft:water_bucket" && world::waterloggable(clicked) && !self.server.world.waterlogged(p.x, p.y, p.z) && dims::of(p.y) != dims::NETHER {
                 self.server.set_water(p.x, p.y, p.z, true);
@@ -659,6 +677,9 @@ impl Session {
     pub(super) async fn on_player_action(&mut self, a: &PlayerAction) {
         if let PlayerActionType::StopSleeping = a.action {
             blockops::wake(&self.server, self.id);
+            if let Some(me) = self.server.get(self.id) {
+                self.server.plugins.bed_leave(&self.server, &me);
+            }
         }
         // Creative breaks instantly; survival reports the finished break as a prediction.
         if let PlayerActionType::CreativeDestroyBlock | PlayerActionType::PredictDestroyBlock = a.action {

@@ -53,6 +53,18 @@ Plugins with the same priority run in load order.
 | `on_xp_change(server, player, points: &mut i32)` | Getting XP (negative takes it away) | Change `points`, 0 cancels |
 | `on_sign_change(server, player, pos, front: &mut String, back: &mut String) -> bool` | Wrote a sign | Edit the text, or `false` keeps the old text |
 | `on_bed_enter(server, player, pos) -> bool` | Right-clicked a bed (sets spawn) | `false` stops it |
+| `on_bed_leave(server, player)` | Got out of bed | |
+| `on_bucket_fill(server, player, pos, filled: &str) -> bool` | Filling an empty bucket; `filled` is what it becomes | `false` stops it |
+| `on_bucket_empty(server, player, pos, bucket: &str) -> bool` | Emptying a water or lava bucket at `pos` | `false` stops it |
+| `on_fish(server, player, item: &str) -> bool` | Reeled in a catch | `false` loses the catch |
+| `on_glide(server, player, gliding: bool)` | Started or stopped gliding with an elytra | |
+| `on_swim(server, player, swimming: bool)` | Started or stopped swimming | |
+| `on_container_close(server, player, kind: &str)` | Closed a container screen (`"Chest"`, `"Anvil"`...) | |
+| `on_item_break(server, player, item: &str)` | A worn-out tool or weapon broke | |
+| `on_kick(server, player, message: &str)` | About to be kicked | |
+| `on_trade(server, player, villager, index, times)` | Traded with a villager | |
+| `on_mount(server, player, mob)` | Got on a horse, boat, minecart... | |
+| `on_dismount(server, player)` | Got off what they were riding | |
 | `on_craft(server, player, item: &str, count: i32) -> bool` | Crafting something at a table or in the inventory | `false` refuses the craft |
 | `on_projectile_hit(server, shooter, target: Target) -> bool` | Their arrow or trident hit `Target::Mob(id)` or `Target::Player(id)` | `false`: no damage |
 

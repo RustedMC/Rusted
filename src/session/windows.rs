@@ -207,6 +207,9 @@ impl Session {
     }
 
     pub(super) async fn on_container_close(&mut self, c: Box<ContainerClose>) {
+        if let (Some((kind, _)), Some(me)) = (self.open_kind.as_ref(), self.server.get(self.id)) {
+            self.server.plugins.container_close(&self.server, &me, &format!("{kind:?}"));
+        }
         if self.menu_at.is_some() {
             self.end_menu().await;
             let _ = self.conn.send(&[Protocol::ContainerClosePacket(c)]).await;
@@ -321,6 +324,9 @@ impl Session {
                     let mut job = None;
                     for (index, n, texp) in std::mem::take(&mut self.inv.traded) {
                         job = self.server.mobs.traded(&self.server, vid, index, n, texp).or(job);
+                        if let Some(me) = self.server.get(self.id) {
+                            self.server.plugins.trade(&self.server, &me, vid, index as i32, n as i32);
+                        }
                     }
                     self.traded_job = job.map(|j| (vid, j));
                 }

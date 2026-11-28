@@ -53,6 +53,9 @@ impl Session {
             }
             mobs::Use::Mount => {
                 self.riding = Some(e.actor_runtime_id as i64);
+                if let Some(me) = self.server.get(self.id) {
+                    self.server.plugins.mount(&self.server, &me, e.actor_runtime_id as i64);
+                }
                 false
             }
             mobs::Use::Wear => {

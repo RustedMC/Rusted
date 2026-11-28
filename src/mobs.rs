@@ -1264,6 +1264,9 @@ impl Mobs {
         for p in packets {
             broadcast(server, p);
         }
+        if let Some(me) = server.get(player) {
+            server.plugins.mount(server, &me, id);
+        }
         true
     }
 
@@ -1277,6 +1280,10 @@ impl Mobs {
 
     /// Takes `player` off whatever they're riding.
     pub fn dismount(&self, server: &Server, player: i64) {
+        let riding = self.mobs.lock().values().any(|m| m.rider == Some(player) || m.passenger == Some(player));
+        if riding && let Some(me) = server.get(player) {
+            server.plugins.dismount(server, &me);
+        }
         let mut mobs = self.mobs.lock();
         if let Some(m) = mobs.values_mut().find(|m| m.passenger == Some(player)) {
             m.passenger = None;

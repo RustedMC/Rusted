@@ -256,6 +256,49 @@ pub trait Plugin: Send + Sync {
         true
     }
 
+    /// Player got out of bed.
+    fn on_bed_leave(&self, _server: &Server, _player: &PlayerInfo) {}
+
+    /// Player is filling an empty bucket at `pos`; `filled` is what it becomes
+    /// ("minecraft:water_bucket"...). Return false to stop it.
+    fn on_bucket_fill(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32), _filled: &str) -> bool {
+        true
+    }
+
+    /// Player is emptying `bucket` ("minecraft:water_bucket"...) at `pos`. Return false to stop it.
+    fn on_bucket_empty(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32), _bucket: &str) -> bool {
+        true
+    }
+
+    /// Player reeled in `item` with a fishing rod. Return false to lose the catch.
+    fn on_fish(&self, _server: &Server, _player: &PlayerInfo, _item: &str) -> bool {
+        true
+    }
+
+    /// Player started (`true`) or stopped gliding with an elytra.
+    fn on_glide(&self, _server: &Server, _player: &PlayerInfo, _gliding: bool) {}
+
+    /// Player started (`true`) or stopped swimming.
+    fn on_swim(&self, _server: &Server, _player: &PlayerInfo, _swimming: bool) {}
+
+    /// Player closed a container screen (`kind` like "Chest", "Furnace", "Anvil").
+    fn on_container_close(&self, _server: &Server, _player: &PlayerInfo, _kind: &str) {}
+
+    /// The tool or armour `item` in the player's hand wore out and broke.
+    fn on_item_break(&self, _server: &Server, _player: &PlayerInfo, _item: &str) {}
+
+    /// Player is being kicked with `message` (by a command, a ban or a plugin).
+    fn on_kick(&self, _server: &Server, _player: &PlayerInfo, _message: &str) {}
+
+    /// Player traded with villager `villager` (offer `index`, `times` times).
+    fn on_trade(&self, _server: &Server, _player: &PlayerInfo, _villager: i64, _index: i32, _times: i32) {}
+
+    /// Player got on mob `mob` (a horse, boat, minecart...).
+    fn on_mount(&self, _server: &Server, _player: &PlayerInfo, _mob: i64) {}
+
+    /// Player got off what they were riding.
+    fn on_dismount(&self, _server: &Server, _player: &PlayerInfo) {}
+
     /// Player is crafting `count` of `item`. Return false to refuse the craft.
     fn on_craft(&self, _server: &Server, _player: &PlayerInfo, _item: &str, _count: i32) -> bool {
         true
@@ -552,6 +595,54 @@ impl Plugins {
 
     pub fn bed_enter(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32)) -> bool {
         self.cancellable(|pl| pl.on_bed_enter(s, p, pos))
+    }
+
+    pub fn bed_leave(&self, s: &Server, p: &PlayerInfo) {
+        self.each(|pl| pl.on_bed_leave(s, p));
+    }
+
+    pub fn bucket_fill(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32), filled: &str) -> bool {
+        self.cancellable(|pl| pl.on_bucket_fill(s, p, pos, filled))
+    }
+
+    pub fn bucket_empty(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32), bucket: &str) -> bool {
+        self.cancellable(|pl| pl.on_bucket_empty(s, p, pos, bucket))
+    }
+
+    pub fn fish(&self, s: &Server, p: &PlayerInfo, item: &str) -> bool {
+        self.cancellable(|pl| pl.on_fish(s, p, item))
+    }
+
+    pub fn glide(&self, s: &Server, p: &PlayerInfo, on: bool) {
+        self.each(|pl| pl.on_glide(s, p, on));
+    }
+
+    pub fn swim(&self, s: &Server, p: &PlayerInfo, on: bool) {
+        self.each(|pl| pl.on_swim(s, p, on));
+    }
+
+    pub fn container_close(&self, s: &Server, p: &PlayerInfo, kind: &str) {
+        self.each(|pl| pl.on_container_close(s, p, kind));
+    }
+
+    pub fn item_break(&self, s: &Server, p: &PlayerInfo, item: &str) {
+        self.each(|pl| pl.on_item_break(s, p, item));
+    }
+
+    pub fn kick(&self, s: &Server, p: &PlayerInfo, message: &str) {
+        self.each(|pl| pl.on_kick(s, p, message));
+    }
+
+    pub fn trade(&self, s: &Server, p: &PlayerInfo, villager: i64, index: i32, times: i32) {
+        self.each(|pl| pl.on_trade(s, p, villager, index, times));
+    }
+
+    pub fn mount(&self, s: &Server, p: &PlayerInfo, mob: i64) {
+        self.each(|pl| pl.on_mount(s, p, mob));
+    }
+
+    pub fn dismount(&self, s: &Server, p: &PlayerInfo) {
+        self.each(|pl| pl.on_dismount(s, p));
     }
 
     pub fn craft(&self, s: &Server, p: &PlayerInfo, item: &str, count: i32) -> bool {
