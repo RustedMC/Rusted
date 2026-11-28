@@ -4,6 +4,7 @@
 
 pub mod blocks;
 mod decoration;
+mod dungeon;
 pub mod objects;
 mod ores;
 mod river;
@@ -182,6 +183,11 @@ fn decorate_chunk(region: &mut Region, fcx: i32, fcz: i32) {
     let table = biome_features();
     let reg = registry();
     let mut ctx = Ctx { cx: fcx, cz: fcz, seed: region.seed, random: Xoroshiro::new(0) };
+    // Dungeons close PNX's pregeneration carver (after the caves, which the terrain already
+    // has), before every other feature.
+    if biomes.iter().any(|&b| crate::overworld::carver::carver_biome(b)) {
+        dungeon::monster_rooms(region, &mut ctx);
+    }
     for pass in 0..PASSES.len() {
         let mut seen: Vec<&str> = Vec::new();
         for b in &biomes {
@@ -280,3 +286,5 @@ mod list {
         }
     }
 }
+
+

@@ -229,6 +229,13 @@ impl NukkitRandom {
         ((self.next() as u32) >> 8) as f32 * (1.0 / (1u32 << 24) as f32)
     }
 
+    /// Commons RNG `IntProvider.nextLong`: two ints, high then low.
+    pub fn next_long(&mut self) -> i64 {
+        let high = self.next() as i64;
+        let low = self.next() as u32 as i64;
+        (high << 32) | low
+    }
+
     pub fn next_double(&mut self) -> f64 {
         let high = (((self.next() as u32) >> 6) as u64) << 27;
         let low = ((self.next() as u32) >> 5) as u64;

@@ -7,7 +7,7 @@ This file tracks how far each part of PNX has come over.
 
 | PNX package | What it covers | Status |
 |---|---|---|
-| `level/generator` | overworld, Nether, End, features, structures | ✅ seed-exact with PNX |
+| `level/generator` | overworld, Nether, End, features, structures | ✅ seed-exact with PNX, carver caves, canyons and dungeons included; not yet: springs, geodes, dripstone clusters, sculk patches, azalea roots, sulfur caves |
 | `level` | ticking, light, weather, explosions, portals, dimensions | 🟡 block and sky light, lightning charges creepers; ticking areas |
 | `block` | block behaviour, interactions, crops, fluids, fire | 🟡 most blocks work, rails and sculk included; trial spawners and vaults work (reward tables approximate) |
 | `blockentity` + `inventory` | containers and their screens | 🟡 chests, furnaces, hoppers, brewing, anvil, grindstone, enchanting, smithing, shulkers, dispensers, beacons, looms, lecterns (no redstone output yet), crafters; maps and the cartography table (zoom, copy, lock) |
@@ -18,7 +18,7 @@ This file tracks how far each part of PNX has come over.
 | `command` | vanilla commands | 🟡 nearly every vanilla command, `/execute`, `/camera` and target selectors; no `/dialogue` (needs NPC entities) |
 | `event` + `plugin` | plugin API | 🟡 60 of PNX's ~200 events, scheduler, config files; plugins are compiled in |
 | `form`, `scoreboard` | server UI | 🟡 forms, scoreboards, boss bars, camera control; no NPC dialogs |
-| loot tables | chest loot, spawners | 🟡 chests in 16 structures fill on first open, with enchanted books; structure spawners; trial spawner and vault rewards; `/loot`; no dungeons |
+| loot tables | chest loot, spawners | 🟡 chests in 16 structures fill on first open, with enchanted books; structure spawners; trial spawner and vault rewards; `/loot`; dungeons |
 
 ## How ported code is written
 - Same rules, numbers and random-number order as PNX. Where Java needed objects and virtual

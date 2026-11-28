@@ -168,6 +168,22 @@ const BASTION: &[Pool] = &[
     ] },
 ];
 
+// Dungeon chests, PNX ObjectMonsterRoom.ChestPopulator.
+const MONSTER_ROOM: &[Pool] = &[
+    Pool { rolls: (1, 3), entries: &[
+        ("saddle", 20, 1, 1), ("golden_apple", 15, 1, 1), ("enchanted_golden_apple", 2, 1, 1), ("music_disc_13", 15, 1, 1),
+        ("music_disc_cat", 15, 1, 1), ("name_tag", 20, 1, 1), ("golden_horse_armor", 10, 1, 1), ("iron_horse_armor", 15, 1, 1),
+        ("diamond_horse_armor", 5, 1, 1), ("enchanted_book", 10, 1, 1),
+    ] },
+    Pool { rolls: (1, 4), entries: &[
+        ("iron_ingot", 10, 1, 4), ("gold_ingot", 5, 1, 4), ("bread", 20, 1, 1), ("wheat", 20, 1, 4), ("bucket", 10, 1, 1),
+        ("redstone", 15, 1, 4), ("coal", 15, 1, 4), ("melon_seeds", 10, 2, 4), ("pumpkin_seeds", 10, 2, 4), ("beetroot_seeds", 10, 2, 4),
+    ] },
+    Pool { rolls: (3, 3), entries: &[
+        ("bone", 10, 1, 8), ("gunpowder", 10, 1, 8), ("rotten_flesh", 10, 1, 8), ("string", 10, 1, 8),
+    ] },
+];
+
 // Trial chamber rewards. Close to the vanilla spawners/trial_chamber and vault tables, but
 // shortcut: tipped arrows and potions with effects come out plain; refine against vanilla data.
 const TRIAL_SPAWNER_REWARD: &[Pool] = &[Pool { rolls: (1, 1), entries: &[
@@ -215,6 +231,7 @@ fn table(structure: &str) -> Option<&'static [Pool]> {
         "nether_fortress" => NETHER_FORTRESS,
         "bastion" => BASTION,
         "end_city" => END_CITY,
+        "monster_room" | "simple_dungeon" => MONSTER_ROOM,
         "trial_spawner" => TRIAL_SPAWNER_REWARD,
         "vault" => VAULT,
         "ominous_vault" => OMINOUS_VAULT,
@@ -417,6 +434,7 @@ pub fn roll_named(name: &str) -> Option<Vec<Stack>> {
 pub const NAMES: &[&str] = &[
     "desert_pyramid", "jungle_temple", "mineshaft", "stronghold", "village", "igloo", "shipwreck", "ocean_ruin",
     "pillager_outpost", "woodland_mansion", "ancient_city", "trial_chambers", "ruined_portal", "nether_fortress", "bastion", "end_city",
+    "simple_dungeon",
 ];
 
 #[cfg(test)]

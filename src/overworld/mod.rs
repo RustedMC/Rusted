@@ -8,6 +8,7 @@ mod density;
 pub mod feature;
 pub mod structures;
 mod noise;
+pub(crate) mod carver;
 mod rng;
 mod router;
 
@@ -318,6 +319,8 @@ impl Overworld {
             self.biomes(&mut c, &mut ch, cx, cz);
             self.surface(&mut ch, cx, cz);
             self.overwrite(&mut ch, cx, cz);
+            // Pregeneration pass: carver caves and canyons (PNX OverworldCaveCarverFeature).
+            carver::carve(&mut ch, cx, cz, self.seed);
             c.clear();
             ch
         })
@@ -764,6 +767,37 @@ mod tests {
         let first = w.generate(0, 0);
         assert!((-64..320).all(|y| again.get(3, y, 7) == first.get(3, y, 7)), "same seed, same chunk");
         let _ = water;
+    }
+}
+
+#[cfg(test)]
+mod dungeons {
+    use super::*;
+
+    #[test]
+    fn dungeons_generate_underground() {
+        crate::blocks::init();
+        let w = Overworld::new(12345);
+        let spawner = crate::blocks::any_state("minecraft:mob_spawner").unwrap();
+        let mossy = crate::blocks::any_state("minecraft:mossy_cobblestone").unwrap();
+        let cobble = crate::blocks::any_state("minecraft:cobblestone").unwrap();
+        let mut rooms = 0;
+        for cx in 0..24 {
+            for cz in 0..24 {
+                let ch = w.generate(cx, cz);
+                for x in 0..16 {
+                    for z in 0..16 {
+                        for y in -63..300 {
+                            if ch.get(x, y, z) == spawner && [mossy, cobble].contains(&ch.get(x, y - 1, z)) {
+                                rooms += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        println!("{rooms} dungeon spawners in 576 chunks");
+        assert!(rooms > 0, "no dungeons in 576 chunks");
     }
 }
 
