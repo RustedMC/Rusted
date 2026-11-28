@@ -10,6 +10,7 @@ mod input;
 mod interact;
 mod state;
 mod vanilla_cmds;
+mod camera_cmds;
 mod windows;
 
 pub(crate) use state::*;

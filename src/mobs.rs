@@ -1253,6 +1253,28 @@ impl Mobs {
         }
     }
 
+    /// /ride: puts `player` on mob `id` as its rider, saddle or not. False if it's taken.
+    pub fn force_mount(&self, server: &Server, id: i64, player: i64) -> bool {
+        let mut mobs = self.mobs.lock();
+        let Some(m) = mobs.get_mut(&id).filter(|m| m.rider.is_none() && m.dying == 0) else { return false };
+        m.rider = Some(player);
+        m.path.clear();
+        let packets = [link_packet(id, player, true), rider_flag(player, true, m.kind), data_packet(m)];
+        drop(mobs);
+        for p in packets {
+            broadcast(server, p);
+        }
+        true
+    }
+
+    /// The nearest living mob of `kind` within `radius` of `at`.
+    pub fn nearest_of(&self, kind: Kind, at: (f32, f32, f32), radius: f32) -> Option<i64> {
+        self.mobs.lock().values()
+            .filter(|m| m.kind == kind && m.dying == 0 && dist2(m.pos, at) <= radius * radius)
+            .min_by(|a, b| dist2(a.pos, at).total_cmp(&dist2(b.pos, at)))
+            .map(|m| m.id)
+    }
+
     /// Takes `player` off whatever they're riding.
     pub fn dismount(&self, server: &Server, player: i64) {
         let mut mobs = self.mobs.lock();

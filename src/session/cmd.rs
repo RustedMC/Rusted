@@ -66,6 +66,8 @@ impl Session {
             r
         } else if let Some(r) = self.vanilla_command(&args, here).await {
             r
+        } else if let Some(r) = self.camera_command(&args, here).await {
+            r
         } else {
             self.misc_command(&args, here).await
         };
