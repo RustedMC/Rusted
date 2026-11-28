@@ -514,6 +514,7 @@ impl Session {
                             Type::Float(_) => value.parse::<f32>().ok().map(Type::Float),
                         };
                         match parsed {
+                            Some(_) if !self.server.plugins.gamerule_change(&self.server, &r.rule_name, value) => "§cA plugin stopped that game rule change".to_string(),
                             Some(v) => {
                                 r.rule_type = v;
                                 {

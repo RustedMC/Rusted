@@ -167,6 +167,11 @@ impl Session {
                 _ => vec![],
             };
             for e in cured {
+                if self.effects.active.contains_key(&e)
+                    && let Some(me) = self.server.get(self.id)
+                {
+                    self.server.plugins.effect_remove(&self.server, &me, e);
+                }
                 self.effects.active.remove(&e);
                 let _ = self.conn.send(&[effect_packet(self.id, e, None)]).await;
             }

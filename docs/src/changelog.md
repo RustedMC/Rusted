@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.12
+
+- 25 more plugin events (138 now):
+  - Players: `on_effect_add`, `on_effect_remove`, `on_ender_pearl`, `on_xp_orb_pickup`, `on_vault_open`, `on_world_change`
+  - World: `on_item_spawn`, `on_golem_build`, `on_trader_spawn`, `on_patrol_spawn`, `on_night_skip`, `on_bonemeal`, `on_anchor_charge`
+  - Sculk and trials: `on_shriek`, `on_warden_summon`, `on_trial_spawn`, `on_dragon_perch`
+  - Server admin: `on_gamerule_change`, `on_difficulty_change`, `on_op_change`, `on_ban`, `on_unban`, `on_ban_ip`, `on_whitelist_change`, `on_backup`
+- 17 of them can be cancelled, including every admin change, so a plugin can lock down ops, bans and game rules. Runtime `.wasm` plugins get them all.
+
 ## 0.6.11
 
 - 25 more plugin events (113 now):

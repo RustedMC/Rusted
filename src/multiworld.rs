@@ -173,6 +173,9 @@ pub fn command(server: &Server, sender: &str, args: &[&str]) -> String {
             let Some(dim) = find(name) else { return format!("§cNo world called {name}") };
             let target = who.first().copied().unwrap_or(sender);
             let Some(id) = server.find_by_name(target) else { return format!("§c{target} isn't online") };
+            if server.get(id).is_some_and(|p| !server.plugins.world_change(server, &p, name)) {
+                return "§cA plugin stopped that".into();
+            }
             let feet = if dim == crate::dims::OVERWORLD {
                 let s = crate::commands::world_spawn(server);
                 (s.0, s.1 - 1.62, s.2)

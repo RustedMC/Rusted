@@ -758,6 +758,12 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
             }
             None => format!("§cNo player was found: {who}"),
         },
+        ["op", who] if !server.plugins.op_change(server, who, true) => "§cA plugin stopped that".into(),
+        ["deop", who] if !server.plugins.op_change(server, who, false) => "§cA plugin stopped that".into(),
+        ["ban", who, why @ ..] if !server.plugins.ban(server, who, &why.join(" ")) => "§cA plugin stopped that".into(),
+        ["unban" | "pardon", who] if !server.plugins.unban(server, who) => "§cA plugin stopped that".into(),
+        ["whitelist", "add", who] if !server.plugins.whitelist_change(server, who, true) => "§cA plugin stopped that".into(),
+        ["whitelist", "remove", who] if !server.plugins.whitelist_change(server, who, false) => "§cA plugin stopped that".into(),
         ["op", who] => {
             l.ops.set(who, true);
             if let Some(t) = server.find_by_name(who) {
@@ -787,6 +793,9 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
             let Some(ip) = ip_of(target).or_else(|| target.parse::<std::net::IpAddr>().ok().map(|_| target.to_string())) else {
                 return Some(format!("§c{target} isn't a known player or an IP address"));
             };
+            if !server.plugins.ban_ip(server, &ip) {
+                return Some("§cA plugin stopped that".into());
+            }
             l.banned_ips.set(&ip, true);
             let message = if why.is_empty() { "You are banned from this server".to_string() } else { why.join(" ") };
             let mut kicked = 0;
@@ -855,6 +864,7 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
         }
         ["difficulty"] => format!("Difficulty: {}", ["peaceful", "easy", "normal", "hard"][*DIFFICULTY.lock() as usize]),
         ["difficulty", d] => match difficulty_from(d) {
+            Some(d) if !server.plugins.difficulty_change(server, d as i32) => "§cA plugin stopped that".into(),
             Some(d) => {
                 *DIFFICULTY.lock() = d;
                 let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(difficulty_packet(d)) });

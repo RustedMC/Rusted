@@ -28,6 +28,11 @@ pub(crate) async fn set_game_mode(conn: &mut dims::DimConn, id: i64, mode: &Game
 /// Instant effects act right away (PNX: heal 4 << amp, harm 6 << amp), others get sent.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn give_effect(conn: &mut dims::DimConn, server: &players::Server, id: i64, name: &str, hp: &mut health::Health, food: &mut hunger::Hunger, fx: &mut effects::Effects, inv: &mut inventory::Inventory, e: i32, x: effects::Effect, mode: &GameType) {
+    if let Some(me) = server.get(id)
+        && !server.plugins.effect_add(server, &me, e, x.amplifier, x.ticks as i32)
+    {
+        return;
+    }
     match e {
         effects::INSTANT_HEALTH => {
             hp.health = (hp.health + (4 << x.amplifier.min(5)) as f32).min(hp.max);

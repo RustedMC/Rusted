@@ -163,6 +163,31 @@ Each event is JSON. `e.kind()` tells you which one; player events have `player` 
 | `console_command` | `line` | cancellable |
 | `furnace_smelt` | `pos` |  |
 | `tnt_prime` | `pos` | cancellable |
+| `effect_add` | `effect`, `amplifier`, `ticks` | cancellable |
+| `effect_remove` | `effect` |  |
+| `ender_pearl` | `to` | cancellable |
+| `item_spawn` | `item`, `count`, `pos` | cancellable |
+| `xp_orb_pickup` | `value` |  |
+| `golem_build` | `kind`, `pos` | cancellable |
+| `trader_spawn` | `pos` | cancellable |
+| `patrol_spawn` | `pos` | cancellable |
+| `shriek` | `pos`, `player` |  |
+| `warden_summon` | `pos` | cancellable |
+| `vault_open` | `pos` | cancellable |
+| `trial_spawn` | `pos`, `kind`, `mob` |  |
+| `gamerule_change` | `rule`, `value` | cancellable |
+| `difficulty_change` | `difficulty` | cancellable |
+| `op_change` | `name`, `op` | cancellable |
+| `ban` | `name`, `reason` | cancellable |
+| `unban` | `name` | cancellable |
+| `ban_ip` | `ip` | cancellable |
+| `whitelist_change` | `name`, `added` | cancellable |
+| `world_change` | `world` | cancellable |
+| `backup` | `path` |  |
+| `dragon_perch` | `mob` |  |
+| `night_skip` |  | cancellable |
+| `bonemeal` | `pos`, `player` |  |
+| `anchor_charge` | `pos`, `player` |  |
 
 ## What a plugin can do
 

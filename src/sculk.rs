@@ -146,6 +146,7 @@ fn shriek(server: &Server, p: Pos, by: Option<i64>) {
         return;
     }
     with(|s| s.shrieking.insert(p, SHRIEK));
+    server.plugins.shriek(server, p, by);
     if blocks::has_state(b, "active") {
         server.set_block_quiet(0, p.0, p.1, p.2, blocks::with(b, &[("active", State::Bool(true))]));
     }
@@ -176,7 +177,7 @@ fn shriek(server: &Server, p: Pos, by: Option<i64>) {
             }
         }
     }
-    if summon {
+    if summon && server.plugins.warden_summon(server, (at.0 + 2.0, at.1, at.2)) {
         server.mobs.spawn(server, crate::mobs::Kind::Warden, (at.0 + 2.0, at.1, at.2));
         relay(server, crate::packets::play_sound("mob.warden.emerge", at));
     }

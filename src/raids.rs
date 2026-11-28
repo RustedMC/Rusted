@@ -140,6 +140,9 @@ fn patrols(server: &Server, roll: u32) {
     let Some(p) = server.all().into_iter().find(|p| crate::dims::of_f(p.pos.1) == crate::dims::OVERWORLD) else { return };
     let a = (roll / 1200 % 628) as f32 / 100.0;
     let (x, z) = (p.pos.0 + a.cos() * 36.0, p.pos.2 + a.sin() * 36.0);
+    if !server.plugins.patrol_spawn(server, (x, p.pos.1 - 1.62, z)) {
+        return;
+    }
     for i in 0..2 + roll % 4 {
         let (px, pz) = (x + i as f32, z + (i % 2) as f32);
         let y = surface(server, px.floor() as i32, pz.floor() as i32, p.pos.1 as i32);

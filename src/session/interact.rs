@@ -241,6 +241,11 @@ impl Session {
         }
         // Vaults open with a trial key, once per player.
         if crate::trial::is_vault(clicked) && !matches!(self.mode, GameType::Spectator) {
+            if let Some(me) = self.server.get(self.id)
+                && !self.server.plugins.vault_open(&self.server, &me, (p.x, p.y, p.z))
+            {
+                return;
+            }
             let held = self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id)).unwrap_or("");
             match crate::trial::open_vault(&self.server, (p.x, p.y, p.z), &self.name, held) {
                 Some(true) => {

@@ -160,6 +160,31 @@ Mob positions are `(f32, f32, f32)`.
 | `on_console_command(server, line: &str)` | `line` was typed into the server console | yes |
 | `on_furnace_smelt(server, pos: (i32, i32, i32))` | The furnace, smoker or blast furnace at `pos` finished smelting an item |  |
 | `on_tnt_prime(server, pos: (i32, i32, i32))` | TNT at `pos` is about to be lit (by fire, redstone, an explosion or a player) | yes |
+| `on_effect_add(server, player: &PlayerInfo, effect: i32, amplifier: i32, ticks: i32)` | Player is getting effect `effect` (an effect id) at `amplifier` for `ticks` | yes |
+| `on_effect_remove(server, player: &PlayerInfo, effect: i32)` | Player lost effect `effect` (it ran out, or milk cleared it) |  |
+| `on_ender_pearl(server, player: &PlayerInfo, to: (f32, f32, f32))` | Player's ender pearl landed and is about to take them to `to` | yes |
+| `on_item_spawn(server, item: &str, count: i8, pos: (f32, f32, f32))` | `count` `item` is about to drop into the world at `pos` (mob drops, broken blocks, thrown items) | yes |
+| `on_xp_orb_pickup(server, player: &PlayerInfo, value: i32)` | Player picked up an experience orb worth `value` points |  |
+| `on_golem_build(server, kind: &str, pos: (f32, f32, f32))` | A snow golem, iron golem or wither (`kind`) is about to be built at `pos` | yes |
+| `on_trader_spawn(server, pos: (f32, f32, f32))` | A wandering trader is about to arrive at `pos` | yes |
+| `on_patrol_spawn(server, pos: (f32, f32, f32))` | A pillager patrol is about to spawn at `pos` | yes |
+| `on_shriek(server, pos: (i32, i32, i32), player: Option<i64>)` | The sculk shrieker at `pos` shrieked (`player` set when a player set it off) |  |
+| `on_warden_summon(server, pos: (f32, f32, f32))` | A warden is about to be summoned at `pos` | yes |
+| `on_vault_open(server, player: &PlayerInfo, pos: (i32, i32, i32))` | Player is opening the vault at `pos` with a trial key | yes |
+| `on_trial_spawn(server, pos: (i32, i32, i32), kind: &str, mob: i64)` | The trial spawner at `pos` spawned `kind` (mob id `mob`) |  |
+| `on_gamerule_change(server, rule: &str, value: &str)` | Game rule `rule` is about to be set to `value` with /gamerule | yes |
+| `on_difficulty_change(server, difficulty: i32)` | Difficulty is about to change to `difficulty` (0 peaceful to 3 hard) | yes |
+| `on_op_change(server, name: &str, op: bool)` | `name` is about to be made op (`op` true) or de-opped | yes |
+| `on_ban(server, name: &str, reason: &str)` | `name` is about to be banned with `reason` (may be empty) | yes |
+| `on_unban(server, name: &str)` | `name` is about to be unbanned | yes |
+| `on_ban_ip(server, ip: &str)` | The address `ip` is about to be banned | yes |
+| `on_whitelist_change(server, name: &str, added: bool)` | `name` is about to be added to (`added` true) or removed from the allowlist | yes |
+| `on_world_change(server, player: &PlayerInfo, world: &str)` | Player is about to be sent to world `world` with /mv tp | yes |
+| `on_backup(server, path: &str)` | A world backup was written to `path` |  |
+| `on_dragon_perch(server, mob: i64)` | The ender dragon `mob` is landing on the exit portal |  |
+| `on_night_skip(server)` | Enough players are asleep and the night is about to be skipped | yes |
+| `on_bonemeal(server, pos: (i32, i32, i32), player: Option<i64>)` | Bone meal was used on `pos` (`player` set when a player used it) |  |
+| `on_anchor_charge(server, pos: (i32, i32, i32), player: Option<i64>)` | The respawn anchor at `pos` was charged with glowstone |  |
 
 ## Example: a no-grief zone
 

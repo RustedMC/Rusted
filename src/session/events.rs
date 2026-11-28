@@ -168,6 +168,11 @@ impl Session {
                 let _ = self.conn.send(&[absorption_packet(self.id, 0.0)]).await;
             }
             if !t.expired.is_empty() {
+                if let Some(me) = self.server.get(self.id) {
+                    for &e in &t.expired {
+                        self.server.plugins.effect_remove(&self.server, &me, e);
+                    }
+                }
                 let mut out: Vec<Protocol> = t.expired.iter().map(|&e| effect_packet(self.id, e, None)).collect();
                 out.push(movement_packet(self.id, self.effects.speed()));
                 let _ = self.conn.send(&out).await;

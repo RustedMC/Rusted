@@ -191,6 +191,9 @@ impl Entities {
     }
 
     pub fn drop_item(&self, server: &Server, item: NetworkItemStackDescriptorV2, count: i8, pos: (f32, f32, f32)) {
+        if server.plugins.has_any() && !server.plugins.item_spawn(server, crate::items::name_of(item.id).unwrap_or(""), count, pos) {
+            return;
+        }
         let h = (pos.0 * 73.1 + pos.1 * 19.7 + pos.2 * 37.3 + self.items.lock().len() as f32 * 11.0).sin() * 43_758.547;
         let (a, b) = (h.fract().abs(), (h * 1.618).fract().abs());
         self.spawn(server, item, count, pos, (a * 0.2 - 0.1, 0.2, b * 0.2 - 0.1), Duration::from_millis(500));
@@ -434,6 +437,9 @@ impl Entities {
             })));
         }
         for (orb, player, value) in picked {
+            if let Some(p) = server.get(player) {
+                server.plugins.xp_orb_pickup(server, &p, value);
+            }
             broadcast(server, remove_packet(orb));
             let _ = server.events.send(Event::Xp { to: player, points: value });
             if let Some(p) = server.get(player) {

@@ -711,6 +711,106 @@ impl Plugin for WasmPlugin {
         self.ask(server, json!({ "event": "tnt_prime", "pos": [pos.0, pos.1, pos.2] }))
     }
 
+    fn on_effect_add(&self, server: &Server, player: &PlayerInfo, effect: i32, amplifier: i32, ticks: i32) -> bool {
+        self.ask(server, json!({ "event": "effect_add", "player": player_json(player), "effect": effect, "amplifier": amplifier, "ticks": ticks }))
+    }
+
+    fn on_effect_remove(&self, server: &Server, player: &PlayerInfo, effect: i32) {
+        self.notify(server, json!({ "event": "effect_remove", "player": player_json(player), "effect": effect }));
+    }
+
+    fn on_ender_pearl(&self, server: &Server, player: &PlayerInfo, to: (f32, f32, f32)) -> bool {
+        self.ask(server, json!({ "event": "ender_pearl", "player": player_json(player), "to": [to.0, to.1, to.2] }))
+    }
+
+    fn on_item_spawn(&self, server: &Server, item: &str, count: i8, pos: (f32, f32, f32)) -> bool {
+        self.ask(server, json!({ "event": "item_spawn", "item": item, "count": count, "pos": [pos.0, pos.1, pos.2] }))
+    }
+
+    fn on_xp_orb_pickup(&self, server: &Server, player: &PlayerInfo, value: i32) {
+        self.notify(server, json!({ "event": "xp_orb_pickup", "player": player_json(player), "value": value }));
+    }
+
+    fn on_golem_build(&self, server: &Server, kind: &str, pos: (f32, f32, f32)) -> bool {
+        self.ask(server, json!({ "event": "golem_build", "kind": kind, "pos": [pos.0, pos.1, pos.2] }))
+    }
+
+    fn on_trader_spawn(&self, server: &Server, pos: (f32, f32, f32)) -> bool {
+        self.ask(server, json!({ "event": "trader_spawn", "pos": [pos.0, pos.1, pos.2] }))
+    }
+
+    fn on_patrol_spawn(&self, server: &Server, pos: (f32, f32, f32)) -> bool {
+        self.ask(server, json!({ "event": "patrol_spawn", "pos": [pos.0, pos.1, pos.2] }))
+    }
+
+    fn on_shriek(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.notify(server, json!({ "event": "shriek", "pos": [pos.0, pos.1, pos.2], "player": player }));
+    }
+
+    fn on_warden_summon(&self, server: &Server, pos: (f32, f32, f32)) -> bool {
+        self.ask(server, json!({ "event": "warden_summon", "pos": [pos.0, pos.1, pos.2] }))
+    }
+
+    fn on_vault_open(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32)) -> bool {
+        self.ask(server, json!({ "event": "vault_open", "player": player_json(player), "pos": [pos.0, pos.1, pos.2] }))
+    }
+
+    fn on_trial_spawn(&self, server: &Server, pos: (i32, i32, i32), kind: &str, mob: i64) {
+        self.notify(server, json!({ "event": "trial_spawn", "pos": [pos.0, pos.1, pos.2], "kind": kind, "mob": mob }));
+    }
+
+    fn on_gamerule_change(&self, server: &Server, rule: &str, value: &str) -> bool {
+        self.ask(server, json!({ "event": "gamerule_change", "rule": rule, "value": value }))
+    }
+
+    fn on_difficulty_change(&self, server: &Server, difficulty: i32) -> bool {
+        self.ask(server, json!({ "event": "difficulty_change", "difficulty": difficulty }))
+    }
+
+    fn on_op_change(&self, server: &Server, name: &str, op: bool) -> bool {
+        self.ask(server, json!({ "event": "op_change", "name": name, "op": op }))
+    }
+
+    fn on_ban(&self, server: &Server, name: &str, reason: &str) -> bool {
+        self.ask(server, json!({ "event": "ban", "name": name, "reason": reason }))
+    }
+
+    fn on_unban(&self, server: &Server, name: &str) -> bool {
+        self.ask(server, json!({ "event": "unban", "name": name }))
+    }
+
+    fn on_ban_ip(&self, server: &Server, ip: &str) -> bool {
+        self.ask(server, json!({ "event": "ban_ip", "ip": ip }))
+    }
+
+    fn on_whitelist_change(&self, server: &Server, name: &str, added: bool) -> bool {
+        self.ask(server, json!({ "event": "whitelist_change", "name": name, "added": added }))
+    }
+
+    fn on_world_change(&self, server: &Server, player: &PlayerInfo, world: &str) -> bool {
+        self.ask(server, json!({ "event": "world_change", "player": player_json(player), "world": world }))
+    }
+
+    fn on_backup(&self, server: &Server, path: &str) {
+        self.notify(server, json!({ "event": "backup", "path": path }));
+    }
+
+    fn on_dragon_perch(&self, server: &Server, mob: i64) {
+        self.notify(server, json!({ "event": "dragon_perch", "mob": mob }));
+    }
+
+    fn on_night_skip(&self, server: &Server) -> bool {
+        self.ask(server, json!({ "event": "night_skip" }))
+    }
+
+    fn on_bonemeal(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.notify(server, json!({ "event": "bonemeal", "pos": [pos.0, pos.1, pos.2], "player": player }));
+    }
+
+    fn on_anchor_charge(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.notify(server, json!({ "event": "anchor_charge", "pos": [pos.0, pos.1, pos.2], "player": player }));
+    }
+
 }
 
 #[cfg(test)]

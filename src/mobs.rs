@@ -2368,6 +2368,7 @@ impl Mobs {
         // 20 s, where it can be hit up close (PNX DragonPhase landing approach and sitting).
         if m.kind == Kind::EnderDragon && m.perch == 0 && m.attack_cd > 0 && self.rand().is_multiple_of(PERCH_CHANCE) {
             m.perch = PERCH_TICKS;
+            crate::plugin::later(crate::plugin::Later::DragonPerch(m.id));
         }
         if m.kind == Kind::EnderDragon && m.perch > 0 && let Some(spot) = crate::endfight::perch_point() {
             m.perch -= 1;
@@ -2523,6 +2524,9 @@ impl Mobs {
         }
         let life = 40 * 60 * TPS;
         let at = (x as f32 + 0.5, y as f32, z as f32 + 0.5);
+        if !server.plugins.trader_spawn(server, at) {
+            return;
+        }
         for (kind, off) in [(Kind::WanderingTrader, 0.0), (Kind::TraderLlama, 1.5), (Kind::TraderLlama, -1.5)] {
             let id = self.spawn(server, kind, (at.0 + off, at.1, at.2));
             if let Some(m) = self.mobs.lock().get_mut(&id) {
@@ -3036,6 +3040,9 @@ impl Mobs {
                     }
                 }
                 Throw::Pearl => {
+                    if server.get(owner).is_some_and(|p| !server.plugins.ender_pearl(server, &p, (pos.0, pos.1.floor(), pos.2))) {
+                        continue;
+                    }
                     let _ = server.events.send(Event::Teleport { id: owner, feet: (pos.0, pos.1.floor(), pos.2) }); // last open block before the hit
                     let _ = server.events.send(Event::Damage { to: owner, damage: crate::health::Damage::Fall(5.0), knock: (0.0, 0.0, 0.0) });
                     let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(sound("mob.endermen.portal", pos)) });
@@ -4690,6 +4697,9 @@ pub fn summon_from_blocks(server: &Server, p: (i32, i32, i32)) {
         }
     }
     let Some((kind, blocks_used, feet)) = built else { return };
+    if !server.plugins.golem_build(server, kind.identifier(), (feet.0 as f32 + 0.5, feet.1 as f32, feet.2 as f32 + 0.5)) {
+        return;
+    }
     for q in blocks_used {
         server.set_block(0, q.0, q.1, q.2, crate::world::AIR);
     }

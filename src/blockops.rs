@@ -65,7 +65,7 @@ pub(crate) fn check_sleep(server: &players::Server) {
     });
     let pct = pct.unwrap_or(100).clamp(0, 100) as usize;
     let needed = (online.len() * pct).div_ceil(100).max(1);
-    if rested < needed {
+    if rested < needed || !server.plugins.night_skip(server) {
         return;
     }
     let sleeping: Vec<i64> = sl.drain().map(|(id, _)| id).collect();
@@ -130,8 +130,12 @@ pub(crate) fn container_anim(server: &players::Server, (x, y, z): (i32, i32, i32
 }
 
 pub(crate) fn apply_use(server: &players::Server, id: i64, p: (i32, i32, i32), o: &useblock::Outcome) {
-    if o.sound.as_ref().is_some_and(|(s, _)| s == "block.bell.hit") {
-        server.plugins.bell_ring(server, p, (id != 0).then_some(id));
+    let by = (id != 0).then_some(id);
+    match o.sound.as_ref().map(|(s, _)| s.as_str()) {
+        Some("block.bell.hit") => server.plugins.bell_ring(server, p, by),
+        Some("item.bone_meal.use") => server.plugins.bonemeal(server, p, by),
+        Some("respawn_anchor.charge") => server.plugins.anchor_charge(server, p, by),
+        _ => {}
     }
     let center = (p.0 as f32 + 0.5, p.1 as f32 + 0.5, p.2 as f32 + 0.5);
     for &((x, y, z), b) in &o.changes {

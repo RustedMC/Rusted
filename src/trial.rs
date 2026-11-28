@@ -147,6 +147,9 @@ pub fn tick(server: &Server, mobs: &crate::mobs::Mobs, rand: impl Fn() -> u32) {
         });
         if let Some(at) = spot {
             let id = mobs.spawn_baby(server, kind, at, baby);
+            if id != 0 {
+                crate::plugin::later(crate::plugin::Later::TrialSpawn(pos, kind.identifier(), id));
+            }
             if id != 0
                 && let Some(t) = spawners().lock().get_mut(&pos)
             {

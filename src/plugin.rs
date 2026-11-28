@@ -48,6 +48,8 @@ pub enum Later {
     Leash(i64, i64, bool),
     CreeperPower(i64),
     Smelt((i32, i32, i32)),
+    TrialSpawn((i32, i32, i32), &'static str, i64),
+    DragonPerch(i64),
 }
 
 static LATER: parking_lot::Mutex<Vec<Later>> = parking_lot::Mutex::new(Vec::new());
@@ -602,6 +604,116 @@ pub trait Plugin: Send + Sync {
         true
     }
 
+    /// Player is getting effect `effect` (an effect id) at `amplifier` for `ticks`. Return false to stop it.
+    fn on_effect_add(&self, _server: &Server, _player: &PlayerInfo, _effect: i32, _amplifier: i32, _ticks: i32) -> bool {
+        true
+    }
+
+    /// Player lost effect `effect` (it ran out, or milk cleared it).
+    fn on_effect_remove(&self, _server: &Server, _player: &PlayerInfo, _effect: i32) {}
+
+    /// Player's ender pearl landed and is about to take them to `to`. Return false to stay put.
+    fn on_ender_pearl(&self, _server: &Server, _player: &PlayerInfo, _to: (f32, f32, f32)) -> bool {
+        true
+    }
+
+    /// `count` `item` is about to drop into the world at `pos` (mob drops, broken blocks,
+    /// thrown items). Return false and it never appears.
+    fn on_item_spawn(&self, _server: &Server, _item: &str, _count: i8, _pos: (f32, f32, f32)) -> bool {
+        true
+    }
+
+    /// Player picked up an experience orb worth `value` points.
+    fn on_xp_orb_pickup(&self, _server: &Server, _player: &PlayerInfo, _value: i32) {}
+
+    /// A snow golem, iron golem or wither (`kind`) is about to be built at `pos`. Return false to stop it.
+    fn on_golem_build(&self, _server: &Server, _kind: &str, _pos: (f32, f32, f32)) -> bool {
+        true
+    }
+
+    /// A wandering trader is about to arrive at `pos`. Return false to stop it.
+    fn on_trader_spawn(&self, _server: &Server, _pos: (f32, f32, f32)) -> bool {
+        true
+    }
+
+    /// A pillager patrol is about to spawn at `pos`. Return false to stop it.
+    fn on_patrol_spawn(&self, _server: &Server, _pos: (f32, f32, f32)) -> bool {
+        true
+    }
+
+    /// The sculk shrieker at `pos` shrieked (`player` set when a player set it off).
+    fn on_shriek(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
+
+    /// A warden is about to be summoned at `pos`. Return false to stop it.
+    fn on_warden_summon(&self, _server: &Server, _pos: (f32, f32, f32)) -> bool {
+        true
+    }
+
+    /// Player is opening the vault at `pos` with a trial key. Return false to stop it.
+    fn on_vault_open(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32)) -> bool {
+        true
+    }
+
+    /// The trial spawner at `pos` spawned `kind` (mob id `mob`). Fired after the trial tick.
+    fn on_trial_spawn(&self, _server: &Server, _pos: (i32, i32, i32), _kind: &str, _mob: i64) {}
+
+    /// Game rule `rule` is about to be set to `value` with /gamerule. Return false to stop it.
+    fn on_gamerule_change(&self, _server: &Server, _rule: &str, _value: &str) -> bool {
+        true
+    }
+
+    /// Difficulty is about to change to `difficulty` (0 peaceful to 3 hard). Return false to stop it.
+    fn on_difficulty_change(&self, _server: &Server, _difficulty: i32) -> bool {
+        true
+    }
+
+    /// `name` is about to be made op (`op` true) or de-opped. Return false to stop it.
+    fn on_op_change(&self, _server: &Server, _name: &str, _op: bool) -> bool {
+        true
+    }
+
+    /// `name` is about to be banned with `reason` (may be empty). Return false to stop it.
+    fn on_ban(&self, _server: &Server, _name: &str, _reason: &str) -> bool {
+        true
+    }
+
+    /// `name` is about to be unbanned. Return false to stop it.
+    fn on_unban(&self, _server: &Server, _name: &str) -> bool {
+        true
+    }
+
+    /// The address `ip` is about to be banned. Return false to stop it.
+    fn on_ban_ip(&self, _server: &Server, _ip: &str) -> bool {
+        true
+    }
+
+    /// `name` is about to be added to (`added` true) or removed from the allowlist. Return false to stop it.
+    fn on_whitelist_change(&self, _server: &Server, _name: &str, _added: bool) -> bool {
+        true
+    }
+
+    /// Player is about to be sent to world `world` with /mv tp. Return false to stop it.
+    fn on_world_change(&self, _server: &Server, _player: &PlayerInfo, _world: &str) -> bool {
+        true
+    }
+
+    /// A world backup was written to `path`.
+    fn on_backup(&self, _server: &Server, _path: &str) {}
+
+    /// The ender dragon `mob` is landing on the exit portal. Fired after the mob tick.
+    fn on_dragon_perch(&self, _server: &Server, _mob: i64) {}
+
+    /// Enough players are asleep and the night is about to be skipped. Return false to keep it night.
+    fn on_night_skip(&self, _server: &Server) -> bool {
+        true
+    }
+
+    /// Bone meal was used on `pos` (`player` set when a player used it).
+    fn on_bonemeal(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
+
+    /// The respawn anchor at `pos` was charged with glowstone.
+    fn on_anchor_charge(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
+
     /// Player jumped.
     fn on_jump(&self, _server: &Server, _player: &PlayerInfo) {}
 
@@ -924,6 +1036,8 @@ impl Plugins {
                 Later::Leash(p, m, on) => self.each(|pl| pl.on_leash(s, p, m, on)),
                 Later::CreeperPower(m) => self.each(|pl| pl.on_creeper_power(s, m)),
                 Later::Smelt(pos) => self.each(|pl| pl.on_furnace_smelt(s, pos)),
+                Later::TrialSpawn(pos, kind, mob) => self.each(|pl| pl.on_trial_spawn(s, pos, kind, mob)),
+                Later::DragonPerch(mob) => self.each(|pl| pl.on_dragon_perch(s, mob)),
             }
         }
     }
@@ -1051,6 +1165,98 @@ impl Plugins {
 
     pub fn tnt_prime(&self, s: &Server, pos: (i32, i32, i32)) -> bool {
         self.cancellable(|pl| pl.on_tnt_prime(s, pos))
+    }
+
+    pub fn effect_add(&self, s: &Server, p: &PlayerInfo, effect: i32, amplifier: i32, ticks: i32) -> bool {
+        self.cancellable(|pl| pl.on_effect_add(s, p, effect, amplifier, ticks))
+    }
+
+    pub fn effect_remove(&self, s: &Server, p: &PlayerInfo, effect: i32) {
+        self.each(|pl| pl.on_effect_remove(s, p, effect));
+    }
+
+    pub fn ender_pearl(&self, s: &Server, p: &PlayerInfo, to: (f32, f32, f32)) -> bool {
+        self.cancellable(|pl| pl.on_ender_pearl(s, p, to))
+    }
+
+    pub fn item_spawn(&self, s: &Server, item: &str, count: i8, pos: (f32, f32, f32)) -> bool {
+        self.cancellable(|pl| pl.on_item_spawn(s, item, count, pos))
+    }
+
+    pub fn xp_orb_pickup(&self, s: &Server, p: &PlayerInfo, value: i32) {
+        self.each(|pl| pl.on_xp_orb_pickup(s, p, value));
+    }
+
+    pub fn golem_build(&self, s: &Server, kind: &str, pos: (f32, f32, f32)) -> bool {
+        self.cancellable(|pl| pl.on_golem_build(s, kind, pos))
+    }
+
+    pub fn trader_spawn(&self, s: &Server, pos: (f32, f32, f32)) -> bool {
+        self.cancellable(|pl| pl.on_trader_spawn(s, pos))
+    }
+
+    pub fn patrol_spawn(&self, s: &Server, pos: (f32, f32, f32)) -> bool {
+        self.cancellable(|pl| pl.on_patrol_spawn(s, pos))
+    }
+
+    pub fn shriek(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.each(|pl| pl.on_shriek(s, pos, player));
+    }
+
+    pub fn warden_summon(&self, s: &Server, pos: (f32, f32, f32)) -> bool {
+        self.cancellable(|pl| pl.on_warden_summon(s, pos))
+    }
+
+    pub fn vault_open(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32)) -> bool {
+        self.cancellable(|pl| pl.on_vault_open(s, p, pos))
+    }
+
+    pub fn gamerule_change(&self, s: &Server, rule: &str, value: &str) -> bool {
+        self.cancellable(|pl| pl.on_gamerule_change(s, rule, value))
+    }
+
+    pub fn difficulty_change(&self, s: &Server, d: i32) -> bool {
+        self.cancellable(|pl| pl.on_difficulty_change(s, d))
+    }
+
+    pub fn op_change(&self, s: &Server, name: &str, op: bool) -> bool {
+        self.cancellable(|pl| pl.on_op_change(s, name, op))
+    }
+
+    pub fn ban(&self, s: &Server, name: &str, reason: &str) -> bool {
+        self.cancellable(|pl| pl.on_ban(s, name, reason))
+    }
+
+    pub fn unban(&self, s: &Server, name: &str) -> bool {
+        self.cancellable(|pl| pl.on_unban(s, name))
+    }
+
+    pub fn ban_ip(&self, s: &Server, ip: &str) -> bool {
+        self.cancellable(|pl| pl.on_ban_ip(s, ip))
+    }
+
+    pub fn whitelist_change(&self, s: &Server, name: &str, added: bool) -> bool {
+        self.cancellable(|pl| pl.on_whitelist_change(s, name, added))
+    }
+
+    pub fn world_change(&self, s: &Server, p: &PlayerInfo, world: &str) -> bool {
+        self.cancellable(|pl| pl.on_world_change(s, p, world))
+    }
+
+    pub fn backup(&self, s: &Server, path: &str) {
+        self.each(|pl| pl.on_backup(s, path));
+    }
+
+    pub fn night_skip(&self, s: &Server) -> bool {
+        self.cancellable(|pl| pl.on_night_skip(s))
+    }
+
+    pub fn bonemeal(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.each(|pl| pl.on_bonemeal(s, pos, player));
+    }
+
+    pub fn anchor_charge(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.each(|pl| pl.on_anchor_charge(s, pos, player));
     }
 
     pub fn jump(&self, s: &Server, p: &PlayerInfo) {
@@ -1531,6 +1737,29 @@ mod tests {
         fn on_raid_start(&self, _: &Server, _: (f32, f32, f32)) -> bool {
             false
         }
+    }
+
+    struct Strict;
+    impl Plugin for Strict {
+        fn name(&self) -> &str {
+            "strict"
+        }
+        fn on_item_spawn(&self, _: &Server, item: &str, _: i8, _: (f32, f32, f32)) -> bool {
+            item != "minecraft:dirt"
+        }
+        fn on_op_change(&self, _: &Server, _: &str, _: bool) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn item_drops_and_ops_can_be_stopped() {
+        crate::blocks::init();
+        let server = Server::new();
+        let plugins = Plugins::new(vec![Box::new(Strict)]);
+        assert!(!plugins.item_spawn(&server, "minecraft:dirt", 1, (0.0, 0.0, 0.0)));
+        assert!(plugins.item_spawn(&server, "minecraft:stone", 1, (0.0, 0.0, 0.0)));
+        assert!(!plugins.op_change(&server, "Steve", true));
     }
 
     #[test]
