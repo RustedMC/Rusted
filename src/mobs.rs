@@ -982,6 +982,11 @@ impl Mobs {
         self.spawn_with(server, kind, pos, false)
     }
 
+    /// Spawns a mob, a baby if `baby` (trial spawners' baby zombies). 0 if a plugin stopped it.
+    pub fn spawn_baby(&self, server: &Server, kind: Kind, pos: (f32, f32, f32), baby: bool) -> i64 {
+        self.spawn_with(server, kind, pos, baby)
+    }
+
     fn spawn_with(&self, server: &Server, kind: Kind, pos: (f32, f32, f32), baby: bool) -> i64 {
         if !server.plugins.entity_spawn(server, kind.identifier(), pos) {
             return 0;
@@ -1892,6 +1897,7 @@ impl Mobs {
     /// every 10-40 s spawn up to 4 of their mob within 4 blocks, unless 6 are already close.
     fn tick_spawners(&self, server: &Server) {
         static DELAY: Mutex<Option<HashMap<(i32, i32, i32), u32>>> = Mutex::new(None);
+        crate::trial::tick(server, self, || self.rand());
         let spawners: Vec<((i32, i32, i32), &str)> = crate::loot::spawners().lock().iter().map(|(p, m)| (*p, *m)).collect();
         if spawners.is_empty() {
             return;
@@ -3600,7 +3606,7 @@ fn arrow_damage(speed: f32, power: i16, critical_roll: Option<u32>) -> f32 {
     }
 }
 
-fn dist2(a: (f32, f32, f32), b: (f32, f32, f32)) -> f32 {
+pub(crate) fn dist2(a: (f32, f32, f32), b: (f32, f32, f32)) -> f32 {
     (a.0 - b.0).powi(2) + (a.1 - b.1).powi(2) + (a.2 - b.2).powi(2)
 }
 
@@ -4049,7 +4055,7 @@ pub fn cart_store(home: (i32, i32, i32)) -> (i32, i32, i32) {
 }
 
 /// Whether a mob can stand at block `p` (feet there and above free, solid ground below).
-fn standable(w: &crate::world::World, p: (i32, i32, i32)) -> bool {
+pub(crate) fn standable(w: &crate::world::World, p: (i32, i32, i32)) -> bool {
     walkable(w.get(p.0, p.1, p.2)) && walkable(w.get(p.0, p.1 + 1, p.2)) && {
         let below = w.get(p.0, p.1 - 1, p.2);
         solid(below) || blocks::is_water(below)

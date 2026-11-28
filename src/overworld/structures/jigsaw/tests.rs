@@ -73,4 +73,8 @@ fn trial_chambers_generate() {
     println!("trial chambers at {cx},{cz}: {} blocks, reach {reach}, {:?}", names.values().sum::<usize>(), start.elapsed());
     assert!(reach <= 9);
     assert!(names.keys().any(|n| n.contains("tuff")), "{names:?}");
+    let spawners = names.get("trial_spawner").copied().unwrap_or(0);
+    assert!(spawners > 0, "trial chambers have trial spawners: {names:?}");
+    assert!(crate::trial::registered() >= spawners, "every trial spawner knows its mob");
+    assert!(names.get("vault").copied().unwrap_or(0) > 0, "and vaults");
 }

@@ -168,6 +168,34 @@ const BASTION: &[Pool] = &[
     ] },
 ];
 
+// Trial chamber rewards. Close to the vanilla spawners/trial_chamber and vault tables, but
+// shortcut: tipped arrows and potions with effects come out plain; refine against vanilla data.
+const TRIAL_SPAWNER_REWARD: &[Pool] = &[Pool { rolls: (1, 1), entries: &[
+    ("arrow", 4, 2, 8), ("bread", 3, 1, 3), ("cooked_chicken", 3, 1, 1), ("baked_potato", 2, 2, 4), ("honey_bottle", 1, 1, 1),
+    ("golden_carrot", 1, 1, 2), ("wind_charge", 2, 2, 5),
+] }];
+const VAULT: &[Pool] = &[
+    Pool { rolls: (1, 3), entries: &[
+        ("emerald", 5, 2, 4), ("arrow", 4, 2, 8), ("wind_charge", 4, 4, 12), ("honey_bottle", 3, 1, 2), ("ominous_bottle", 2, 1, 1),
+        ("shield", 3, 1, 1), ("bow", 2, 1, 1), ("iron_axe", 2, 1, 1), ("iron_chestplate", 2, 1, 1), ("golden_carrot", 2, 1, 2),
+        ("crossbow", 2, 1, 1), ("enchanted_book", 2, 1, 1),
+    ] },
+    Pool { rolls: (0, 1), entries: &[
+        ("diamond", 4, 1, 2), ("golden_apple", 3, 1, 1), ("diamond_axe", 2, 1, 1), ("diamond_chestplate", 2, 1, 1), ("trident", 1, 1, 1),
+        ("music_disc_creator", 1, 1, 1), ("guster_banner_pattern", 1, 1, 1),
+    ] },
+];
+const OMINOUS_VAULT: &[Pool] = &[
+    Pool { rolls: (1, 3), entries: &[
+        ("emerald", 5, 4, 10), ("wind_charge", 4, 8, 12), ("diamond", 3, 2, 3), ("ominous_bottle", 3, 1, 1), ("golden_carrot", 2, 3, 6),
+        ("enchanted_book", 3, 1, 1), ("diamond_axe", 2, 1, 1), ("diamond_chestplate", 2, 1, 1), ("crossbow", 2, 1, 1),
+    ] },
+    Pool { rolls: (1, 1), entries: &[
+        ("heavy_core", 1, 1, 1), ("enchanted_golden_apple", 2, 1, 1), ("flow_armor_trim_smithing_template", 3, 1, 1),
+        ("music_disc_precipice", 2, 1, 1), ("flow_banner_pattern", 2, 1, 1), ("diamond_block", 2, 1, 1),
+    ] },
+];
+
 /// The loot for chests in a structure (`StructureType::name`), if it has any.
 fn table(structure: &str) -> Option<&'static [Pool]> {
     Some(match structure.trim_start_matches("normal_").trim_start_matches("generic_") {
@@ -187,6 +215,9 @@ fn table(structure: &str) -> Option<&'static [Pool]> {
         "nether_fortress" => NETHER_FORTRESS,
         "bastion" => BASTION,
         "end_city" => END_CITY,
+        "trial_spawner" => TRIAL_SPAWNER_REWARD,
+        "vault" => VAULT,
+        "ominous_vault" => OMINOUS_VAULT,
         _ => return None,
     })
 }

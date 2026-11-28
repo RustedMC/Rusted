@@ -391,7 +391,16 @@ impl Asm<'_, '_> {
                 }
             }
             Kind::Trail => trail_gravel(self.w.seed, name, tmp),
-            Kind::Trial => {}
+            // Spawner rooms: remember which mob each trial spawner calls up.
+            Kind::Trial => {
+                if let Some((mob, baby)) = crate::trial::mob_for_template(name) {
+                    for (x, y, z, v) in tmp.list() {
+                        if bl::is(v, "trial_spawner") {
+                            crate::trial::generated((x, y, z), mob, baby);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -559,7 +568,9 @@ impl Asm<'_, '_> {
                         continue;
                     }
                     let Some((cf, ctop)) = orientation(t, cj, rot) else { continue };
-                    if pf != cw(cw(cf)) || !(joint == "rollable" || ptop == ctop) {
+                    // Faces must point at each other: the opposite face, floors and ceilings included
+                    // (two clockwise turns only flip the walls, so up/down never matched).
+                    if pf != (cf ^ 1) || !(joint == "rollable" || ptop == ctop) {
                         continue;
                     }
                     let wp = side(parent_pos, pf);

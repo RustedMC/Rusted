@@ -8,17 +8,17 @@ This file tracks how far each part of PNX has come over.
 | PNX package | What it covers | Status |
 |---|---|---|
 | `level/generator` | overworld, Nether, End, features, structures | ✅ seed-exact with PNX |
-| `level` | ticking, light, weather, explosions, portals, dimensions | 🟡 block light only, no sky light; no lightning-charged creepers |
-| `block` | block behaviour, interactions, crops, fluids, fire | 🟡 most blocks work; no rails, sculk, trial spawners, vaults |
+| `level` | ticking, light, weather, explosions, portals, dimensions | 🟡 block and sky light, lightning charges creepers; ticking areas |
+| `block` | block behaviour, interactions, crops, fluids, fire | 🟡 most blocks work, rails and sculk included; trial spawners and vaults work (reward tables approximate) |
 | `blockentity` + `inventory` | containers and their screens | 🟡 chests, furnaces, hoppers, brewing, anvil, grindstone, enchanting, smithing, shulkers, dispensers, beacons, looms, lecterns (no redstone output yet), crafters; maps and the cartography table (zoom, copy, lock) |
-| `item` | tools, food, armour, enchantments, effects | 🟡 bows, tridents and potions work; fishing, shields, totems, crossbows (Multishot, Quick Charge) and elytra with rocket boosts work; ground-launched fireworks don't fly yet |
-| `entity` | mobs and AI | 🟡 71 mob types on a simpler AI than PNX's behaviour system; riding horses, donkeys, mules, pigs, striders and camels, horse taming and saddles, boats, minecarts on rails; no chest boats, chest/hopper/TNT minecarts, llama caravans or dragon perching |
-| `entity` (villagers) | jobs, trading, raids | 🟡 trading uses PNX's tables; no gossip, breeding or wandering traders |
+| `item` | tools, food, armour, enchantments, effects | 🟡 bows, tridents, potions, fishing, shields, totems, crossbows, elytra and fireworks work |
+| `entity` | mobs and AI | 🟡 87 mob types on a simpler AI than PNX's behaviour system; riding, boats, chest boats, all minecarts, llama caravans; the dragon perches on the portal |
+| `entity` (villagers) | jobs, trading, raids | 🟡 trading uses PNX's tables; breeding and wandering traders; no gossip |
 | redstone | dust, diodes, pistons, observers | 🟡 works for common builds; rails (powered, detector, activator), repeater locking and lectern comparator output work; no sculk |
-| `command` | vanilla commands | 🟡 ~50 commands and target selectors; no `/execute`, `/locate`, `/function` |
+| `command` | vanilla commands | 🟡 nearly every vanilla command, `/execute`, `/camera` and target selectors; no `/dialogue` (needs NPC entities) |
 | `event` + `plugin` | plugin API | 🟡 60 of PNX's ~200 events, scheduler, config files; plugins are compiled in |
-| `form`, `scoreboard` | server UI | 🟡 forms, scoreboards, boss bars; no NPC dialogs or camera control |
-| loot tables | chest loot, spawners | 🟡 chests in 15 overworld and Nether structures fill on first open (vanilla tables, enchanted books are plain books); mineshaft, stronghold and fortress spawners work; no End city loot, dungeons or trial spawners |
+| `form`, `scoreboard` | server UI | 🟡 forms, scoreboards, boss bars, camera control; no NPC dialogs |
+| loot tables | chest loot, spawners | 🟡 chests in 16 structures fill on first open, with enchanted books; structure spawners; trial spawner and vault rewards; `/loot`; no dungeons |
 
 ## How ported code is written
 - Same rules, numbers and random-number order as PNX. Where Java needed objects and virtual

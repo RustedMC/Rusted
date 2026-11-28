@@ -231,6 +231,23 @@ impl Session {
             }
             return;
         }
+        // Vaults open with a trial key, once per player.
+        if crate::trial::is_vault(clicked) && !matches!(self.mode, GameType::Spectator) {
+            let held = self.inv.held(self.selected_slot as usize).and_then(|s| items::name_of(s.item.id)).unwrap_or("");
+            match crate::trial::open_vault(&self.server, (p.x, p.y, p.z), &self.name, held) {
+                Some(true) => {
+                    if survival_like(&self.mode) {
+                        self.inv.use_one(self.selected_slot as usize);
+                        let _ = self.conn.send(&[self.inv.content_packet()]).await;
+                    }
+                }
+                Some(false) => {
+                    let _ = self.conn.send(&[chat_packet(String::new(), "§7You've already opened this vault".into())]).await;
+                }
+                None => {}
+            }
+            return;
+        }
         // Lecterns: put a book on, sneak-click to take it back, click to read.
         if crate::lectern::is_lectern(clicked) && !matches!(self.mode, GameType::Spectator) {
             let pos = (p.x, p.y, p.z);
