@@ -72,7 +72,11 @@ pub(crate) fn redstone_tick(server: &players::Server, plates: &mut HashMap<(i32,
     game_tick(server, plates);
     crate::world::set_players(server.all().iter().map(|p| ((p.pos.0.floor() as i32) >> 4, (p.pos.2.floor() as i32) >> 4)).collect());
     server.plugins.fire_later(server);
-    crate::perf::tick(server, started.elapsed());
+    let took = started.elapsed();
+    crate::perf::tick(server, took);
+    if took.as_millis() > 50 {
+        server.plugins.slow_tick(server, took.as_secs_f32() * 1000.0);
+    }
 }
 
 fn game_tick(server: &players::Server, plates: &mut HashMap<(i32, i32, i32), Instant>) {

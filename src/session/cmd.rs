@@ -414,6 +414,7 @@ impl Session {
                 _ => "§cBad position".into(),
             },
             ["spawnpoint", x, y, z] => match coords(&[x, y, z], here) {
+                Some(p) if self.server.get(self.id).is_some_and(|me| !self.server.plugins.spawn_point_set(&self.server, &me, p)) => "§cA plugin stopped that".into(),
                 Some(p) => {
                     commands::set_spawn(Some(&self.name), (p.0, p.1 + 1.62, p.2));
                     format!("Set spawn point to {:.0} {:.0} {:.0}", p.0, p.1, p.2)
@@ -441,6 +442,7 @@ impl Session {
                 let _ = self.conn.send(&self.inv.all_packets()).await;
                 format!("Cleared the inventory of {}, removing {n} items", self.name)
             }
+            ["spawnpoint"] if self.server.get(self.id).is_some_and(|me| !self.server.plugins.spawn_point_set(&self.server, &me, me.pos)) => "§cA plugin stopped that".into(),
             ["spawnpoint"] => {
                 let pos = self.server.get(self.id).map_or(self.server.world.spawn(), |p| p.pos);
                 commands::set_spawn(Some(&self.name), pos);
@@ -489,6 +491,7 @@ impl Session {
                     n => n.parse().ok(),
                 };
                 match t {
+                    Some(t) if !self.server.plugins.time_set(&self.server, t) => "§cA plugin stopped that".into(),
                     Some(t) => {
                         self.server.set_time(t);
                         let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(clock_packet(t)) });

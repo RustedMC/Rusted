@@ -120,6 +120,9 @@ impl Session {
             && let Some(me) = self.server.get(self.id)
         {
             if !crate::fishing::has_hook(self.id) {
+                if !self.server.plugins.fishing_cast(&self.server, &me) {
+                    return;
+                }
                 crate::fishing::cast(&self.server, self.id, me.pos, me.rot, &rod.item.user_data_buffer);
                 let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(play_sound("random.bow", me.pos)) });
                 return;
@@ -672,6 +675,9 @@ impl Session {
                 self.inv.use_one(self.selected_slot as usize);
             }
             if let Some(((ox, oy, oz), _)) = parts.iter().find(|(_, b)| signs::is_sign(*b)) {
+                if let Some(me) = self.server.get(self.id) {
+                    self.server.plugins.sign_open(&self.server, &me, (x + ox, y + oy, z + oz));
+                }
                 let _ = self.conn.send(&[signs::open_packet((x + ox, y + oy, z + oz))]).await;
             }
             let placed_chest = parts.iter().find(|(_, b)| containers::kind(*b) == Some(containers::Kind::Chest)).map(|((ox, oy, oz), _)| (x + ox, y + oy, z + oz));

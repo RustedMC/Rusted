@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.13
+
+- 25 more plugin events (163 now):
+  - Players: `on_xp_level_change`, `on_shield_block`, `on_spawn_point_set`, `on_view_distance` (change the distance a player gets), `on_armor_change`, `on_player_combust`, `on_death_drops` (cancel to keep items), `on_portal_enter`, `on_fishing_cast`, `on_elytra_boost`, `on_item_throw`, `on_sign_open`
+  - Blocks: `on_cake_eat`, `on_dragon_egg_teleport`, `on_end_portal_fill`, `on_composter_use`, `on_block_explode` (respawn anchors)
+  - Mobs: `on_mob_heal`, `on_sit_toggle`, `on_tnt_minecart_prime`, `on_mob_expire`, `on_firework_explode`
+  - Server: `on_chunk_generate`, `on_time_set`, `on_slow_tick` (a tick ran over 50 ms)
+- 10 of them can be cancelled. Runtime `.wasm` plugins get them all.
+
 ## 0.6.12
 
 - 25 more plugin events (138 now):

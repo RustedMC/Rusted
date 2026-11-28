@@ -185,6 +185,31 @@ Mob positions are `(f32, f32, f32)`.
 | `on_night_skip(server)` | Enough players are asleep and the night is about to be skipped | yes |
 | `on_bonemeal(server, pos: (i32, i32, i32), player: Option<i64>)` | Bone meal was used on `pos` (`player` set when a player used it) |  |
 | `on_anchor_charge(server, pos: (i32, i32, i32), player: Option<i64>)` | The respawn anchor at `pos` was charged with glowstone |  |
+| `on_xp_level_change(server, player: &PlayerInfo, old: i32, new: i32)` | Player's XP level went from `old` to `new` (checked once a second) |  |
+| `on_shield_block(server, player: &PlayerInfo, damage: f32)` | Player is about to block `damage` with their shield | yes |
+| `on_cake_eat(server, pos: (i32, i32, i32), player: Option<i64>)` | A slice of the cake at `pos` was eaten (`player` set when a player ate it) |  |
+| `on_dragon_egg_teleport(server, pos: (i32, i32, i32), to: (i32, i32, i32))` | The dragon egg at `pos` is about to teleport to `to` | yes |
+| `on_end_portal_fill(server, pos: (i32, i32, i32), player: Option<i64>)` | An eye of ender was put into the end portal frame at `pos` |  |
+| `on_composter_use(server, pos: (i32, i32, i32), player: Option<i64>)` | The composter at `pos` was filled or emptied |  |
+| `on_mob_heal(server, mob: i64, amount: f32)` | Mob `mob` healed `amount` |  |
+| `on_spawn_point_set(server, player: &PlayerInfo, pos: (f32, f32, f32))` | Player's spawn point is about to be set to `pos` (/spawnpoint) | yes |
+| `on_view_distance(server, player: &PlayerInfo, chunks: &mut i32)` | Player asked for a view distance of `chunks` |  |
+| `on_chunk_generate(server, chunk: (i32, i32))` | The overworld chunk at `chunk` was generated for the first time |  |
+| `on_time_set(server, time: i32)` | The time is about to be set to `time` with /time set | yes |
+| `on_sit_toggle(server, mob: i64, sitting: bool)` | A tamed wolf or cat `mob` sat down (`sitting` true) or stood up |  |
+| `on_slow_tick(server, ms: f32)` | A game tick took `ms` milliseconds, over the 50 ms a tick has (the server is lagging) |  |
+| `on_armor_change(server, player: &PlayerInfo, slot: i32, item: &str)` | Player's armor in `slot` (0 helmet to 3 boots) changed to `item` ("" when taken off) |  |
+| `on_player_combust(server, player: &PlayerInfo)` | Player caught fire (lava or fire) |  |
+| `on_death_drops(server, player: &PlayerInfo)` | Player died and is about to drop their items | yes |
+| `on_portal_enter(server, player: &PlayerInfo, to: i32)` | Player stepped into a portal to dimension `to` (0 overworld, 1 Nether, 2 End) | yes |
+| `on_firework_explode(server, pos: (f32, f32, f32), stars: i32)` | A firework burst at `pos` with `stars` stars |  |
+| `on_tnt_minecart_prime(server, mob: i64)` | The TNT minecart `mob` was lit by an activator rail |  |
+| `on_fishing_cast(server, player: &PlayerInfo)` | Player is about to cast a fishing rod | yes |
+| `on_elytra_boost(server, player: &PlayerInfo)` | Player is about to boost their elytra with a firework | yes |
+| `on_item_throw(server, player: &PlayerInfo, item: &str)` | Player is about to throw `item` (snowball, egg, ender pearl, splash potion, bottle o' enchanting) | yes |
+| `on_block_explode(server, pos: (i32, i32, i32), block: &str)` | The `block` at `pos` is about to blow up from being used (a respawn anchor outside the Nether) | yes |
+| `on_sign_open(server, player: &PlayerInfo, pos: (i32, i32, i32))` | Player placed a sign at `pos` and its edit screen is opening |  |
+| `on_mob_expire(server, mob: i64, kind: &str)` | Mob `mob` (a wandering trader and its llamas) left when its time ran out |  |
 
 ## Example: a no-grief zone
 

@@ -513,6 +513,9 @@ static THROWN: Mutex<Vec<Thrown>> = Mutex::new(Vec::new());
 
 /// Throws `kind` from a player's eyes along their look (PNX: speed 1.5 per game tick).
 pub fn throw(server: &Server, kind: Throw, owner: i64, eye: (f32, f32, f32), rot: (f32, f32)) {
+    if server.get(owner).is_some_and(|p| !server.plugins.item_throw(server, &p, kind.identifier())) {
+        return;
+    }
     let (pitch, yaw) = (rot.0.to_radians(), rot.1.to_radians());
     let dir = (-yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos());
     let vel = (dir.0 * 1.5, dir.1 * 1.5, dir.2 * 1.5);
@@ -1211,6 +1214,7 @@ impl Mobs {
         if m.owner == Some(player) && matches!(m.kind, Kind::Wolf | Kind::Cat) {
             m.sitting = !m.sitting;
             m.path.clear();
+            crate::plugin::later(crate::plugin::Later::Sit(m.id, m.sitting));
             broadcast(server, data_packet(m));
             return Use::Nothing;
         }
@@ -1484,6 +1488,7 @@ impl Mobs {
     pub fn heal(&self, id: i64, n: f32) {
         if let Some(m) = self.mobs.lock().get_mut(&id) {
             m.health = (m.health + n).min(m.kind.max_health());
+            crate::plugin::later(crate::plugin::Later::Heal(id, n));
         }
     }
 
@@ -1843,6 +1848,7 @@ impl Mobs {
             if m.lifetime > 0 {
                 m.lifetime -= 1;
                 if m.lifetime == 0 && m.owner.is_none() && !m.kept {
+                    crate::plugin::later(crate::plugin::Later::Expire(id, m.kind.identifier()));
                     self.mobs.lock().remove(&id);
                     out.push(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(id) })));
                     continue;
@@ -2034,6 +2040,7 @@ impl Mobs {
                 // A TNT minecart on a powered activator rail lights (4 s fuse, vanilla).
                 if rail.kind == RailKind::Activator && rail.on && m.kind == Kind::TntMinecart && m.fuse == 0 {
                     m.fuse = 1;
+                    crate::plugin::later(crate::plugin::Later::TntCart(m.id));
                     out.push(data_packet(m));
                     out.push(crate::packets::play_sound("random.fuse", m.pos));
                 }

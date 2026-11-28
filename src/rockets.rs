@@ -84,6 +84,9 @@ pub fn shoot(server: &Server, from: (f32, f32, f32), vel: (f32, f32, f32), item_
 
 /// The rocket that boosts a gliding player: shown flying with them until it burns out.
 pub fn boost(server: &Server, player: i64, at: (f32, f32, f32), item_data: &[u8]) {
+    if server.get(player).is_some_and(|p| !server.plugins.elytra_boost(server, &p)) {
+        return;
+    }
     launch(server, at, item_data);
     if let Some(r) = ROCKETS.lock().last_mut() {
         (r.follow, r.stars) = (Some(player), 0);
@@ -148,6 +151,7 @@ pub fn tick(server: &Server) {
         relay(server, p);
     }
     for (at, stars, by) in bursts {
+        server.plugins.firework_explode(server, at, stars as i32);
         burst_damage(server, at, stars, by);
     }
 }

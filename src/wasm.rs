@@ -811,6 +811,108 @@ impl Plugin for WasmPlugin {
         self.notify(server, json!({ "event": "anchor_charge", "pos": [pos.0, pos.1, pos.2], "player": player }));
     }
 
+    fn on_xp_level_change(&self, server: &Server, player: &PlayerInfo, old: i32, new: i32) {
+        self.notify(server, json!({ "event": "xp_level_change", "player": player_json(player), "old": old, "new": new }));
+    }
+
+    fn on_shield_block(&self, server: &Server, player: &PlayerInfo, damage: f32) -> bool {
+        self.ask(server, json!({ "event": "shield_block", "player": player_json(player), "damage": damage }))
+    }
+
+    fn on_cake_eat(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.notify(server, json!({ "event": "cake_eat", "pos": [pos.0, pos.1, pos.2], "player": player }));
+    }
+
+    fn on_dragon_egg_teleport(&self, server: &Server, pos: (i32, i32, i32), to: (i32, i32, i32)) -> bool {
+        self.ask(server, json!({ "event": "dragon_egg_teleport", "pos": [pos.0, pos.1, pos.2], "to": [to.0, to.1, to.2] }))
+    }
+
+    fn on_end_portal_fill(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.notify(server, json!({ "event": "end_portal_fill", "pos": [pos.0, pos.1, pos.2], "player": player }));
+    }
+
+    fn on_composter_use(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.notify(server, json!({ "event": "composter_use", "pos": [pos.0, pos.1, pos.2], "player": player }));
+    }
+
+    fn on_mob_heal(&self, server: &Server, mob: i64, amount: f32) {
+        self.notify(server, json!({ "event": "mob_heal", "mob": mob, "amount": amount }));
+    }
+
+    fn on_spawn_point_set(&self, server: &Server, player: &PlayerInfo, pos: (f32, f32, f32)) -> bool {
+        self.ask(server, json!({ "event": "spawn_point_set", "player": player_json(player), "pos": [pos.0, pos.1, pos.2] }))
+    }
+
+    fn on_view_distance(&self, server: &Server, player: &PlayerInfo, chunks: &mut i32) {
+        let (ok, reply) = self.call(server, json!({ "event": "view_distance", "player": player_json(player), "chunks": *chunks }));
+        if let Some(v) = reply.and_then(|r| r.trim().parse().ok()) { *chunks = v; }
+        let _ = ok;
+    }
+
+    fn on_chunk_generate(&self, server: &Server, chunk: (i32, i32)) {
+        self.notify(server, json!({ "event": "chunk_generate", "chunk": [chunk.0, chunk.1] }));
+    }
+
+    fn on_time_set(&self, server: &Server, time: i32) -> bool {
+        self.ask(server, json!({ "event": "time_set", "time": time }))
+    }
+
+    fn on_sit_toggle(&self, server: &Server, mob: i64, sitting: bool) {
+        self.notify(server, json!({ "event": "sit_toggle", "mob": mob, "sitting": sitting }));
+    }
+
+    fn on_slow_tick(&self, server: &Server, ms: f32) {
+        self.notify(server, json!({ "event": "slow_tick", "ms": ms }));
+    }
+
+    fn on_armor_change(&self, server: &Server, player: &PlayerInfo, slot: i32, item: &str) {
+        self.notify(server, json!({ "event": "armor_change", "player": player_json(player), "slot": slot, "item": item }));
+    }
+
+    fn on_player_combust(&self, server: &Server, player: &PlayerInfo) {
+        self.notify(server, json!({ "event": "player_combust", "player": player_json(player) }));
+    }
+
+    fn on_death_drops(&self, server: &Server, player: &PlayerInfo) -> bool {
+        self.ask(server, json!({ "event": "death_drops", "player": player_json(player) }))
+    }
+
+    fn on_portal_enter(&self, server: &Server, player: &PlayerInfo, to: i32) -> bool {
+        self.ask(server, json!({ "event": "portal_enter", "player": player_json(player), "to": to }))
+    }
+
+    fn on_firework_explode(&self, server: &Server, pos: (f32, f32, f32), stars: i32) {
+        self.notify(server, json!({ "event": "firework_explode", "pos": [pos.0, pos.1, pos.2], "stars": stars }));
+    }
+
+    fn on_tnt_minecart_prime(&self, server: &Server, mob: i64) {
+        self.notify(server, json!({ "event": "tnt_minecart_prime", "mob": mob }));
+    }
+
+    fn on_fishing_cast(&self, server: &Server, player: &PlayerInfo) -> bool {
+        self.ask(server, json!({ "event": "fishing_cast", "player": player_json(player) }))
+    }
+
+    fn on_elytra_boost(&self, server: &Server, player: &PlayerInfo) -> bool {
+        self.ask(server, json!({ "event": "elytra_boost", "player": player_json(player) }))
+    }
+
+    fn on_item_throw(&self, server: &Server, player: &PlayerInfo, item: &str) -> bool {
+        self.ask(server, json!({ "event": "item_throw", "player": player_json(player), "item": item }))
+    }
+
+    fn on_block_explode(&self, server: &Server, pos: (i32, i32, i32), block: &str) -> bool {
+        self.ask(server, json!({ "event": "block_explode", "pos": [pos.0, pos.1, pos.2], "block": block }))
+    }
+
+    fn on_sign_open(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32)) {
+        self.notify(server, json!({ "event": "sign_open", "player": player_json(player), "pos": [pos.0, pos.1, pos.2] }));
+    }
+
+    fn on_mob_expire(&self, server: &Server, mob: i64, kind: &str) {
+        self.notify(server, json!({ "event": "mob_expire", "mob": mob, "kind": kind }));
+    }
+
 }
 
 #[cfg(test)]

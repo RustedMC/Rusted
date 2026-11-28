@@ -135,7 +135,23 @@ pub(crate) fn apply_use(server: &players::Server, id: i64, p: (i32, i32, i32), o
         Some("block.bell.hit") => server.plugins.bell_ring(server, p, by),
         Some("item.bone_meal.use") => server.plugins.bonemeal(server, p, by),
         Some("respawn_anchor.charge") => server.plugins.anchor_charge(server, p, by),
+        Some("block.end_portal_frame.fill") => server.plugins.end_portal_fill(server, p, by),
+        Some(s) if s.starts_with("block.composter") => server.plugins.composter_use(server, p, by),
         _ => {}
+    }
+    if o.eat.is_some() {
+        server.plugins.cake_eat(server, p, by);
+    }
+    let here = server.world.get(p.0, p.1, p.2);
+    if o.changes.len() == 2
+        && o.changes[0] == (p, crate::world::AIR)
+        && crate::blocks::entry(here).is_some_and(|e| e.name == "minecraft:dragon_egg")
+        && !server.plugins.dragon_egg_teleport(server, p, o.changes[1].0)
+    {
+        return;
+    }
+    if o.explode.is_some() && !server.plugins.block_explode(server, p, crate::blocks::entry(here).map_or("", |e| e.name.as_str())) {
+        return;
     }
     let center = (p.0 as f32 + 0.5, p.1 as f32 + 0.5, p.2 as f32 + 0.5);
     for &((x, y, z), b) in &o.changes {

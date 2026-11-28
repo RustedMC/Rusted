@@ -8,7 +8,11 @@ type AuthInput = <Protocol as ProtoVersionPackets>::PlayerAuthInputPacket;
 
 impl Session {
     pub(super) async fn on_chunk_radius(&mut self, r: &ChunkRadius) -> Flow {
-        self.chunks.radius = r.chunk_radius.clamp(2, config::get().view_distance);
+        let mut want = r.chunk_radius;
+        if let Some(me) = self.server.get(self.id) {
+            self.server.plugins.view_distance(&self.server, &me, &mut want);
+        }
+        self.chunks.radius = want.clamp(2, config::get().view_distance);
         let _ = self.conn.send(&[Protocol::ChunkRadiusUpdatedPacket(Box::new(
             ChunkRadiusUpdatedPacket { chunk_radius: self.chunks.radius },
         ))]).await;
@@ -198,6 +202,9 @@ impl Session {
                         }
                     };
                     let eye = (inner.0 as f32 + 0.5, inner.1 as f32 + 1.62, inner.2 as f32 + 0.5);
+                    if self.server.get(self.id).is_some_and(|me| !self.server.plugins.portal_enter(&self.server, &me, to as i32)) {
+                        return GO;
+                    }
                     if change_dim(&mut self.conn, &self.server, &mut self.chunks, self.id, to, eye, rot, head).await.is_err() {
                         return END;
                     }
@@ -228,6 +235,9 @@ impl Session {
                     }
                     (dims::END, eye)
                 };
+                if self.server.get(self.id).is_some_and(|me| !self.server.plugins.portal_enter(&self.server, &me, to as i32)) {
+                    return GO;
+                }
                 if change_dim(&mut self.conn, &self.server, &mut self.chunks, self.id, to, eye, rot, head).await.is_err() {
                     return END;
                 }

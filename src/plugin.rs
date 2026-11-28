@@ -50,6 +50,11 @@ pub enum Later {
     Smelt((i32, i32, i32)),
     TrialSpawn((i32, i32, i32), &'static str, i64),
     DragonPerch(i64),
+    Heal(i64, f32),
+    ChunkGen((i32, i32)),
+    Sit(i64, bool),
+    TntCart(i64),
+    Expire(i64, &'static str),
 }
 
 static LATER: parking_lot::Mutex<Vec<Later>> = parking_lot::Mutex::new(Vec::new());
@@ -714,6 +719,105 @@ pub trait Plugin: Send + Sync {
     /// The respawn anchor at `pos` was charged with glowstone.
     fn on_anchor_charge(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
 
+    /// Player's XP level went from `old` to `new` (checked once a second).
+    fn on_xp_level_change(&self, _server: &Server, _player: &PlayerInfo, _old: i32, _new: i32) {}
+
+    /// Player is about to block `damage` with their shield. Return false to take the hit.
+    fn on_shield_block(&self, _server: &Server, _player: &PlayerInfo, _damage: f32) -> bool {
+        true
+    }
+
+    /// A slice of the cake at `pos` was eaten (`player` set when a player ate it).
+    fn on_cake_eat(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
+
+    /// The dragon egg at `pos` is about to teleport to `to`. Return false to keep it there.
+    fn on_dragon_egg_teleport(&self, _server: &Server, _pos: (i32, i32, i32), _to: (i32, i32, i32)) -> bool {
+        true
+    }
+
+    /// An eye of ender was put into the end portal frame at `pos`.
+    fn on_end_portal_fill(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
+
+    /// The composter at `pos` was filled or emptied.
+    fn on_composter_use(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
+
+    /// Mob `mob` healed `amount`. Fired after the mob tick.
+    fn on_mob_heal(&self, _server: &Server, _mob: i64, _amount: f32) {}
+
+    /// Player's spawn point is about to be set to `pos` (/spawnpoint). Return false to stop it.
+    fn on_spawn_point_set(&self, _server: &Server, _player: &PlayerInfo, _pos: (f32, f32, f32)) -> bool {
+        true
+    }
+
+    /// Player asked for a view distance of `chunks`. Change it to give them another (the
+    /// server's view-distance still caps it).
+    fn on_view_distance(&self, _server: &Server, _player: &PlayerInfo, _chunks: &mut i32) {}
+
+    /// The overworld chunk at `chunk` was generated for the first time. Fired after the tick.
+    fn on_chunk_generate(&self, _server: &Server, _chunk: (i32, i32)) {}
+
+    /// The time is about to be set to `time` with /time set. Return false to stop it.
+    fn on_time_set(&self, _server: &Server, _time: i32) -> bool {
+        true
+    }
+
+    /// A tamed wolf or cat `mob` sat down (`sitting` true) or stood up. Fired after the mob tick.
+    fn on_sit_toggle(&self, _server: &Server, _mob: i64, _sitting: bool) {}
+
+    /// A game tick took `ms` milliseconds, over the 50 ms a tick has (the server is lagging).
+    fn on_slow_tick(&self, _server: &Server, _ms: f32) {}
+
+    /// Player's armor in `slot` (0 helmet to 3 boots) changed to `item` ("" when taken off).
+    /// Checked once a second.
+    fn on_armor_change(&self, _server: &Server, _player: &PlayerInfo, _slot: i32, _item: &str) {}
+
+    /// Player caught fire (lava or fire).
+    fn on_player_combust(&self, _server: &Server, _player: &PlayerInfo) {}
+
+    /// Player died and is about to drop their items. Return false to keep them (like keepInventory).
+    fn on_death_drops(&self, _server: &Server, _player: &PlayerInfo) -> bool {
+        true
+    }
+
+    /// Player stepped into a portal to dimension `to` (0 overworld, 1 Nether, 2 End). Return false to stay.
+    fn on_portal_enter(&self, _server: &Server, _player: &PlayerInfo, _to: i32) -> bool {
+        true
+    }
+
+    /// A firework burst at `pos` with `stars` stars.
+    fn on_firework_explode(&self, _server: &Server, _pos: (f32, f32, f32), _stars: i32) {}
+
+    /// The TNT minecart `mob` was lit by an activator rail. Fired after the mob tick.
+    fn on_tnt_minecart_prime(&self, _server: &Server, _mob: i64) {}
+
+    /// Player is about to cast a fishing rod. Return false to stop it.
+    fn on_fishing_cast(&self, _server: &Server, _player: &PlayerInfo) -> bool {
+        true
+    }
+
+    /// Player is about to boost their elytra with a firework. Return false to stop it.
+    fn on_elytra_boost(&self, _server: &Server, _player: &PlayerInfo) -> bool {
+        true
+    }
+
+    /// Player is about to throw `item` (snowball, egg, ender pearl, splash potion, bottle o'
+    /// enchanting). Return false to stop it.
+    fn on_item_throw(&self, _server: &Server, _player: &PlayerInfo, _item: &str) -> bool {
+        true
+    }
+
+    /// The `block` at `pos` is about to blow up from being used (a respawn anchor outside the
+    /// Nether). Return false to stop it.
+    fn on_block_explode(&self, _server: &Server, _pos: (i32, i32, i32), _block: &str) -> bool {
+        true
+    }
+
+    /// Player placed a sign at `pos` and its edit screen is opening.
+    fn on_sign_open(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32)) {}
+
+    /// Mob `mob` (a wandering trader and its llamas) left when its time ran out. Fired after the mob tick.
+    fn on_mob_expire(&self, _server: &Server, _mob: i64, _kind: &str) {}
+
     /// Player jumped.
     fn on_jump(&self, _server: &Server, _player: &PlayerInfo) {}
 
@@ -1038,6 +1142,11 @@ impl Plugins {
                 Later::Smelt(pos) => self.each(|pl| pl.on_furnace_smelt(s, pos)),
                 Later::TrialSpawn(pos, kind, mob) => self.each(|pl| pl.on_trial_spawn(s, pos, kind, mob)),
                 Later::DragonPerch(mob) => self.each(|pl| pl.on_dragon_perch(s, mob)),
+                Later::Heal(mob, n) => self.each(|pl| pl.on_mob_heal(s, mob, n)),
+                Later::ChunkGen(c) => self.each(|pl| pl.on_chunk_generate(s, c)),
+                Later::Sit(mob, on) => self.each(|pl| pl.on_sit_toggle(s, mob, on)),
+                Later::TntCart(mob) => self.each(|pl| pl.on_tnt_minecart_prime(s, mob)),
+                Later::Expire(mob, kind) => self.each(|pl| pl.on_mob_expire(s, mob, kind)),
             }
         }
     }
@@ -1257,6 +1366,86 @@ impl Plugins {
 
     pub fn anchor_charge(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
         self.each(|pl| pl.on_anchor_charge(s, pos, player));
+    }
+
+    pub fn xp_level_change(&self, s: &Server, p: &PlayerInfo, old: i32, new: i32) {
+        self.each(|pl| pl.on_xp_level_change(s, p, old, new));
+    }
+
+    pub fn shield_block(&self, s: &Server, p: &PlayerInfo, damage: f32) -> bool {
+        self.cancellable(|pl| pl.on_shield_block(s, p, damage))
+    }
+
+    pub fn cake_eat(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.each(|pl| pl.on_cake_eat(s, pos, player));
+    }
+
+    pub fn dragon_egg_teleport(&self, s: &Server, pos: (i32, i32, i32), to: (i32, i32, i32)) -> bool {
+        self.cancellable(|pl| pl.on_dragon_egg_teleport(s, pos, to))
+    }
+
+    pub fn end_portal_fill(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.each(|pl| pl.on_end_portal_fill(s, pos, player));
+    }
+
+    pub fn composter_use(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.each(|pl| pl.on_composter_use(s, pos, player));
+    }
+
+    pub fn spawn_point_set(&self, s: &Server, p: &PlayerInfo, pos: (f32, f32, f32)) -> bool {
+        self.cancellable(|pl| pl.on_spawn_point_set(s, p, pos))
+    }
+
+    pub fn view_distance(&self, s: &Server, p: &PlayerInfo, chunks: &mut i32) {
+        self.each(|pl| pl.on_view_distance(s, p, chunks));
+    }
+
+    pub fn time_set(&self, s: &Server, time: i32) -> bool {
+        self.cancellable(|pl| pl.on_time_set(s, time))
+    }
+
+    pub fn slow_tick(&self, s: &Server, ms: f32) {
+        self.each(|pl| pl.on_slow_tick(s, ms));
+    }
+
+    pub fn armor_change(&self, s: &Server, p: &PlayerInfo, slot: i32, item: &str) {
+        self.each(|pl| pl.on_armor_change(s, p, slot, item));
+    }
+
+    pub fn player_combust(&self, s: &Server, p: &PlayerInfo) {
+        self.each(|pl| pl.on_player_combust(s, p));
+    }
+
+    pub fn death_drops(&self, s: &Server, p: &PlayerInfo) -> bool {
+        self.cancellable(|pl| pl.on_death_drops(s, p))
+    }
+
+    pub fn portal_enter(&self, s: &Server, p: &PlayerInfo, to: i32) -> bool {
+        self.cancellable(|pl| pl.on_portal_enter(s, p, to))
+    }
+
+    pub fn firework_explode(&self, s: &Server, pos: (f32, f32, f32), stars: i32) {
+        self.each(|pl| pl.on_firework_explode(s, pos, stars));
+    }
+
+    pub fn fishing_cast(&self, s: &Server, p: &PlayerInfo) -> bool {
+        self.cancellable(|pl| pl.on_fishing_cast(s, p))
+    }
+
+    pub fn elytra_boost(&self, s: &Server, p: &PlayerInfo) -> bool {
+        self.cancellable(|pl| pl.on_elytra_boost(s, p))
+    }
+
+    pub fn item_throw(&self, s: &Server, p: &PlayerInfo, item: &str) -> bool {
+        self.cancellable(|pl| pl.on_item_throw(s, p, item))
+    }
+
+    pub fn block_explode(&self, s: &Server, pos: (i32, i32, i32), block: &str) -> bool {
+        self.cancellable(|pl| pl.on_block_explode(s, pos, block))
+    }
+
+    pub fn sign_open(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32)) {
+        self.each(|pl| pl.on_sign_open(s, p, pos));
     }
 
     pub fn jump(&self, s: &Server, p: &PlayerInfo) {
@@ -1750,6 +1939,31 @@ mod tests {
         fn on_op_change(&self, _: &Server, _: &str, _: bool) -> bool {
             false
         }
+    }
+
+    struct Hardcore;
+    impl Plugin for Hardcore {
+        fn name(&self) -> &str {
+            "hardcore"
+        }
+        fn on_death_drops(&self, _: &Server, _: &PlayerInfo) -> bool {
+            false
+        }
+        fn on_view_distance(&self, _: &Server, _: &PlayerInfo, chunks: &mut i32) {
+            *chunks = (*chunks).min(4);
+        }
+    }
+
+    #[test]
+    fn death_drops_stop_and_view_distance_changes() {
+        let server = Server::new();
+        let plugins = Plugins::new(vec![Box::new(Hardcore)]);
+        let me = crate::players::tests::sample(1);
+        assert!(!plugins.death_drops(&server, &me));
+        let mut chunks = 12;
+        plugins.view_distance(&server, &me, &mut chunks);
+        assert_eq!(chunks, 4);
+        assert!(plugins.item_throw(&server, &me, "minecraft:snowball"), "others still go through");
     }
 
     #[test]

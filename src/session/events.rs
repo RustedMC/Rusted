@@ -44,6 +44,17 @@ impl Session {
 
     pub async fn every_second(&mut self) {
         self.regen_ticks += 1;
+        {
+            // XP level changes come from many places; check once a second.
+            static LEVELS: parking_lot::Mutex<Option<std::collections::HashMap<i64, i32>>> = parking_lot::Mutex::new(None);
+            let old = LEVELS.lock().get_or_insert_with(Default::default).insert(self.id, self.xp.level);
+            if let Some(old) = old
+                && old != self.xp.level
+                && let Some(me) = self.server.get(self.id)
+            {
+                self.server.plugins.xp_level_change(&self.server, &me, old, self.xp.level);
+            }
+        }
         self.show_players().await;
         {
             let armor = std::array::from_fn(|i| self.inv.held(inventory::ARMOR + i).cloned());
@@ -55,7 +66,20 @@ impl Session {
             }
             let inventory = (0..inventory::MAIN).map(|i| self.inv.held(i).cloned()).collect();
             let eq = players::Equipment { held: self.inv.held(self.selected_slot as usize).cloned(), armor, inventory };
+            let name = |s: &Option<inventory::Stack>| s.as_ref().and_then(|s| items::name_of(s.item.id)).unwrap_or("").to_string();
+            let old = players::EQUIPMENT.lock().as_ref().and_then(|e| e.get(&self.id)).map(|e| e.armor.each_ref().map(name));
+            let now = eq.armor.each_ref().map(name);
             players::EQUIPMENT.lock().get_or_insert_with(Default::default).insert(self.id, eq);
+            if let Some(old) = old
+                && old != now
+                && let Some(me) = self.server.get(self.id)
+            {
+                for (i, (a, b)) in old.iter().zip(now.iter()).enumerate() {
+                    if a != b {
+                        self.server.plugins.armor_change(&self.server, &me, i as i32, b);
+                    }
+                }
+            }
         }
         self.idle += 1;
         let limit = config::get().player_idle_timeout * 60;
@@ -202,6 +226,11 @@ impl Session {
                 self.burning = self.burning.max(15);
             } else if self.in_fire {
                 self.burning = self.burning.max(8);
+            }
+            if !was && self.burning > 0
+                && let Some(me) = self.server.get(self.id)
+            {
+                self.server.plugins.player_combust(&self.server, &me);
             }
             if self.head_in_water || self.hp.dead || self.effects.level(effects::FIRE_RESISTANCE).is_some() {
                 self.burning = 0;

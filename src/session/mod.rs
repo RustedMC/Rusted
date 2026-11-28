@@ -181,6 +181,7 @@ pub(crate) async fn hurt(conn: &mut dims::DimConn, server: &players::Server, id:
     // shortcut: blocks from every side, vanilla only blocks hits from the front; needs the attacker's position in Damage.
     if let D::Mob(d, _) | D::Shot(d, _) = damage
         && let Some(slot) = inv.shield()
+        && server.get(id).is_none_or(|me| server.plugins.shield_block(server, &me, d))
     {
         let broke = inv.wear(slot, 1 + d as i32) == Some(true);
         if let Some(me) = server.get(id) {
@@ -282,7 +283,7 @@ pub(crate) async fn hurt(conn: &mut dims::DimConn, server: &players::Server, id:
         if !msg.is_empty() {
             server.broadcast(&msg);
         }
-        if !game_rule_on(server, "keepInventory", false) {
+        if !game_rule_on(server, "keepInventory", false) && server.get(id).is_none_or(|me| server.plugins.death_drops(server, &me)) {
             let at = server.get(id).map_or(server.world.spawn(), |p| (p.pos.0, p.pos.1 - 1.0, p.pos.2));
             for s in inv.take_all() {
                 // Curse of Vanishing: gone instead of dropped.

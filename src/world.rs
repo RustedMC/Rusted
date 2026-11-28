@@ -203,6 +203,7 @@ fn load_or_generate(ow: &crate::overworld::Overworld, cx: i32, cz: i32) -> crate
         return c;
     }
     let c = ow.generate(cx, cz);
+    crate::plugin::later(crate::plugin::Later::ChunkGen((cx, cz)));
     if let Some(f) = file {
         let tmp = f.with_extension("tmp");
         if std::fs::write(&tmp, c.to_bytes()).and_then(|()| std::fs::rename(&tmp, &f)).is_err() {

@@ -188,6 +188,31 @@ Each event is JSON. `e.kind()` tells you which one; player events have `player` 
 | `night_skip` |  | cancellable |
 | `bonemeal` | `pos`, `player` |  |
 | `anchor_charge` | `pos`, `player` |  |
+| `xp_level_change` | `old`, `new` |  |
+| `shield_block` | `damage` | cancellable |
+| `cake_eat` | `pos`, `player` |  |
+| `dragon_egg_teleport` | `pos`, `to` | cancellable |
+| `end_portal_fill` | `pos`, `player` |  |
+| `composter_use` | `pos`, `player` |  |
+| `mob_heal` | `mob`, `amount` |  |
+| `spawn_point_set` | `pos` | cancellable |
+| `view_distance` | `chunks` | `reply(n)` sets it |
+| `chunk_generate` | `chunk` |  |
+| `time_set` | `time` | cancellable |
+| `sit_toggle` | `mob`, `sitting` |  |
+| `slow_tick` | `ms` |  |
+| `armor_change` | `slot`, `item` |  |
+| `player_combust` |  |  |
+| `death_drops` |  | cancellable |
+| `portal_enter` | `to` | cancellable |
+| `firework_explode` | `pos`, `stars` |  |
+| `tnt_minecart_prime` | `mob` |  |
+| `fishing_cast` |  | cancellable |
+| `elytra_boost` |  | cancellable |
+| `item_throw` | `item` | cancellable |
+| `block_explode` | `pos`, `block` | cancellable |
+| `sign_open` | `pos` |  |
+| `mob_expire` | `mob`, `kind` |  |
 
 ## What a plugin can do
 
