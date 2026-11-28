@@ -124,6 +124,13 @@ Each event is JSON. `e.kind()` tells you which one; player events have `player` 
 | `piston` | `pos`, `extending` |  |
 | `health_regain` | `health` | cancellable |
 | `food_change` | `food` |  |
+| `leaves_decay` | `pos`, `block` | cancellable |
+| `block_spread` | `pos`, `from`, `to` | cancellable |
+| `block_form` | `pos`, `block` | cancellable; snow, ice, and obsidian or cobblestone from lava |
+| `block_fade` | `pos`, `from`, `to` | cancellable; snow and ice melting |
+| `block_toggle` | `pos`, `block`, `on` | cancellable; doors, trapdoors, gates, levers |
+| `vehicle_place` | `kind`, `pos` | cancellable |
+| `vehicle_destroy` | `kind`, `pos`, `killer` |  |
 
 ## What a plugin can do
 

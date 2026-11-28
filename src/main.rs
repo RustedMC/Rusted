@@ -281,8 +281,18 @@ async fn main() {
                     }
                 }
                 for ((x, y, z), b) in perf::time("liquids", || server.fluids.tick(&server.world, turn % 6 == 0)) {
-                    if server.plugins.has_any() && fluids::is_fluid(b) && !server.plugins.liquid_flow(&server, (x, y, z), blocks::entry(b).map_or("", |e| e.name.as_str())) {
-                        continue;
+                    if server.plugins.has_any() {
+                        let n = blocks::entry(b).map_or("", |e| e.name.as_str());
+                        let allowed = if fluids::is_fluid(b) {
+                            server.plugins.liquid_flow(&server, (x, y, z), n)
+                        } else if matches!(n, "minecraft:obsidian" | "minecraft:cobblestone" | "minecraft:stone") {
+                            server.plugins.block_form(&server, (x, y, z), n)
+                        } else {
+                            true
+                        };
+                        if !allowed {
+                            continue;
+                        }
                     }
                     // A torch, flower or rail the water washed away drops as an item.
                     let old = server.world.get(x, y, z);

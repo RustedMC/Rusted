@@ -49,7 +49,7 @@ pub(crate) fn random_ticks(server: &players::Server, rng: &mut u64) {
                         let before = server.world.get(pos.0, pos.1, pos.2);
                         for ((bx, by, bz), b) in growth::random_tick(&server.world, pos, next(), raining, snowy) {
                             let name = |b: i32| blocks::entry(b).map_or("", |e| e.name.as_str());
-                            if !server.plugins.block_grow(server, (bx, by, bz), name(server.world.get(bx, by, bz)), name(b)) {
+                            if !server.plugins.block_change(server, (bx, by, bz), name(server.world.get(bx, by, bz)), name(b)) {
                                 continue;
                             }
                             // Decaying leaves drop saplings/apples.

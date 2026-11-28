@@ -1637,6 +1637,9 @@ impl Mobs {
                 }
             }
             server.plugins.entity_death(server, kind.identifier(), pos, attacker);
+            if matches!(kind, Kind::Boat | Kind::Minecart | Kind::ChestMinecart | Kind::TntMinecart) {
+                server.plugins.vehicle_destroy(server, kind.identifier(), pos, attacker);
+            }
             if kind == Kind::Villager {
                 crate::villagers::release(id);
                 if let Some(p) = attacker.and_then(|a| server.get(a)) {

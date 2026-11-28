@@ -210,6 +210,11 @@ impl Session {
             && crate::minecart::rail_at(&self.server.world, p.x, p.y, p.z).is_some()
         {
             let kind = if held_name == "minecraft:tnt_minecart" { mobs::Kind::TntMinecart } else { mobs::Kind::Minecart };
+            if let Some(me) = self.server.get(self.id)
+                && !self.server.plugins.vehicle_place(&self.server, &me, kind.identifier(), (p.x as f32 + 0.5, p.y as f32, p.z as f32 + 0.5))
+            {
+                return;
+            }
             self.server.mobs.spawn_cart(&self.server, kind, (p.x, p.y, p.z));
             if survival_like(&self.mode) {
                 self.inv.use_one(self.selected_slot as usize);
@@ -224,6 +229,9 @@ impl Session {
         {
             let water = crate::overworld::feature::blocks::is_water(clicked);
             let y = if water { p.y as f32 + 0.9 } else { p.y as f32 + 1.0 };
+            if !self.server.plugins.vehicle_place(&self.server, &me, if chest { "minecraft:chest_boat" } else { "minecraft:boat" }, (p.x as f32 + 0.5, y, p.z as f32 + 0.5)) {
+                return;
+            }
             self.server.mobs.spawn_boat(&self.server, wood, (p.x as f32 + 0.5, y, p.z as f32 + 0.5), me.rot.1, chest);
             if survival_like(&self.mode) {
                 self.inv.use_one(self.selected_slot as usize);
@@ -417,6 +425,16 @@ impl Session {
         {
             match action {
                 physics::Interaction::Toggle(changes) => {
+                    let block = self.server.world.get(p.x, p.y, p.z);
+                    let on = changes.iter().any(|(_, b)| matches!(blocks::state(*b, "open_bit"), Some(blocks::State::Bool(true))));
+                    if let Some(me) = self.server.get(self.id)
+                        && !self.server.plugins.block_toggle(&self.server, &me, (p.x, p.y, p.z), blocks::entry(block).map_or("", |e| e.name.as_str()), on)
+                    {
+                        // put the client's guess back
+                        let undo: Vec<Protocol> = changes.iter().map(|((x, y, z), _)| crate::packets::update_block(*x, *y, *z, self.server.world.get(*x, *y, *z))).collect();
+                        let _ = self.conn.send(&undo).await;
+                        return;
+                    }
                     // Levers: power.on/off; repeaters and comparators: silent; doors,
                     // trapdoors and gates: 1003.
                     let clicked = self.server.world.get(p.x, p.y, p.z);

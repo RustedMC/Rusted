@@ -52,6 +52,7 @@ See [PORTING.md](PORTING.md) for where each part of the PowerNukkitX port stands
 - ✅ **0.6.6** Load tester; chunk generation shared fairly, caches sized to players, no world-loop stalls
 - ✅ **0.6.7** 8 more plugin events: jump, flight, animation, forms, packets, world save, liquids, projectiles
 - ✅ **0.6.8** 7 more plugin events: tables, brewing, mob fire and despawn, pistons, healing, food
+- ✅ **0.6.9** 7 more plugin events: leaves, spreading, forming and melting blocks, doors and levers, vehicles
 
 ## 1.0: stable
 

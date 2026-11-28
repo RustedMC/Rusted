@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.9
+
+- 7 more plugin events (81 now): `on_leaves_decay`, `on_block_spread`, `on_block_form` (snow, ice, and obsidian or cobblestone from lava), `on_block_fade`, `on_block_toggle` (doors, trapdoors, gates, levers), `on_vehicle_place` and `on_vehicle_destroy`. All but the last can be cancelled, and runtime `.wasm` plugins get them too.
+- `on_block_grow` is now only for real growth (crops, saplings and the like). Leaves decaying, grass spreading and snow or ice forming or melting have their own events.
+
 ## 0.6.8
 
 - 7 more plugin events (74 now): `on_table_craft` (enchanting, anvil, grindstone, smithing, loom, stonecutter, cartography and crafting tables, with the XP cost), `on_brew`, `on_entity_combust`, `on_entity_despawn`, `on_piston`, `on_health_regain` (cancellable) and `on_food_change`. Runtime `.wasm` plugins get them too.

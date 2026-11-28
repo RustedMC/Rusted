@@ -431,6 +431,40 @@ pub trait Plugin: Send + Sync {
     /// Player's food level changed to `food` (0-20).
     fn on_food_change(&self, _server: &Server, _player: &PlayerInfo, _food: i32) {}
 
+    /// Leaves at `pos` are about to decay. Return false to keep them.
+    fn on_leaves_decay(&self, _server: &Server, _pos: (i32, i32, i32), _block: &str) -> bool {
+        true
+    }
+
+    /// Grass or mycelium is spreading onto `pos` (`from` becomes `to`). Return false to stop it.
+    fn on_block_spread(&self, _server: &Server, _pos: (i32, i32, i32), _from: &str, _to: &str) -> bool {
+        true
+    }
+
+    /// Snow, ice, obsidian or cobblestone is forming at `pos`. Return false to stop it.
+    fn on_block_form(&self, _server: &Server, _pos: (i32, i32, i32), _block: &str) -> bool {
+        true
+    }
+
+    /// Snow or ice at `pos` is melting (`from` becomes `to`). Return false to stop it.
+    fn on_block_fade(&self, _server: &Server, _pos: (i32, i32, i32), _from: &str, _to: &str) -> bool {
+        true
+    }
+
+    /// Player is opening (`on` true) or closing a door, trapdoor or gate, or flipping a lever.
+    /// Return false to stop it.
+    fn on_block_toggle(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32), _block: &str, _on: bool) -> bool {
+        true
+    }
+
+    /// Player is placing a boat or minecart (`kind` like "minecraft:boat"). Return false to stop it.
+    fn on_vehicle_place(&self, _server: &Server, _player: &PlayerInfo, _kind: &str, _pos: (f32, f32, f32)) -> bool {
+        true
+    }
+
+    /// A boat or minecart was broken at `pos` (by `killer`, an entity id, if anyone).
+    fn on_vehicle_destroy(&self, _server: &Server, _kind: &str, _pos: (f32, f32, f32), _killer: Option<i64>) {}
+
     /// Player jumped.
     fn on_jump(&self, _server: &Server, _player: &PlayerInfo) {}
 
@@ -746,6 +780,39 @@ impl Plugins {
                 Later::Piston(pos, ext) => self.each(|pl| pl.on_piston(s, pos, ext)),
             }
         }
+    }
+
+    /// A random-tick change, as the matching event: leaves decaying, grass spreading, snow or
+    /// ice forming or melting, else `on_block_grow`. False if a plugin cancelled it.
+    pub fn block_change(&self, s: &Server, pos: (i32, i32, i32), from: &str, to: &str) -> bool {
+        let frozen = |n: &str| n.ends_with("snow_layer") || n.ends_with(":ice") || n.ends_with(":snow");
+        if from.ends_with("leaves") && to == "minecraft:air" {
+            self.cancellable(|pl| pl.on_leaves_decay(s, pos, from))
+        } else if from == "minecraft:dirt" && matches!(to, "minecraft:grass_block" | "minecraft:mycelium") {
+            self.cancellable(|pl| pl.on_block_spread(s, pos, from, to))
+        } else if frozen(to) && !frozen(from) {
+            self.cancellable(|pl| pl.on_block_form(s, pos, to))
+        } else if frozen(from) && !frozen(to) {
+            self.cancellable(|pl| pl.on_block_fade(s, pos, from, to))
+        } else {
+            self.block_grow(s, pos, from, to)
+        }
+    }
+
+    pub fn block_form(&self, s: &Server, pos: (i32, i32, i32), block: &str) -> bool {
+        self.cancellable(|pl| pl.on_block_form(s, pos, block))
+    }
+
+    pub fn block_toggle(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32), block: &str, on: bool) -> bool {
+        self.cancellable(|pl| pl.on_block_toggle(s, p, pos, block, on))
+    }
+
+    pub fn vehicle_place(&self, s: &Server, p: &PlayerInfo, kind: &str, pos: (f32, f32, f32)) -> bool {
+        self.cancellable(|pl| pl.on_vehicle_place(s, p, kind, pos))
+    }
+
+    pub fn vehicle_destroy(&self, s: &Server, kind: &str, pos: (f32, f32, f32), killer: Option<i64>) {
+        self.each(|pl| pl.on_vehicle_destroy(s, kind, pos, killer));
     }
 
     pub fn jump(&self, s: &Server, p: &PlayerInfo) {
@@ -1203,6 +1270,25 @@ mod tests {
             *message = message.replace("darn", "****");
             !message.contains("spam")
         }
+    }
+
+    struct KeepLeaves;
+    impl Plugin for KeepLeaves {
+        fn name(&self) -> &str {
+            "keepleaves"
+        }
+        fn on_leaves_decay(&self, _: &Server, _: (i32, i32, i32), _: &str) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn random_tick_changes_go_to_the_right_event() {
+        let plugins = Plugins::new(vec![Box::new(KeepLeaves)]);
+        let server = Server::new();
+        assert!(!plugins.block_change(&server, (0, 0, 0), "minecraft:oak_leaves", "minecraft:air"), "decay cancelled");
+        assert!(plugins.block_change(&server, (0, 0, 0), "minecraft:dirt", "minecraft:grass_block"), "spread allowed");
+        assert!(plugins.block_change(&server, (0, 0, 0), "minecraft:wheat", "minecraft:wheat"), "growth allowed");
     }
 
     #[test]

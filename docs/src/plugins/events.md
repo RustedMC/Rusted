@@ -121,6 +121,13 @@ Mob positions are `(f32, f32, f32)`.
 | `on_piston(server, pos, extending: bool)` | A piston started moving | |
 | `on_health_regain(server, player, health: f32)` | About to heal from food | yes |
 | `on_food_change(server, player, food: i32)` | Food level changed | |
+| `on_leaves_decay(server, pos, block: &str)` | Leaves about to decay | yes |
+| `on_block_spread(server, pos, from: &str, to: &str)` | Grass or mycelium spreading | yes |
+| `on_block_form(server, pos, block: &str)` | Snow, ice, obsidian or cobblestone forming | yes |
+| `on_block_fade(server, pos, from: &str, to: &str)` | Snow or ice melting | yes |
+| `on_block_toggle(server, player, pos, block: &str, on: bool)` | Opening or closing a door, trapdoor or gate, or flipping a lever | yes |
+| `on_vehicle_place(server, player, kind: &str, pos)` | Placing a boat or minecart | yes |
+| `on_vehicle_destroy(server, kind: &str, pos, killer: Option<i64>)` | A boat or minecart broke | |
 
 ## Example: a no-grief zone
 

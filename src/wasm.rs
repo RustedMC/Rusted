@@ -555,6 +555,34 @@ impl Plugin for WasmPlugin {
         self.notify(server, json!({ "event": "food_change", "player": player_json(player), "food": food }));
     }
 
+    fn on_leaves_decay(&self, server: &Server, pos: (i32, i32, i32), block: &str) -> bool {
+        self.ask(server, json!({ "event": "leaves_decay", "pos": [pos.0, pos.1, pos.2], "block": block }))
+    }
+
+    fn on_block_spread(&self, server: &Server, pos: (i32, i32, i32), from: &str, to: &str) -> bool {
+        self.ask(server, json!({ "event": "block_spread", "pos": [pos.0, pos.1, pos.2], "from": from, "to": to }))
+    }
+
+    fn on_block_form(&self, server: &Server, pos: (i32, i32, i32), block: &str) -> bool {
+        self.ask(server, json!({ "event": "block_form", "pos": [pos.0, pos.1, pos.2], "block": block }))
+    }
+
+    fn on_block_fade(&self, server: &Server, pos: (i32, i32, i32), from: &str, to: &str) -> bool {
+        self.ask(server, json!({ "event": "block_fade", "pos": [pos.0, pos.1, pos.2], "from": from, "to": to }))
+    }
+
+    fn on_block_toggle(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32), block: &str, on: bool) -> bool {
+        self.ask(server, json!({ "event": "block_toggle", "player": player_json(player), "pos": [pos.0, pos.1, pos.2], "block": block, "on": on }))
+    }
+
+    fn on_vehicle_place(&self, server: &Server, player: &PlayerInfo, kind: &str, pos: (f32, f32, f32)) -> bool {
+        self.ask(server, json!({ "event": "vehicle_place", "player": player_json(player), "kind": kind, "pos": [pos.0, pos.1, pos.2] }))
+    }
+
+    fn on_vehicle_destroy(&self, server: &Server, kind: &str, pos: (f32, f32, f32), killer: Option<i64>) {
+        self.notify(server, json!({ "event": "vehicle_destroy", "kind": kind, "pos": [pos.0, pos.1, pos.2], "killer": killer }));
+    }
+
 }
 
 #[cfg(test)]
