@@ -433,6 +433,8 @@ pub struct Mob {
     kept: bool,
     /// A creeper lit with flint and steel: blows up whatever happens.
     lit: bool,
+    /// A creeper struck by lightning: bigger blast, blue glow (PNX EntityCreeper.setPowered).
+    charged: bool,
     /// Mob ticks until it leaves on its own (wandering traders and their llamas), 0 = never.
     lifetime: u32,
     /// On a lead: who holds it (a player, or the llama ahead in a caravan).
@@ -634,6 +636,11 @@ fn data_of(m: &Mob) -> Vec<DataItem<Protocol>> {
     use ActorDataIDs::*;
     use DataItemType as T;
     let mut d = data_with(m.kind, m.baby > 0, m.burning, m.fuse > 0);
+    if m.charged
+        && let Some(DataItem { data_item_type: T::Int64(f), .. }) = d.first_mut()
+    {
+        *f |= 1 << 9; // POWERED
+    }
     // SADDLED 8, SITTING 24, TAMED 28, SHEARED 31, WASD_CONTROLLED 44, CAN_POWER_JUMP 45
     let bits = (m.saddled as i64) << 8
         | (m.sitting as i64) << 24
@@ -978,7 +985,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: kind.max_health(), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: if baby { GROW } else { 0 }, baby: if baby { GROW } else { 0 },
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, passenger: None, steered: None, saddled: false, kept: false, lit: false, lifetime: 0, leash: None, draw: 0, aim: 0, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
+            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, passenger: None, steered: None, saddled: false, kept: false, lit: false, charged: false, lifetime: 0, leash: None, draw: 0, aim: 0, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
         };
         let size = [1u8, 2, 4][(self.rand() % 3) as usize];
         if kind.spec().splits {
@@ -1006,7 +1013,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: (size as f32).powi(2), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: 0,
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, passenger: None, steered: None, saddled: false, kept: false, lit: false, lifetime: 0, leash: None, draw: 0, aim: 0, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
+            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, passenger: None, steered: None, saddled: false, kept: false, lit: false, charged: false, lifetime: 0, leash: None, draw: 0, aim: 0, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
         };
         broadcast(server, add_packet(&m));
         if let Some(p) = held_packet(&m) {
@@ -1268,6 +1275,21 @@ impl Mobs {
             server.plugins.mount(server, &me, id);
         }
         true
+    }
+
+    /// Lightning hit at `at`: creepers within 4 blocks become charged (PNX EntityCreeper
+    /// onStruckByLightning).
+    pub fn struck_by_lightning(&self, server: &Server, at: (f32, f32, f32)) {
+        let mut out = Vec::new();
+        for m in self.mobs.lock().values_mut() {
+            if m.kind == Kind::Creeper && !m.charged && m.dying == 0 && dist2(m.pos, at) <= 16.0 {
+                m.charged = true;
+                out.push(data_packet(m));
+            }
+        }
+        for p in out {
+            broadcast(server, p);
+        }
     }
 
     /// The nearest living mob of `kind` within `radius` of `at`.
@@ -1990,7 +2012,7 @@ impl Mobs {
                 }
                 m.fuse += 1;
                 if m.fuse >= 15 {
-                    explode(server, m.pos, 3.0, Kind::Creeper.display());
+                    explode(server, m.pos, if m.charged { 6.0 } else { 3.0 }, Kind::Creeper.display());
                     return true;
                 }
                 return false;
@@ -2183,7 +2205,7 @@ impl Mobs {
                     }
                     m.fuse += 1;
                     if m.fuse >= 15 {
-                        explode(server, m.pos, 3.0, Kind::Creeper.display());
+                        explode(server, m.pos, if m.charged { 6.0 } else { 3.0 }, Kind::Creeper.display());
                         return true;
                     }
                 } else {
@@ -3940,7 +3962,7 @@ impl Mobs {
                         id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health, on_ground: false, target: None, panic: 0, dying: 0,
                         sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: baby.parse().unwrap_or(0),
                         aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner, sitting: *sitting == "1",
-                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false, rider: None, passenger: None, steered: None, saddled, kept, lit: false, lifetime: 0, leash: None, draw: 0, aim: 0, temper, buck: 0, push: None, home, brain: Default::default(),
+                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false, rider: None, passenger: None, steered: None, saddled, kept, lit: false, charged: false, lifetime: 0, leash: None, draw: 0, aim: 0, temper, buck: 0, push: None, home, brain: Default::default(),
                     });
                     if let Some(site) = job.and_then(|j| j.site) {
                         crate::villagers::claim(site, id);
@@ -4302,6 +4324,18 @@ mod tests {
             server.mobs.tick(&server);
         }
         assert!(gap(&server.mobs) < before - 3.0, "calf came back: {before} -> {}", gap(&server.mobs));
+    }
+
+    #[test]
+    fn lightning_charges_nearby_creepers() {
+        let _serial = SERIAL.lock();
+        let server = Server::new();
+        let near = server.mobs.spawn(&server, Kind::Creeper, (0.5, -60.0, 0.5));
+        let far = server.mobs.spawn(&server, Kind::Creeper, (20.5, -60.0, 0.5));
+        server.mobs.struck_by_lightning(&server, (1.5, -60.0, 0.5));
+        let mobs = server.mobs.mobs.lock();
+        assert!(mobs[&near].charged, "within 4 blocks");
+        assert!(!mobs[&far].charged, "20 blocks away");
     }
 
     #[test]

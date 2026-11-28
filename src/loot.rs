@@ -15,14 +15,13 @@ struct Pool {
     entries: &'static [Entry],
 }
 
-// shortcut: enchanted books come out as plain books, upgrade once item NBT enchanting is
-// available for loot.
+// "enchanted_book" entries get a random enchantment when rolled (vanilla enchant_randomly).
 const DESERT_PYRAMID: &[Pool] = &[
     Pool { rolls: (2, 4), entries: &[
         ("diamond", 5, 1, 3), ("iron_ingot", 15, 1, 5), ("gold_ingot", 15, 2, 7), ("emerald", 15, 1, 3),
         ("bone", 25, 4, 6), ("spider_eye", 25, 1, 3), ("rotten_flesh", 25, 3, 7), ("saddle", 20, 1, 1),
         ("iron_horse_armor", 15, 1, 1), ("golden_horse_armor", 10, 1, 1), ("diamond_horse_armor", 5, 1, 1),
-        ("book", 20, 1, 1), ("golden_apple", 20, 1, 1), ("enchanted_golden_apple", 2, 1, 1),
+        ("enchanted_book", 20, 1, 1), ("golden_apple", 20, 1, 1), ("enchanted_golden_apple", 2, 1, 1),
     ] },
     Pool { rolls: (4, 4), entries: &[
         ("bone", 10, 1, 8), ("gunpowder", 10, 1, 8), ("rotten_flesh", 10, 1, 8), ("string", 10, 1, 8), ("sand", 10, 1, 8),
@@ -32,13 +31,13 @@ const DESERT_PYRAMID: &[Pool] = &[
 const JUNGLE_TEMPLE: &[Pool] = &[Pool { rolls: (2, 6), entries: &[
     ("diamond", 3, 1, 3), ("iron_ingot", 10, 1, 5), ("gold_ingot", 15, 2, 7), ("emerald", 2, 1, 3),
     ("bone", 20, 4, 6), ("rotten_flesh", 16, 3, 7), ("saddle", 3, 1, 1), ("iron_horse_armor", 1, 1, 1),
-    ("golden_horse_armor", 1, 1, 1), ("diamond_horse_armor", 1, 1, 1), ("book", 1, 1, 1),
+    ("golden_horse_armor", 1, 1, 1), ("diamond_horse_armor", 1, 1, 1), ("enchanted_book", 1, 1, 1),
 ] }];
 
 const MINESHAFT: &[Pool] = &[
     Pool { rolls: (1, 1), entries: &[
         ("golden_apple", 20, 1, 1), ("enchanted_golden_apple", 1, 1, 1), ("name_tag", 30, 1, 1),
-        ("book", 10, 1, 1), ("iron_pickaxe", 5, 1, 1), ("bread", 15, 1, 3),
+        ("enchanted_book", 10, 1, 1), ("iron_pickaxe", 5, 1, 1), ("bread", 15, 1, 3),
     ] },
     Pool { rolls: (2, 4), entries: &[
         ("iron_ingot", 10, 1, 5), ("gold_ingot", 5, 1, 3), ("redstone", 5, 4, 9), ("lapis_lazuli", 5, 4, 9),
@@ -55,7 +54,7 @@ const STRONGHOLD: &[Pool] = &[Pool { rolls: (2, 3), entries: &[
     ("redstone", 5, 4, 9), ("bread", 15, 1, 3), ("apple", 15, 1, 3), ("iron_pickaxe", 5, 1, 1),
     ("iron_sword", 5, 1, 1), ("iron_chestplate", 5, 1, 1), ("iron_helmet", 5, 1, 1), ("iron_leggings", 5, 1, 1),
     ("iron_boots", 5, 1, 1), ("golden_apple", 1, 1, 1), ("saddle", 1, 1, 1), ("iron_horse_armor", 1, 1, 1),
-    ("golden_horse_armor", 1, 1, 1), ("diamond_horse_armor", 1, 1, 1), ("book", 1, 1, 1),
+    ("golden_horse_armor", 1, 1, 1), ("diamond_horse_armor", 1, 1, 1), ("enchanted_book", 1, 1, 1),
 ] }];
 
 const VILLAGE: &[Pool] = &[Pool { rolls: (3, 8), entries: &[
@@ -94,7 +93,7 @@ const PILLAGER_OUTPOST: &[Pool] = &[
     Pool { rolls: (1, 3), entries: &[("dark_oak_log", 1, 2, 3)] },
     Pool { rolls: (2, 3), entries: &[
         ("experience_bottle", 7, 1, 1), ("string", 4, 1, 6), ("arrow", 4, 2, 7), ("tripwire_hook", 3, 1, 3),
-        ("iron_ingot", 3, 1, 3), ("book", 1, 1, 1),
+        ("iron_ingot", 3, 1, 3), ("enchanted_book", 1, 1, 1),
     ] },
 ];
 
@@ -102,7 +101,7 @@ const WOODLAND_MANSION: &[Pool] = &[
     Pool { rolls: (1, 3), entries: &[
         ("lead", 20, 1, 1), ("golden_apple", 15, 1, 1), ("enchanted_golden_apple", 2, 1, 1), ("music_disc_13", 15, 1, 1),
         ("music_disc_cat", 15, 1, 1), ("name_tag", 20, 1, 1), ("chainmail_chestplate", 10, 1, 1),
-        ("diamond_hoe", 15, 1, 1), ("diamond_chestplate", 5, 1, 1), ("book", 10, 1, 1),
+        ("diamond_hoe", 15, 1, 1), ("diamond_chestplate", 5, 1, 1), ("enchanted_book", 10, 1, 1),
     ] },
     Pool { rolls: (1, 4), entries: &[
         ("iron_ingot", 10, 1, 4), ("gold_ingot", 5, 1, 4), ("bread", 20, 1, 1), ("wheat", 20, 1, 4), ("bucket", 10, 1, 1),
@@ -114,7 +113,7 @@ const WOODLAND_MANSION: &[Pool] = &[
 const ANCIENT_CITY: &[Pool] = &[Pool { rolls: (5, 10), entries: &[
     ("enchanted_golden_apple", 1, 1, 2), ("music_disc_otherside", 1, 1, 1), ("compass", 2, 1, 1), ("sculk_catalyst", 2, 1, 2),
     ("name_tag", 2, 1, 1), ("diamond_hoe", 2, 1, 1), ("lead", 2, 1, 1), ("diamond_horse_armor", 2, 1, 1), ("saddle", 2, 1, 1),
-    ("music_disc_13", 2, 1, 1), ("music_disc_cat", 2, 1, 1), ("diamond_leggings", 2, 1, 1), ("book", 3, 1, 1),
+    ("music_disc_13", 2, 1, 1), ("music_disc_cat", 2, 1, 1), ("diamond_leggings", 2, 1, 1), ("enchanted_book", 3, 1, 1),
     ("sculk", 3, 4, 10), ("sculk_sensor", 3, 1, 3), ("candle", 3, 1, 4), ("amethyst_shard", 3, 1, 15),
     ("experience_bottle", 3, 1, 3), ("glow_berries", 3, 1, 15), ("iron_leggings", 3, 1, 1), ("echo_shard", 4, 1, 3),
     ("disc_fragment_5", 4, 1, 3), ("bone", 5, 1, 15), ("soul_torch", 5, 1, 15), ("coal", 7, 6, 15),
@@ -155,7 +154,7 @@ const BASTION: &[Pool] = &[
     Pool { rolls: (1, 2), entries: &[
         ("diamond_pickaxe", 6, 1, 1), ("diamond_shovel", 6, 1, 1), ("crossbow", 6, 1, 1), ("ancient_debris", 12, 1, 1),
         ("netherite_scrap", 4, 1, 1), ("arrow", 10, 10, 22), ("piglin_banner_pattern", 9, 1, 1),
-        ("music_disc_pigstep", 5, 1, 1), ("golden_carrot", 12, 6, 17), ("golden_apple", 9, 1, 1), ("book", 10, 1, 1),
+        ("music_disc_pigstep", 5, 1, 1), ("golden_carrot", 12, 6, 17), ("golden_apple", 9, 1, 1), ("enchanted_book", 10, 1, 1),
     ] },
     Pool { rolls: (2, 2), entries: &[
         ("iron_sword", 2, 1, 1), ("iron_block", 2, 1, 1), ("golden_boots", 1, 1, 1), ("golden_axe", 1, 1, 1),
@@ -331,7 +330,12 @@ fn roll(pools: &[Pool], slots: usize, seed: u64) -> Vec<Option<Stack>> {
                 hit
             }) else { continue };
             let count = lo + next((hi - lo + 1) as u32) as i8;
-            let Some(item) = crate::items::item_by_name(name) else { continue };
+            let Some(mut item) = crate::items::item_by_name(name) else { continue };
+            if name == "enchanted_book" {
+                let mut d = crate::itemdata::ItemData::read(&item.user_data_buffer);
+                d.set_enchants(&[crate::enchant::random_for_book(&mut next)]);
+                item.user_data_buffer = d.write();
+            }
             let free: Vec<usize> = (0..slots).filter(|&i| out[i].is_none()).collect();
             if free.is_empty() {
                 break;
@@ -383,6 +387,26 @@ pub const NAMES: &[&str] = &[
     "desert_pyramid", "jungle_temple", "mineshaft", "stronghold", "village", "igloo", "shipwreck", "ocean_ruin",
     "pillager_outpost", "woodland_mansion", "ancient_city", "trial_chambers", "ruined_portal", "nether_fortress", "bastion", "end_city",
 ];
+
+#[cfg(test)]
+mod book_tests {
+    #[test]
+    fn enchanted_books_carry_an_enchantment() {
+        crate::blocks::init();
+        let mut found = 0;
+        for _ in 0..200 {
+            for s in super::roll_named("desert_pyramid").unwrap() {
+                if crate::items::name_of(s.item.id) == Some("minecraft:enchanted_book") {
+                    let e = crate::itemdata::ItemData::read(&s.item.user_data_buffer).enchants();
+                    assert_eq!(e.len(), 1, "one enchantment");
+                    assert!(e[0].1 >= 1);
+                    found += 1;
+                }
+            }
+        }
+        assert!(found > 0, "200 desert temple rolls had no enchanted book");
+    }
+}
 
 #[cfg(test)]
 mod roll_tests {

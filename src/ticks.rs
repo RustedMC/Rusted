@@ -364,6 +364,7 @@ pub(crate) fn strike(server: &players::Server, at: (f32, f32, f32)) {
     server.scheduler.run_later(20, move |s| {
         let _ = s.events.send(players::Event::Relay { from: 0, packet: Box::new(Protocol::RemoveActorPacket(Box::new(RemoveActorPacket { target_actor_id: ActorUniqueID(bolt) }))) });
     });
+    server.mobs.struck_by_lightning(server, at);
     for q in server.all() {
         let d = ((q.pos.0 - at.0).powi(2) + (q.pos.1 - 1.62 - at.1).powi(2) + (q.pos.2 - at.2).powi(2)).sqrt();
         if d < 3.0 {

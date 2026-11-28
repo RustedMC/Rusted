@@ -165,6 +165,15 @@ pub fn names() -> Vec<String> {
     ALL.iter().map(|e| e.0.to_string()).collect()
 }
 
+/// A random enchantment for a loot chest's enchanted book (vanilla enchant_randomly): any
+/// enchantment but soul speed and swift sneak, which only come from bartering and ancient
+/// cities, at a random level. `pick(n)` is a random number below n.
+pub fn random_for_book(mut pick: impl FnMut(u32) -> u32) -> (i16, i16) {
+    let pool: Vec<_> = ALL.iter().filter(|e| !matches!(e.0, "soul_speed" | "swift_sneak")).collect();
+    let e = pool[pick(pool.len() as u32) as usize];
+    (e.1, 1 + pick(e.2 as u32) as i16)
+}
+
 /// Look up by name or id, gives (id, max level).
 pub fn by_name(s: &str) -> Option<(i16, i16)> {
     let s = s.trim_start_matches("minecraft:");
