@@ -45,7 +45,7 @@ impl SimplexF {
         let (x, y, z) = (x + self.off[0], y + self.off[1], z + self.off[2]);
         let s = (x + y + z) * F3;
         let (i, j, k) = ((x + s) as i32, (y + s) as i32, (z + s) as i32);
-        let t = (i + j + k) as f32 * G3;
+        let t = i.wrapping_add(j).wrapping_add(k) as f32 * G3;
         let (x0, y0, z0) = (x - (i as f32 - t), y - (j as f32 - t), z - (k as f32 - t));
         let (i1, j1, k1, i2, j2, k2) = if x0 >= y0 {
             if y0 >= z0 {
@@ -88,7 +88,7 @@ impl SimplexF {
         let (x, y) = (x + self.off[0], y + self.off[1]);
         let s = (x + y) * f2;
         let (i, j) = ((x + s) as i32, (y + s) as i32);
-        let t = (i + j) as f32 * g2;
+        let t = i.wrapping_add(j) as f32 * g2; // Java int add wraps
         let (x0, y0) = (x - (i as f32 - t), y - (j as f32 - t));
         let (i1, j1) = if x0 > y0 { (1, 0) } else { (0, 1) };
         let c = [(x0, y0, 0, 0), (x0 - i1 as f32 + g2, y0 - j1 as f32 + g2, i1, j1), (x0 + g22, y0 + g22, 1, 1)];
@@ -194,7 +194,7 @@ impl Sampler {
         const G3: f64 = 0.16666666666666666;
         let s = (x + y + z) * F3;
         let (i, j, k) = (floor(x + s), floor(y + s), floor(z + s));
-        let t = (i + j + k) as f64 * G3;
+        let t = i.wrapping_add(j).wrapping_add(k) as f64 * G3;
         let (x0, y0, z0) = (x - (i as f64 - t), y - (j as f64 - t), z - (k as f64 - t));
         let (i1, j1, k1, i2, j2, k2) = if x0 >= y0 {
             if y0 >= z0 {

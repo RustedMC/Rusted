@@ -11,11 +11,10 @@ use crate::inventory::{CHEST_SLOTS, Stack, decode_slots, encode_slots};
 pub struct Containers {
     map: Mutex<HashMap<(i32, i32, i32), Vec<Option<Stack>>>>,
     /// Furnace burn state and when each was last closed (they catch up on open).
-    // TODO: save burn state, a restart currently pauses a lit furnace
     furnaces: Mutex<HashMap<(i32, i32, i32), (crate::recipes::Furnace, std::time::Instant)>>,
     /// Open counts per container (lid animation, live furnaces).
     viewers: Mutex<HashMap<(i32, i32, i32), u32>>,
-    /// Brewing stand fuel/progress. TODO: not saved yet, a restart resets the brew.
+    /// Brewing stand fuel/progress.
     brewing: Mutex<HashMap<(i32, i32, i32), Brew>>,
     /// All known hoppers, ticked every 8 game ticks.
     pub hoppers: Mutex<std::collections::HashSet<(i32, i32, i32)>>,
@@ -253,6 +252,9 @@ impl Containers {
             } else {
                 state.burn_left = (state.burn_left - secs).max(0.0);
             }
+            if state.burn_left > 0.0 {
+                self.dirty.store(true, Ordering::Relaxed); // burn state is saved too
+            }
             out.push((*pos, state.burn_left > 0.0));
         }
         out
@@ -307,6 +309,9 @@ impl Containers {
         for (pos, st) in b.iter_mut() {
             if viewers.contains_key(pos) {
                 continue;
+            }
+            if st.ticks > 0 {
+                self.dirty.store(true, Ordering::Relaxed);
             }
             if let Some(slots) = map.get_mut(pos)
                 && brew(st, slots, 20)
@@ -521,11 +526,51 @@ impl Containers {
             }
         }
         let tmp = path.with_extension("tmp");
-        let result = std::fs::write(&tmp, &b).and_then(|()| std::fs::rename(&tmp, path));
+        let state = path.with_extension("state");
+        let result = std::fs::write(&tmp, &b)
+            .and_then(|()| std::fs::rename(&tmp, path))
+            .and_then(|()| std::fs::write(&state, self.state_text()));
         if result.is_err() {
             self.dirty.store(true, Ordering::Relaxed);
         }
         result.map(|()| true)
+    }
+
+    /// Furnace and brewing progress, one per line: `f x y z burn progress total oven`, `b x y z fuel ticks`.
+    fn state_text(&self) -> String {
+        let mut out = String::new();
+        for (&(x, y, z), (f, _)) in self.furnaces.lock().iter() {
+            out += &format!("f {x} {y} {z} {} {} {} {}
+", f.burn_left, f.progress, f.burn_total, f.kind as u8);
+        }
+        for (&(x, y, z), b) in self.brewing.lock().iter() {
+            out += &format!("b {x} {y} {z} {} {}
+", b.fuel, b.ticks);
+        }
+        out
+    }
+
+    fn apply_state(&mut self, text: &str) {
+        use crate::recipes::Oven;
+        let now = std::time::Instant::now();
+        for line in text.lines() {
+            let p: Vec<&str> = line.split(' ').collect();
+            let i = |k: usize| p.get(k).and_then(|v| v.parse::<i32>().ok());
+            let f = |k: usize| p.get(k).and_then(|v| v.parse::<f32>().ok());
+            let (Some(x), Some(y), Some(z)) = (i(1), i(2), i(3)) else { continue };
+            match (p[0], f(4), f(5), f(6), i(7)) {
+                ("f", Some(burn_left), Some(progress), Some(burn_total), Some(k)) => {
+                    let kind = [Oven::Furnace, Oven::Smoker, Oven::Blast].get(k as usize).copied().unwrap_or_default();
+                    self.furnaces.get_mut().insert((x, y, z), (crate::recipes::Furnace { burn_left, progress, burn_total, kind }, now));
+                }
+                ("b", ..) => {
+                    if let (Some(fuel), Some(ticks)) = (i(4), i(5)) {
+                        self.brewing.get_mut().insert((x, y, z), Brew { fuel, ticks });
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     /// Missing file = no containers yet. A broken file is an error.
@@ -555,7 +600,12 @@ impl Containers {
         // furnaces with stuff in them pick up smelting from load time
         let now = std::time::Instant::now();
         let furnaces = map.keys().map(|&p| (p, (crate::recipes::Furnace::default(), now))).collect();
-        Ok(Self { map: Mutex::new(map), furnaces: Mutex::new(furnaces), viewers: Mutex::default(), brewing: Mutex::default(), hoppers: Mutex::default(), dirty: AtomicBool::new(false) })
+        let mut c = Self { map: Mutex::new(map), furnaces: Mutex::new(furnaces), viewers: Mutex::default(), brewing: Mutex::default(), hoppers: Mutex::default(), dirty: AtomicBool::new(false) };
+        // a missing or damaged state file only loses progress, never items
+        if let Ok(text) = std::fs::read_to_string(path.with_extension("state")) {
+            c.apply_state(&text);
+        }
+        Ok(c)
     }
 }
 
@@ -598,6 +648,16 @@ mod tests {
         assert!(c.save_if_dirty(&path).unwrap());
         let back = Containers::load(&path).unwrap();
         assert_eq!(back.get((1, -60, -5))[26].as_ref().unwrap().count, 33);
+        // burn and brew progress survive too
+        c.furnaces.lock().insert((1, -60, -5), (crate::recipes::Furnace { burn_left: 7.5, progress: 2.0, burn_total: 10.0, kind: crate::recipes::Oven::Smoker }, std::time::Instant::now()));
+        c.brewing.lock().insert((2, 3, 4), Brew { fuel: 19, ticks: 120 });
+        c.put((1, -60, -5), c.get((1, -60, -5)));
+        assert!(c.save_if_dirty(&path).unwrap());
+        let back = Containers::load(&path).unwrap();
+        let f = back.furnaces.lock()[&(1, -60, -5)].0.clone();
+        assert!((f.burn_left - 7.5).abs() < 0.01 && f.kind == crate::recipes::Oven::Smoker, "{f:?}");
+        assert_eq!(back.brewing.lock()[&(2, 3, 4)], Brew { fuel: 19, ticks: 120 });
+        let _ = std::fs::remove_file(path.with_extension("state"));
         assert!(back.get((9, 9, 9)).iter().all(Option::is_none));
         std::fs::write(&path, b"RSTC\x01\x00\x00\x00\x05\x00\x00\x00").unwrap();
         assert!(Containers::load(&path).is_err(), "damaged files are refused");

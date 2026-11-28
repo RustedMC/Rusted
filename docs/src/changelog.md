@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1
+
+- Lit furnaces, smokers, blast furnaces and brewing stands keep going after a restart instead of pausing or losing their brew.
+- Fixed a rare crash in world generation when noise coordinates got very large.
+
 ## 0.6.0
 
 **Plugins**
