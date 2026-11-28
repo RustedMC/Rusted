@@ -22,6 +22,41 @@ pub struct Job {
     pub uses: Vec<i32>,
     /// job block
     pub site: Option<(i32, i32, i32)>,
+    /// What this villager has heard about each player (lowercase name), by `Gossip` kind.
+    pub gossip: Vec<(String, [i32; 5])>,
+}
+
+/// PNX EntityVillagerV2.Gossip: (gain, decay a day, penalty when passed on, max, multiplier).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Gossip {
+    MajorPositive,
+    MinorPositive,
+    MinorNegative,
+    MajorNegative,
+    Trading,
+}
+
+impl Gossip {
+    const ALL: [Gossip; 5] = [Gossip::MajorPositive, Gossip::MinorPositive, Gossip::MinorNegative, Gossip::MajorNegative, Gossip::Trading];
+    /// (decay, penalty, max, multiplier)
+    fn rules(self) -> (i32, i32, i32, i32) {
+        match self {
+            Gossip::MajorPositive => (0, 100, 20, 5),
+            Gossip::MinorPositive => (1, 5, 200, 1),
+            Gossip::MinorNegative => (20, 20, 200, -1),
+            Gossip::MajorNegative => (10, 10, 100, -5),
+            Gossip::Trading => (2, 20, 25, 1),
+        }
+    }
+}
+
+/// Names go in the save line, which splits on spaces, commas and colons.
+fn escape(name: &str) -> String {
+    name.replace('%', "%25").replace(' ', "%20").replace(',', "%2C").replace(':', "%3A").replace('/', "%2F")
+}
+
+fn unescape(name: &str) -> String {
+    name.replace("%2F", "/").replace("%3A", ":").replace("%2C", ",").replace("%20", " ").replace("%25", "%")
 }
 
 impl Job {
@@ -43,7 +78,53 @@ impl Job {
     pub fn to_text(&self) -> String {
         let uses: Vec<String> = self.uses.iter().map(|u| u.to_string()).collect();
         let site = self.site.map_or("-".to_string(), |s| format!("{},{},{}", s.0, s.1, s.2));
-        format!("{},{},{},{},{},{},{}", self.profession, self.tier, self.exp, self.seed, self.clothing as i32, site.replace(',', ":"), uses.join(":"))
+        let gossip: Vec<String> = self.gossip.iter().map(|(n, v)| format!("{}/{}/{}/{}/{}/{}", escape(n), v[0], v[1], v[2], v[3], v[4])).collect();
+        format!("{},{},{},{},{},{},{},{}", self.profession, self.tier, self.exp, self.seed, self.clothing as i32, site.replace(',', ":"), uses.join(":"), gossip.join(":"))
+    }
+
+    /// PNX addGossip: capped at the kind's max.
+    pub fn add_gossip(&mut self, player: &str, kind: Gossip, value: i32) {
+        let name = player.to_lowercase();
+        let i = Gossip::ALL.iter().position(|g| *g == kind).unwrap_or(0);
+        let max = kind.rules().2;
+        match self.gossip.iter_mut().find(|(n, _)| *n == name) {
+            Some((_, v)) => v[i] = (v[i] + value).min(max),
+            None => {
+                let mut v = [0; 5];
+                v[i] = value.min(max);
+                self.gossip.push((name, v));
+            }
+        }
+    }
+
+    /// PNX getReputation: each kind times its multiplier.
+    pub fn reputation(&self, player: &str) -> i32 {
+        let name = player.to_lowercase();
+        self.gossip.iter().find(|(n, _)| *n == name).map_or(0, |(_, v)| Gossip::ALL.iter().enumerate().map(|(i, g)| v[i] * g.rules().3).sum())
+    }
+
+    /// PNX spreadGossip into `self` from `other`: what's passed on loses its penalty.
+    pub fn hear(&mut self, other: &Job) {
+        for (name, theirs) in &other.gossip {
+            let mut mine = self.gossip.iter().find(|(n, _)| n == name).map_or([0; 5], |(_, v)| *v);
+            for (i, g) in Gossip::ALL.iter().enumerate() {
+                mine[i] = mine[i].max(theirs[i] - g.rules().1);
+            }
+            match self.gossip.iter_mut().find(|(n, _)| n == name) {
+                Some((_, v)) => *v = mine,
+                None => self.gossip.push((name.clone(), mine)),
+            }
+        }
+    }
+
+    /// A day passes: every kind fades by its decay; players nobody talks about are forgotten.
+    pub fn decay_gossip(&mut self) {
+        for (_, v) in &mut self.gossip {
+            for (i, g) in Gossip::ALL.iter().enumerate() {
+                v[i] = (v[i] - g.rules().0).max(0);
+            }
+        }
+        self.gossip.retain(|(_, v)| v.iter().any(|x| *x > 0));
     }
 
     pub fn from_text(t: &str) -> Option<Job> {
@@ -61,6 +142,18 @@ impl Job {
             clothing: trades::Clothing::from_index(n(4).unwrap_or(0)),
             site,
             uses: f.get(6).map(|u| u.split(':').filter_map(|v| v.parse().ok()).collect()).unwrap_or_default(),
+            gossip: f
+                .get(7)
+                .map(|g| {
+                    g.split(':')
+                        .filter_map(|e| {
+                            let p: Vec<&str> = e.split('/').collect();
+                            let n = |i: usize| p.get(i).and_then(|v| v.parse::<i32>().ok());
+                            Some((unescape(p.first()?), [n(1)?, n(2)?, n(3)?, n(4)?, n(5)?]))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         })
     }
 }
@@ -160,8 +253,21 @@ fn item_nbt(s: &trades::Stack) -> nbtx::Value {
 }
 
 /// Trade screen NBT (PNX updateTrades) plus the offers it lists.
-pub fn screen(villager: i64, job: &Job) -> (HashMap<String, nbtx::Value>, Vec<OpenOffer>) {
-    let trades = job.offers();
+pub fn screen(villager: i64, job: &Job, player: &str) -> (HashMap<String, nbtx::Value>, Vec<OpenOffer>) {
+    // PNX updateTrades: good reputation knocks the price down, bad pushes it up, never below 1.
+    let rep = job.reputation(player);
+    let adjust = |count: &mut i8, mult: f32| *count = (*count as i32 - (rep as f32 * mult) as i32).clamp(1, 64) as i8;
+    let trades: Vec<Trade> = job
+        .offers()
+        .into_iter()
+        .map(|mut t| {
+            adjust(&mut t.buy_a.count, t.price_multiplier_a);
+            if let Some(b) = t.buy_b.as_mut() {
+                adjust(&mut b.count, t.price_multiplier_b);
+            }
+            t
+        })
+        .collect();
     let ids = net_ids(villager, trades.len());
     let mut open = Vec::new();
     let recipes: Vec<nbtx::Value> = trades
@@ -237,14 +343,14 @@ mod tests {
 
     #[test]
     fn levels_and_saving() {
-        let mut j = Job { profession: 1, tier: 1, exp: 0, seed: 7, clothing: trades::Clothing::from_index(0), uses: vec![2, 0, 5], site: Some((1, 64, -3)) };
+        let mut j = Job { profession: 1, tier: 1, exp: 0, seed: 7, clothing: trades::Clothing::from_index(0), uses: vec![2, 0, 5], site: Some((1, 64, -3)), gossip: vec![] };
         assert!(!j.add_exp(9));
         assert!(j.add_exp(1), "10 XP: apprentice");
         assert_eq!(j.tier, 2);
         assert_eq!(Job::from_text(&j.to_text()), Some(j.clone()));
-        let (tags, open) = screen(99, &j);
+        let (tags, open) = screen(99, &j, "test");
         assert!(tags.contains_key("Recipes") && !open.is_empty());
-        assert_eq!(screen(99, &j).1[0].net_id, open[0].net_id, "stable net ids");
+        assert_eq!(screen(99, &j, "test").1[0].net_id, open[0].net_id, "stable net ids");
     }
 }
 
@@ -267,5 +373,44 @@ mod item_tests {
             }
         }
         assert!(bad.is_empty(), "unknown items: {bad:?}");
+    }
+}
+
+#[cfg(test)]
+mod gossip_tests {
+    use super::*;
+
+    fn job() -> Job {
+        Job { profession: 1, tier: 1, exp: 0, seed: 7, clothing: trades::Clothing::from_index(0), uses: vec![], site: None, gossip: vec![] }
+    }
+
+    #[test]
+    fn reputation_caps_spreads_and_fades() {
+        let mut a = job();
+        a.add_gossip("Steve Jr", Gossip::MinorNegative, 25);
+        a.add_gossip("Steve Jr", Gossip::Trading, 30); // capped at 25
+        assert_eq!(a.reputation("steve jr"), -25 + 25);
+        // Passed on, each kind loses its penalty: minor negative 25-20=5, trading 25-20=5.
+        let mut b = job();
+        b.hear(&a);
+        assert_eq!(b.reputation("STEVE JR"), -5 + 5);
+        // A day later: minor negative fades 20, trading 2.
+        a.decay_gossip();
+        assert_eq!(a.reputation("steve jr"), -5 + 23);
+        // Saved and loaded, odd names included.
+        let back = Job::from_text(&a.to_text()).unwrap();
+        assert_eq!(back.gossip, a.gossip);
+        assert_eq!(back.reputation("Steve Jr"), a.reputation("Steve Jr"));
+    }
+
+    #[test]
+    fn good_reputation_lowers_prices() {
+        let mut j = job();
+        let (_, plain) = screen(1, &j, "alex");
+        j.add_gossip("alex", Gossip::MajorPositive, 20); // reputation 100
+        let (_, cheap) = screen(1, &j, "alex");
+        let lowered = plain.iter().zip(&cheap).any(|(p, c)| c.trade.buy_a.count < p.trade.buy_a.count);
+        assert!(lowered, "a hero gets a discount");
+        assert!(cheap.iter().all(|o| o.trade.buy_a.count >= 1));
     }
 }

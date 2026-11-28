@@ -99,3 +99,41 @@ ui::remove_boss_bar(server, player.id);
 ```
 
 `percent` goes from `0.0` (empty) to `1.0` (full).
+
+## NPC dialogs
+
+A dialog shows the NPC talk screen, with a name, some text and up to six buttons. The player
+doesn't need to be near an NPC: Rusted shows them an invisible one while the dialog is open.
+
+```rust
+use crate::ui::{self, Dialog};
+
+let dialog = Dialog {
+    npc_name: "Quest Giver".into(),
+    text: "The mine is full of zombies. Will you help?".into(),
+    buttons: vec!["Yes!".into(), "Not now".into()],
+};
+ui::show_dialog(server, player.id, dialog, |server, player, button| match button {
+    Some(0) => server.tell(player.id, "Good luck!"),
+    Some(_) => {}
+    None => {} // closed without picking
+});
+```
+
+### `/dialogue` scenes, without code
+
+`/dialogue open <npc> <player> <scene>` opens `dialogues/<scene>.json` from the server folder.
+Each button's commands run as the player who pressed it:
+
+```json
+{
+  "npc_name": "Guide",
+  "text": "Welcome! Want a map of the area?",
+  "buttons": [
+    { "name": "Yes please", "commands": ["give @s empty_map", "say I got a map!"] },
+    { "name": "No thanks", "commands": [] }
+  ]
+}
+```
+
+The `<npc>` argument is kept for vanilla compatibility and isn't used.

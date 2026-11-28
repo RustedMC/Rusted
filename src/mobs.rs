@@ -913,6 +913,9 @@ fn event(id: i64, e: bedrock::protocol::v975::enums::ActorEvent) -> Protocol {
     }))
 }
 
+/// Zombie villager (then the villager it turns into) -> the player who cured it.
+static CURED_BY: std::sync::LazyLock<Mutex<HashMap<i64, String>>> = std::sync::LazyLock::new(Default::default);
+
 /// About once a minute of circling the dragon decides to land.
 const PERCH_CHANCE: u32 = 60 * TPS;
 /// How long it sits on the portal.
@@ -1112,7 +1115,7 @@ impl Mobs {
             // Its offers are rolled the first time someone trades with it.
             if m.job.is_none() {
                 let seed = self.rand() as i32;
-                m.job = Some(Box::new(crate::villagers::Job { profession: crate::trades::WANDERING, tier: 1, exp: 0, seed, clothing: crate::trades::Clothing::from_index(0), uses: vec![], site: None }));
+                m.job = Some(Box::new(crate::villagers::Job { profession: crate::trades::WANDERING, tier: 1, exp: 0, seed, clothing: crate::trades::Clothing::from_index(0), uses: vec![], site: None, gossip: vec![] }));
             }
             return Use::Trade;
         }
@@ -1122,6 +1125,9 @@ impl Mobs {
         // A golden apple on a weakened zombie villager starts curing it (3-5 minutes).
         if m.kind == Kind::ZombieVillager && held == "minecraft:golden_apple" && m.weak > 0 && m.curing == 0 {
             m.curing = (180 + self.rand() % 120) * TPS;
+            if let Some(p) = server.get(player) {
+                CURED_BY.lock().insert(id, p.name);
+            }
             broadcast(server, sound("mob.zombie.remedy", m.pos));
             return Use::Consume;
         }
@@ -1287,6 +1293,54 @@ impl Mobs {
             server.plugins.mount(server, &me, id);
         }
         true
+    }
+
+    /// Gossip about `player` for villager `id` (a trade, say).
+    pub fn gossip(&self, id: i64, player: &str, kind: crate::villagers::Gossip, value: i32) {
+        if let Some(j) = self.mobs.lock().get_mut(&id).and_then(|m| m.job.as_mut()) {
+            j.add_gossip(player, kind, value);
+        }
+    }
+
+    /// A player killed a villager at `at`: every villager within 16 blocks hears (PNX kill()).
+    pub fn villager_killed(&self, at: (f32, f32, f32), player: &str) {
+        for m in self.mobs.lock().values_mut() {
+            if m.kind == Kind::Villager && m.dying == 0 && dist2(m.pos, at) <= 16.0 * 16.0 && let Some(j) = m.job.as_mut() {
+                j.add_gossip(player, crate::villagers::Gossip::MajorNegative, 25);
+            }
+        }
+    }
+
+    /// Villagers that meet (within 2 blocks) pass gossip both ways, now and then; once a game
+    /// day it all fades a little (PNX GossipExecutor, EntityVillagerV2.onUpdate).
+    fn gossip_tick(&self, server: &Server) {
+        static DAY: Mutex<Option<i64>> = Mutex::new(None);
+        let day = server.time().div_euclid(24_000) as i64;
+        let new_day = DAY.lock().replace(day).is_some_and(|d| d != day);
+        let mut mobs = self.mobs.lock();
+        if new_day {
+            for j in mobs.values_mut().filter_map(|m| m.job.as_mut()) {
+                j.decay_gossip();
+            }
+        }
+        if !self.rand().is_multiple_of(5 * TPS) {
+            return;
+        }
+        let talkers: Vec<(i64, (f32, f32, f32))> = mobs.values().filter(|m| m.kind == Kind::Villager && m.dying == 0 && m.job.is_some()).map(|m| (m.id, m.pos)).collect();
+        for (i, &(a, pa)) in talkers.iter().enumerate() {
+            for &(b, pb) in &talkers[i + 1..] {
+                if (pa.0 - pb.0).hypot(pa.2 - pb.2) >= 2.0 {
+                    continue;
+                }
+                let (Some(ja), Some(jb)) = (mobs.get(&a).and_then(|m| m.job.as_deref().cloned()), mobs.get(&b).and_then(|m| m.job.as_deref().cloned())) else { continue };
+                if let Some(j) = mobs.get_mut(&a).and_then(|m| m.job.as_mut()) {
+                    j.hear(&jb);
+                }
+                if let Some(j) = mobs.get_mut(&b).and_then(|m| m.job.as_mut()) {
+                    j.hear(&ja);
+                }
+            }
+        }
     }
 
     /// Lightning hit at `at`: creepers within 4 blocks become charged (PNX EntityCreeper
@@ -1481,6 +1535,14 @@ impl Mobs {
         }
         let mut mobs = self.mobs.lock();
         let Some(m) = mobs.get_mut(&id) else { return };
+        // A player hitting a villager is talked about (PNX EntityVillagerV2.attack).
+        if m.kind == Kind::Villager
+            && m.dying == 0
+            && let Some(p) = attacker.and_then(|a| server.get(a))
+            && let Some(j) = m.job.as_mut()
+        {
+            j.add_gossip(&p.name, crate::villagers::Gossip::MinorNegative, 25);
+        }
         if m.kind == Kind::EndCrystal {
             let at = m.pos;
             mobs.remove(&id);
@@ -1577,6 +1639,9 @@ impl Mobs {
             server.plugins.entity_death(server, kind.identifier(), pos, attacker);
             if kind == Kind::Villager {
                 crate::villagers::release(id);
+                if let Some(p) = attacker.and_then(|a| server.get(a)) {
+                    self.villager_killed(pos, &p.name);
+                }
             }
             if captain && let Some(p) = attacker {
                 // Killing a patrol captain gives Bad Omen for 100 minutes (vanilla).
@@ -1744,7 +1809,9 @@ impl Mobs {
                     let pos = m.pos;
                     out.push(sound("mob.zombie.unfect", pos));
                     let nid = self.spawn(server, Kind::Villager, pos);
-                    let _ = nid;
+                    if let Some(p) = CURED_BY.lock().remove(&id) {
+                        CURED_BY.lock().insert(nid, p);
+                    }
                     continue;
                 }
             }
@@ -1898,6 +1965,7 @@ impl Mobs {
     fn tick_spawners(&self, server: &Server) {
         static DELAY: Mutex<Option<HashMap<(i32, i32, i32), u32>>> = Mutex::new(None);
         crate::trial::tick(server, self, || self.rand());
+        self.gossip_tick(server);
         let spawners: Vec<((i32, i32, i32), &str)> = crate::loot::spawners().lock().iter().map(|(p, m)| (*p, *m)).collect();
         if spawners.is_empty() {
             return;
@@ -2662,6 +2730,13 @@ impl Mobs {
                     clothing: crate::trades::Clothing::from_biome(biome),
                     uses: vec![],
                     site: Some(site),
+                    // A villager cured by a player remembers it (PNX purifyPlayer).
+                    gossip: CURED_BY.lock().remove(&m.id).map(|p| {
+                        let mut j = crate::villagers::Job { profession: 0, tier: 1, exp: 0, seed: 0, clothing: crate::trades::Clothing::from_index(0), uses: vec![], site: None, gossip: vec![] };
+                        j.add_gossip(&p, crate::villagers::Gossip::MajorPositive, 20);
+                        j.add_gossip(&p, crate::villagers::Gossip::MinorPositive, 25);
+                        j.gossip
+                    }).unwrap_or_default(),
                 }));
                 out.push(data_packet(m));
                 out.push(event(m.id, bedrock::protocol::v975::enums::ActorEvent::VillagerHappy));

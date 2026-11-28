@@ -7,17 +7,17 @@ This file tracks how far each part of PNX has come over.
 
 | PNX package | What it covers | Status |
 |---|---|---|
-| `level/generator` | overworld, Nether, End, features, structures | ✅ seed-exact with PNX, carver caves, canyons and dungeons included; not yet: springs, geodes, dripstone clusters, sculk patches, azalea roots, sulfur caves |
+| `level/generator` | overworld, Nether, End, features, structures | ✅ seed-exact with PNX: every feature PNX has, carver caves, canyons, dungeons, springs, geodes, dripstone, sculk patches, azalea roots and sulfur caves included (no second block layer for waterlogging at generation) |
 | `level` | ticking, light, weather, explosions, portals, dimensions | 🟡 block and sky light, lightning charges creepers; ticking areas |
 | `block` | block behaviour, interactions, crops, fluids, fire | 🟡 most blocks work, rails and sculk included; trial spawners and vaults work (reward tables approximate) |
 | `blockentity` + `inventory` | containers and their screens | 🟡 chests, furnaces, hoppers, brewing, anvil, grindstone, enchanting, smithing, shulkers, dispensers, beacons, looms, lecterns (no redstone output yet), crafters; maps and the cartography table (zoom, copy, lock) |
 | `item` | tools, food, armour, enchantments, effects | 🟡 bows, tridents, potions, fishing, shields, totems, crossbows, elytra and fireworks work |
 | `entity` | mobs and AI | 🟡 87 mob types on a simpler AI than PNX's behaviour system; riding, boats, chest boats, all minecarts, llama caravans; the dragon perches on the portal |
-| `entity` (villagers) | jobs, trading, raids | 🟡 trading uses PNX's tables; breeding and wandering traders; no gossip |
+| `entity` (villagers) | jobs, trading, raids | 🟡 trading uses PNX's tables; breeding, wandering traders, gossip and reputation prices |
 | redstone | dust, diodes, pistons, observers | 🟡 works for common builds; rails (powered, detector, activator), repeater locking and lectern comparator output work; no sculk |
-| `command` | vanilla commands | 🟡 nearly every vanilla command, `/execute`, `/camera` and target selectors; no `/dialogue` (needs NPC entities) |
+| `command` | vanilla commands | 🟡 nearly every vanilla command, `/execute`, `/camera` and target selectors; `/dialogue` from scene files |
 | `event` + `plugin` | plugin API | 🟡 60 of PNX's ~200 events, scheduler, config files; plugins are compiled in |
-| `form`, `scoreboard` | server UI | 🟡 forms, scoreboards, boss bars, camera control; no NPC dialogs |
+| `form`, `scoreboard` | server UI | 🟡 forms, scoreboards, boss bars, camera control, NPC dialogs |
 | loot tables | chest loot, spawners | 🟡 chests in 16 structures fill on first open, with enchanted books; structure spawners; trial spawner and vault rewards; `/loot`; dungeons |
 
 ## How ported code is written

@@ -257,6 +257,7 @@ fn target_index(cmd: &str, args: &[&str]) -> Option<usize> {
         "inputpermission" if matches!(args.get(1), Some(&"set" | &"query")) => Some(2),
         "replaceitem" if args.get(1) == Some(&"entity") => Some(2),
         "loot" if args.get(1) == Some(&"give") => Some(2),
+        "dialogue" if args.get(1) == Some(&"open") && args.len() > 3 => Some(3),
         // /tp only has a target if there's a destination after it
         "tp" | "teleport" if args.len() == 3 || args.len() == 5 => Some(1),
         _ => None,
@@ -400,7 +401,7 @@ pub fn difficulty_packet(d: u32) -> crate::Protocol {
 /// Op-only commands (console can run them too).
 pub const OP_ONLY: &[&str] = &[
     "clearspawnpoint", "fog", "hud", "inputpermission", "loot", "music", "particle", "playanimation", "recipe", "replaceitem", "schedule",
-    "setmaxplayers", "spreadplayers", "testforblocks", "tickingarea", "camera", "aimassist", "controlscheme", "ride",
+    "setmaxplayers", "spreadplayers", "testforblocks", "tickingarea", "camera", "aimassist", "controlscheme", "ride", "dialogue",
     "kick", "op", "deop", "ban", "unban", "pardon", "ban-ip", "banip", "unban-ip", "pardon-ip", "banlist", "whitelist", "say", "weather", "difficulty", "gamemode", "gm",
     "tp", "teleport", "give", "summon", "effect", "enchant", "xp", "title", "titleraw", "tellraw", "playsound", "stopsound", "camerashake",
     "transfer", "damage", "setblock", "fill", "clone", "testfor", "locate", "execute", "function", "mv", "multiverse", "testforblock", "toggledownfall", "daylock", "alwaysday", "scoreboard", "time", "gamerule", "kill", "clear", "spawnpoint", "setworldspawn", "stop", "status", "perf",
@@ -413,6 +414,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("aimassist", "Turns aim assist on or off for a player"),
     ("controlscheme", "Changes how a player's movement controls work"),
     ("ride", "Puts a player on a mob, or takes them off"),
+    ("dialogue", "Opens an NPC dialog from dialogues/<scene>.json"),
     ("fog", "Adds or removes fog settings for a player"),
     ("hud", "Hides or shows parts of a player's screen"),
     ("inputpermission", "Turns a player's camera or movement controls on or off"),

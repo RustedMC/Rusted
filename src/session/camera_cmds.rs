@@ -220,6 +220,19 @@ impl Session {
                 format!("{} stopped riding", self.name)
             }
             ["ride", ..] => "§cUse /ride <player> start_riding <mob>, summon_ride <mob> or stop_riding".into(),
+            // /dialogue open <npc> <player> <scene>: scenes live in dialogues/<scene>.json
+            ["dialogue", "open", _, _, scene, ..] => match crate::ui::scene(scene) {
+                Some((dialog, commands)) => {
+                    crate::ui::show_dialog(&self.server, self.id, dialog, move |server, player, button| {
+                        for line in button.and_then(|b| commands.get(b)).into_iter().flatten() {
+                            let _ = server.events.send(crate::players::Event::RunAs { to: player.id, line: line.trim_start_matches('/').to_string(), reply_to: player.id });
+                        }
+                    });
+                    String::new()
+                }
+                None => format!("§cNo dialogue scene dialogues/{scene}.json"),
+            },
+            ["dialogue", ..] => "§cUse /dialogue open <npc> <player> <scene> (scenes are dialogues/<scene>.json)".into(),
             _ => return None,
         })
     }

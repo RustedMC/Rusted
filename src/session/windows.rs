@@ -327,6 +327,8 @@ impl Session {
                         if let Some(me) = self.server.get(self.id) {
                             self.server.plugins.trade(&self.server, &me, vid, index as i32, n as i32);
                         }
+                        // Each trade is good gossip (vanilla TRADING +2).
+                        self.server.mobs.gossip(vid, &self.name, crate::villagers::Gossip::Trading, 2 * n as i32);
                     }
                     self.traded_job = job.map(|j| (vid, j));
                 }
@@ -357,7 +359,7 @@ impl Session {
             }
         }
         if let Some((vid, job)) = self.traded_job.take() {
-            let (tags, offers) = villagers::screen(vid, &job);
+            let (tags, offers) = villagers::screen(vid, &job, &self.name);
             self.inv.trading = Some((vid, offers));
             let _ = self.conn.send(&[self.xp.packet(self.id), trade_packet(self.window_id, vid, self.id, &job, tags)]).await;
             save_xp(&self.name, self.xp);

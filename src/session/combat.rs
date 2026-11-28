@@ -26,7 +26,7 @@ impl Session {
                 let vid = e.actor_runtime_id as i64;
                 if let Some(job) = self.server.mobs.job_of(vid) {
                     self.window_id = if self.window_id >= 99 { 2 } else { self.window_id + 1 };
-                    let (tags, offers) = villagers::screen(vid, &job);
+                    let (tags, offers) = villagers::screen(vid, &job, &self.name);
                     self.inv.trading = Some((vid, offers));
                     let _ = self.conn.send(&[trade_packet(self.window_id, vid, self.id, &job, tags)]).await;
                 }

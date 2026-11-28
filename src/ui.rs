@@ -111,6 +111,118 @@ pub fn left(player: i64) {
     if let Some(f) = FORMS.lock().as_mut() {
         f.retain(|(p, _), _| *p != player);
     }
+    if let Some(d) = DIALOGS.lock().as_mut() {
+        d.retain(|(p, _), _| *p != player);
+    }
+}
+
+// ---- NPC dialogs
+
+/// An NPC dialog: a name, some text and up to six buttons (PNX FormWindowDialog). It shows with
+/// an NPC portrait, the way vanilla /dialogue does, without needing an NPC in the world.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Dialog {
+    pub npc_name: String,
+    pub text: String,
+    pub buttons: Vec<String>,
+}
+
+type DialogCallback = Box<dyn FnOnce(&Server, &PlayerInfo, Option<usize>) + Send>;
+
+/// (player, scene) -> (the stand-in NPC's id, the callback)
+static DIALOGS: Mutex<Option<HashMap<(i64, String), (i64, DialogCallback)>>> = Mutex::new(None);
+static NEXT_SCENE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+
+/// Default NPC portrait placement (PNX FormWindowDialog skin data).
+const NPC_SKIN: &str = r#"{"picker_offsets":{"scale":[1.70,1.70,1.70],"translate":[0,20,0]},"portrait_offsets":{"scale":[1.750,1.750,1.750],"translate":[-7,50,0]},"skin_list":[{"variant":0}]}"#;
+
+/// Shows `dialog` to `to`; `then` gets the button they pressed, or None if they closed it.
+/// The client binds a dialog to an NPC entity, so `to` alone sees an invisible one at their feet
+/// while it's open.
+pub fn show_dialog(server: &Server, to: i64, dialog: Dialog, then: impl FnOnce(&Server, &PlayerInfo, Option<usize>) + Send + 'static) {
+    use bedrock::protocol::v2168::enums::DataItemType as DataType;
+    use bedrock::protocol::v662::types::{ActorRuntimeID, ActorUniqueID, DataItem, PropertySyncData};
+    use bedrock::protocol::v924::enums::ActorDataIDs as Id;
+    let Some(me) = server.get(to) else { return };
+    let npc = crate::players::next_id();
+    let scene = format!("rusted:{}", NEXT_SCENE.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    let actions = json!(dialog.buttons.iter().map(|b| json!({
+        "button_name": b, "text": "", "data": [{"cmd_line": "", "cmd_ver": 19}], "mode": 0, "type": 1,
+    })).collect::<Vec<_>>()).to_string();
+    let item = |id: Id, v: DataType<Protocol>| DataItem { data_item_id: id, data_item_type: v };
+    let add = Protocol::AddActorPacket(Box::new(bedrock::protocol::v2225::packets::AddActorPacket {
+        target_actor_id: ActorUniqueID(npc),
+        target_runtime_id: ActorRuntimeID(npc as u64),
+        actor_type: "minecraft:npc".into(),
+        position: (me.pos.0, me.pos.1 - 1.62, me.pos.2),
+        velocity: (0.0, 0.0, 0.0),
+        rotation: (0.0, 0.0),
+        y_head_rotation: 0.0,
+        y_body_rotation: 0.0,
+        attributes: vec![],
+        actor_data: vec![
+            item(Id::Reserved0, DataType::Int64(1 << 5 | 1 << 16)), // invisible, no AI
+            item(Id::Reserved038, DataType::Float(0.0)), // scale
+            item(Id::HasNpc, DataType::Byte(1)),
+            item(Id::NpcData, DataType::String(NPC_SKIN.into())),
+            item(Id::Actions, DataType::String(actions.clone())),
+            item(Id::InteractText, DataType::String(dialog.text.clone())),
+        ],
+        synced_properties: PropertySyncData { int_entries_list: vec![], float_entries_list: vec![] },
+        actor_links: vec![],
+        passenger_of_block_data: None,
+    }));
+    let open = Protocol::NpcDialoguePacket(Box::new(bedrock::protocol::v662::packets::NpcDialoguePacket {
+        npc_raw_id: npc as u64,
+        npc_dialogue_action_type: bedrock::protocol::v662::packets::NpcDialogueActionType::Open,
+        dialogue: dialog.text,
+        scene_name: scene.clone(),
+        npc_name: dialog.npc_name,
+        action_json: actions,
+    }));
+    DIALOGS.lock().get_or_insert_with(HashMap::new).insert((to, scene), (npc, Box::new(then)));
+    for packet in [add, open] {
+        let _ = server.events.send(Event::Packet { to, packet: Box::new(packet) });
+    }
+}
+
+/// The client answered a dialog: a button (`button` = Some(index)) or closing it (None).
+pub fn dialog_answered(server: &Server, player: i64, scene: &str, button: Option<usize>) {
+    let Some((npc, then)) = DIALOGS.lock().as_mut().and_then(|d| d.remove(&(player, scene.to_string()))) else { return };
+    let close = Protocol::NpcDialoguePacket(Box::new(bedrock::protocol::v662::packets::NpcDialoguePacket {
+        npc_raw_id: npc as u64,
+        npc_dialogue_action_type: bedrock::protocol::v662::packets::NpcDialogueActionType::Close,
+        dialogue: String::new(),
+        scene_name: scene.to_string(),
+        npc_name: String::new(),
+        action_json: String::new(),
+    }));
+    let remove = Protocol::RemoveActorPacket(Box::new(bedrock::protocol::v662::packets::RemoveActorPacket { target_actor_id: bedrock::protocol::v662::types::ActorUniqueID(npc) }));
+    for packet in [close, remove] {
+        let _ = server.events.send(Event::Packet { to: player, packet: Box::new(packet) });
+    }
+    if let Some(p) = server.get(player) {
+        then(server, &p, button);
+    }
+}
+
+/// A dialog scene from `dialogues/<name>.json`, for /dialogue: `{"npc_name": "...",
+/// "text": "...", "buttons": [{"name": "...", "commands": ["..."]}]}`. Button commands run as
+/// the player who pressed it.
+pub fn scene(name: &str) -> Option<(Dialog, Vec<Vec<String>>)> {
+    if name.contains(['/', '\\', '.']) {
+        return None;
+    }
+    let text = std::fs::read_to_string(std::path::Path::new("dialogues").join(format!("{name}.json"))).ok()?;
+    let v: Value = serde_json::from_str(&text).ok()?;
+    let buttons = v["buttons"].as_array().cloned().unwrap_or_default();
+    let dialog = Dialog {
+        npc_name: v["npc_name"].as_str().unwrap_or("").to_string(),
+        text: v["text"].as_str().unwrap_or("").to_string(),
+        buttons: buttons.iter().map(|b| b["name"].as_str().unwrap_or("").to_string()).collect(),
+    };
+    let commands = buttons.iter().map(|b| b["commands"].as_array().map(|c| c.iter().filter_map(|l| l.as_str().map(str::to_string)).collect()).unwrap_or_default()).collect();
+    Some((dialog, commands))
 }
 
 // ---- scoreboards

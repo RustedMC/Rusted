@@ -215,6 +215,14 @@ impl Session {
             Protocol::ModalFormResponsePacket(f) => {
                 ui::answered(&self.server, self.id, f.form_id, f.json_response.as_deref());
             }
+            Protocol::NpcRequestPacket(r) => {
+                use bedrock::protocol::v662::packets::RequestType;
+                match r.request_type {
+                    RequestType::ExecuteAction => ui::dialog_answered(&self.server, self.id, &r.scene_name, usize::try_from(r.action_index).ok()),
+                    RequestType::ExecuteClosingCommands => ui::dialog_answered(&self.server, self.id, &r.scene_name, None),
+                    _ => {} // editing NPCs isn't allowed
+                }
+            }
             Protocol::CommandRequestPacket(cmd) => self.on_command_request(&cmd).await,
             Protocol::TextPacket(text) => self.on_chat(*text),
             Protocol::InventoryTransactionPacket(t) if matches!(&t.data, InventoryTransactionData::ItemRelease(r) if r.action_type == 0) => {

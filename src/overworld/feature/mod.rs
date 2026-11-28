@@ -5,6 +5,7 @@
 pub mod blocks;
 mod decoration;
 mod dungeon;
+mod extra;
 pub mod objects;
 mod ores;
 mod river;
@@ -125,6 +126,7 @@ fn registry() -> &'static HashMap<&'static str, FeatureFn> {
         river::register(&mut m);
         decoration::register(&mut m);
         trees::register(&mut m);
+        extra::register(&mut m);
         m
     })
 }
