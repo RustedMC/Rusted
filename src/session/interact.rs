@@ -398,7 +398,10 @@ impl Session {
             }
             let here = self.server.world.get(at.0, at.1, at.2);
             let open = here == world::AIR || (crate::overworld::feature::blocks::is_plant(here));
-            if open && let Some(fire) = blocks::any_state("minecraft:fire") {
+            if open
+                && self.server.get(self.id).is_none_or(|me| self.server.plugins.block_ignite(&self.server, &me, at))
+                && let Some(fire) = blocks::any_state("minecraft:fire")
+            {
                 // Quiet: the only sound is flint and steel's own ignite, not a block place.
                 self.server.set_block_quiet(self.id, at.0, at.1, at.2, fire);
                 growth::FIRES.lock().push(at);
@@ -477,6 +480,11 @@ impl Session {
                 }
                 physics::Interaction::Press { pressed, released } => {
                     let clicked = self.server.world.get(p.x, p.y, p.z);
+                    if let Some(me) = self.server.get(self.id)
+                        && !self.server.plugins.button_press(&self.server, &me, (p.x, p.y, p.z), blocks::entry(clicked).map_or("", |e| e.name.as_str()))
+                    {
+                        return;
+                    }
                     let at = (p.x as f32 + 0.5, p.y as f32 + 0.5, p.z as f32 + 0.5);
                     let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(level_sound("power.on", at, clicked)) });
                     for ((bx, by, bz), b) in pressed {
@@ -543,6 +551,9 @@ impl Session {
         if let Some(kind) = held.strip_suffix("_spawn_egg").and_then(mobs::Kind::from_name) {
             if !matches!(self.mode, GameType::Spectator) && !commands::spawn_protected(&self.server, &self.name, (p.x, p.y, p.z)) {
                 let at = (p.x as f32 + dx as f32 + 0.5, (p.y + dy) as f32, p.z as f32 + dz as f32 + 0.5);
+                if self.server.get(self.id).is_some_and(|me| !self.server.plugins.spawn_egg_use(&self.server, &me, kind.identifier(), at)) {
+                    return;
+                }
                 self.server.mobs.spawn(&self.server, kind, at);
                 let _ = self.server.events.send(Event::Relay { from: 0, packet: Box::new(mobs::mob_sound("ambient", kind, at, false)) });
                 if survival_like(&self.mode) {

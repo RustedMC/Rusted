@@ -175,6 +175,7 @@ pub fn hit_target(p: Pos, hit: (f32, f32, f32), ticks: u64) {
     let level = ((1.0 - off / 0.5).clamp(0.0, 1.0) * 15.0).ceil().max(1.0) as u8;
     let now = ENGINE.lock().as_ref().map_or(0, |e| e.tick);
     TARGETS.lock().get_or_insert_with(HashMap::new).insert(p, (level, now + ticks));
+    crate::plugin::later(crate::plugin::Later::TargetHit((p.0, p.1, p.2), level as i32));
     mark(p);
 }
 

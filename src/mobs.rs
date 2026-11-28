@@ -2778,6 +2778,7 @@ impl Mobs {
             && self.rand().is_multiple_of(6000)
         {
             j.uses.clear();
+            crate::plugin::later(crate::plugin::Later::Restock(m.id));
         }
         // What the brain needs on top of the usual: zombies to run from, the job block by day,
         // and whether it's caught outside at night.

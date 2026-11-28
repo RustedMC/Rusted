@@ -529,7 +529,7 @@ pub fn spawn_protected(server: &Server, player: &str, pos: (i32, i32, i32)) -> b
         return false;
     }
     let s = world_spawn(server);
-    (pos.0 - s.0.floor() as i32).abs() <= r && (pos.2 - s.2.floor() as i32).abs() <= r
+    (pos.0 - s.0.floor() as i32).abs() <= r && (pos.2 - s.2.floor() as i32).abs() <= r && server.plugins.spawn_protection(server, player, pos)
 }
 
 pub fn world_spawn(server: &Server) -> (f32, f32, f32) {

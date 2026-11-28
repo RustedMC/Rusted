@@ -47,7 +47,13 @@ pub(crate) fn random_ticks(server: &players::Server, rng: &mut u64) {
                         let pos = (x * 16 + (r & 15) as i32, s * 16 + ((r >> 4) & 15) as i32, z * 16 + ((r >> 8) & 15) as i32);
                         let snowy = raining && server.world.is_snowy(pos.0, pos.2);
                         let before = server.world.get(pos.0, pos.1, pos.2);
-                        for ((bx, by, bz), b) in growth::random_tick(&server.world, pos, next(), raining, snowy) {
+                        let changes = growth::random_tick(&server.world, pos, next(), raining, snowy);
+                        // A tree is many changes at once: ask about the whole thing up front.
+                        let sapling = blocks::entry(before).map_or("", |e| e.name.as_str());
+                        if !changes.is_empty() && sapling.ends_with("_sapling") && !server.plugins.sapling_grow(server, pos, sapling) {
+                            continue;
+                        }
+                        for ((bx, by, bz), b) in changes {
                             let name = |b: i32| blocks::entry(b).map_or("", |e| e.name.as_str());
                             if !server.plugins.block_change(server, (bx, by, bz), name(server.world.get(bx, by, bz)), name(b)) {
                                 continue;
@@ -100,6 +106,7 @@ fn game_tick(server: &players::Server, plates: &mut HashMap<(i32, i32, i32), Ins
         if blocks::entry(b).is_some_and(|e| e.name == "minecraft:trip_wire") && beings + items > 0 {
             plates.insert(feet, Instant::now());
             if !matches!(blocks::state(b, "powered_bit"), Some(blocks::State::Bool(true))) {
+                server.plugins.tripwire_trigger(server, feet);
                 server.set_block_quiet(0, feet.0, feet.1, feet.2, blocks::with(b, &[("powered_bit", blocks::State::Bool(true))]));
             }
             continue;
@@ -117,6 +124,7 @@ fn game_tick(server: &players::Server, plates: &mut HashMap<(i32, i32, i32), Ins
         let was = matches!(blocks::state(b, "redstone_signal"), Some(blocks::State::Int(s)) if *s == signal);
         plates.insert(feet, Instant::now());
         if !was {
+            server.plugins.pressure_plate(server, feet, signal);
             server.set_block_quiet(0, feet.0, feet.1, feet.2, blocks::with(b, &[("redstone_signal", blocks::State::Int(signal))]));
             let _ = server.events.send(players::Event::Relay { from: 0, packet: Box::new(play_sound("random.click", (feet.0 as f32 + 0.5, feet.1 as f32, feet.2 as f32 + 0.5))) });
         }

@@ -55,6 +55,9 @@ pub enum Later {
     Sit(i64, bool),
     TntCart(i64),
     Expire(i64, &'static str),
+    TargetHit((i32, i32, i32), i32),
+    Restock(i64),
+    Hopper((i32, i32, i32), (i32, i32, i32)),
 }
 
 static LATER: parking_lot::Mutex<Vec<Later>> = parking_lot::Mutex::new(Vec::new());
@@ -818,6 +821,95 @@ pub trait Plugin: Send + Sync {
     /// Mob `mob` (a wandering trader and its llamas) left when its time ran out. Fired after the mob tick.
     fn on_mob_expire(&self, _server: &Server, _mob: i64, _kind: &str) {}
 
+    /// A `sapling` at `pos` is about to grow into a tree. Return false to stop it.
+    fn on_sapling_grow(&self, _server: &Server, _pos: (i32, i32, i32), _sapling: &str) -> bool {
+        true
+    }
+
+    /// Player is about to light a fire at `pos` with flint and steel. Return false to stop it.
+    fn on_block_ignite(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32)) -> bool {
+        true
+    }
+
+    /// Player is pressing the `block` button at `pos`. Return false to stop it.
+    fn on_button_press(&self, _server: &Server, _player: &PlayerInfo, _pos: (i32, i32, i32), _block: &str) -> bool {
+        true
+    }
+
+    /// The pressure plate at `pos` went down, giving `signal` (1-15).
+    fn on_pressure_plate(&self, _server: &Server, _pos: (i32, i32, i32), _signal: i32) {}
+
+    /// Something walked into the tripwire at `pos`.
+    fn on_tripwire_trigger(&self, _server: &Server, _pos: (i32, i32, i32)) {}
+
+    /// A projectile hit the target block at `pos`, giving `signal` (1-15). Fired after the tick.
+    fn on_target_hit(&self, _server: &Server, _pos: (i32, i32, i32), _signal: i32) {}
+
+    /// The sculk sensor at `pos` heard something (`player` set when a player made it).
+    fn on_sculk_sensor(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
+
+    /// A log or stem at `pos` was stripped with an axe.
+    fn on_log_strip(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
+
+    /// Copper at `pos` was waxed (`waxed` true) or had its wax taken off.
+    fn on_copper_wax(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>, _waxed: bool) {}
+
+    /// Copper at `pos` was scraped back one weathering stage.
+    fn on_copper_scrape(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
+
+    /// A shovel turned the block at `pos` into a path.
+    fn on_path_create(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
+
+    /// A hoe tilled the block at `pos`.
+    fn on_till(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
+
+    /// The campfire at `pos` was put out with a shovel.
+    fn on_campfire_extinguish(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
+
+    /// Villager `villager` restocked its trades. Fired after the mob tick.
+    fn on_villager_restock(&self, _server: &Server, _villager: i64) {}
+
+    /// Player `attacker` is about to hit `victim` for `damage`. Return false to stop the hit.
+    fn on_pvp_attack(&self, _server: &Server, _attacker: &PlayerInfo, _victim: &PlayerInfo, _damage: f32) -> bool {
+        true
+    }
+
+    /// Player's mending gear soaked up `points` of picked-up XP to repair itself.
+    fn on_mending_repair(&self, _server: &Server, _player: &PlayerInfo, _points: i32) {}
+
+    /// Player is about to be kicked for being idle. Return false to keep them.
+    fn on_idle_kick(&self, _server: &Server, _player: &PlayerInfo) -> bool {
+        true
+    }
+
+    /// Spawn protection is about to stop `name` building or breaking at `pos`. Return false to let them.
+    fn on_spawn_protection(&self, _server: &Server, _name: &str, _pos: (i32, i32, i32)) -> bool {
+        true
+    }
+
+    /// A hopper moved an item from `from` to `to`. Fired after the tick.
+    fn on_hopper_move(&self, _server: &Server, _from: (i32, i32, i32), _to: (i32, i32, i32)) {}
+
+    /// The jukebox at `pos` started playing `record` (like "record.cat").
+    fn on_jukebox_play(&self, _server: &Server, _pos: (i32, i32, i32), _record: &str, _player: Option<i64>) {}
+
+    /// Player clicked the note block at `pos`, tuning it up a note.
+    fn on_note_tune(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
+
+    /// The beehive or nest at `pos` was sheared for honeycomb.
+    fn on_honey_harvest(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
+
+    /// The pumpkin at `pos` was carved with shears.
+    fn on_pumpkin_carve(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
+
+    /// Berries were picked from the bush or cave vines at `pos`.
+    fn on_berry_pick(&self, _server: &Server, _pos: (i32, i32, i32), _player: Option<i64>) {}
+
+    /// Player is about to use a spawn egg for `kind` at `pos`. Return false to stop it.
+    fn on_spawn_egg_use(&self, _server: &Server, _player: &PlayerInfo, _kind: &str, _pos: (f32, f32, f32)) -> bool {
+        true
+    }
+
     /// Player jumped.
     fn on_jump(&self, _server: &Server, _player: &PlayerInfo) {}
 
@@ -1147,6 +1239,9 @@ impl Plugins {
                 Later::Sit(mob, on) => self.each(|pl| pl.on_sit_toggle(s, mob, on)),
                 Later::TntCart(mob) => self.each(|pl| pl.on_tnt_minecart_prime(s, mob)),
                 Later::Expire(mob, kind) => self.each(|pl| pl.on_mob_expire(s, mob, kind)),
+                Later::TargetHit(pos, signal) => self.each(|pl| pl.on_target_hit(s, pos, signal)),
+                Later::Restock(v) => self.each(|pl| pl.on_villager_restock(s, v)),
+                Later::Hopper(from, to) => self.each(|pl| pl.on_hopper_move(s, from, to)),
             }
         }
     }
@@ -1446,6 +1541,106 @@ impl Plugins {
 
     pub fn sign_open(&self, s: &Server, p: &PlayerInfo, pos: (i32, i32, i32)) {
         self.each(|pl| pl.on_sign_open(s, p, pos));
+    }
+
+    pub fn sapling_grow(&self, s: &Server, pos: (i32, i32, i32), sapling: &str) -> bool {
+        self.cancellable(|pl| pl.on_sapling_grow(s, pos, sapling))
+    }
+
+    pub fn block_ignite(&self, s: &Server, player: &PlayerInfo, pos: (i32, i32, i32)) -> bool {
+        self.cancellable(|pl| pl.on_block_ignite(s, player, pos))
+    }
+
+    pub fn button_press(&self, s: &Server, player: &PlayerInfo, pos: (i32, i32, i32), block: &str) -> bool {
+        self.cancellable(|pl| pl.on_button_press(s, player, pos, block))
+    }
+
+    pub fn pressure_plate(&self, s: &Server, pos: (i32, i32, i32), signal: i32) {
+        self.each(|pl| pl.on_pressure_plate(s, pos, signal));
+    }
+
+    pub fn tripwire_trigger(&self, s: &Server, pos: (i32, i32, i32)) {
+        self.each(|pl| pl.on_tripwire_trigger(s, pos));
+    }
+
+    pub fn target_hit(&self, s: &Server, pos: (i32, i32, i32), signal: i32) {
+        self.each(|pl| pl.on_target_hit(s, pos, signal));
+    }
+
+    pub fn sculk_sensor(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.each(|pl| pl.on_sculk_sensor(s, pos, player));
+    }
+
+    pub fn log_strip(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.each(|pl| pl.on_log_strip(s, pos, player));
+    }
+
+    pub fn copper_wax(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>, waxed: bool) {
+        self.each(|pl| pl.on_copper_wax(s, pos, player, waxed));
+    }
+
+    pub fn copper_scrape(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.each(|pl| pl.on_copper_scrape(s, pos, player));
+    }
+
+    pub fn path_create(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.each(|pl| pl.on_path_create(s, pos, player));
+    }
+
+    pub fn till(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.each(|pl| pl.on_till(s, pos, player));
+    }
+
+    pub fn campfire_extinguish(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.each(|pl| pl.on_campfire_extinguish(s, pos, player));
+    }
+
+    pub fn villager_restock(&self, s: &Server, villager: i64) {
+        self.each(|pl| pl.on_villager_restock(s, villager));
+    }
+
+    pub fn pvp_attack(&self, s: &Server, attacker: &PlayerInfo, victim: &PlayerInfo, damage: f32) -> bool {
+        self.cancellable(|pl| pl.on_pvp_attack(s, attacker, victim, damage))
+    }
+
+    pub fn mending_repair(&self, s: &Server, player: &PlayerInfo, points: i32) {
+        self.each(|pl| pl.on_mending_repair(s, player, points));
+    }
+
+    pub fn idle_kick(&self, s: &Server, player: &PlayerInfo) -> bool {
+        self.cancellable(|pl| pl.on_idle_kick(s, player))
+    }
+
+    pub fn spawn_protection(&self, s: &Server, name: &str, pos: (i32, i32, i32)) -> bool {
+        self.cancellable(|pl| pl.on_spawn_protection(s, name, pos))
+    }
+
+    pub fn hopper_move(&self, s: &Server, from: (i32, i32, i32), to: (i32, i32, i32)) {
+        self.each(|pl| pl.on_hopper_move(s, from, to));
+    }
+
+    pub fn jukebox_play(&self, s: &Server, pos: (i32, i32, i32), record: &str, player: Option<i64>) {
+        self.each(|pl| pl.on_jukebox_play(s, pos, record, player));
+    }
+
+    pub fn note_tune(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.each(|pl| pl.on_note_tune(s, pos, player));
+    }
+
+    pub fn honey_harvest(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.each(|pl| pl.on_honey_harvest(s, pos, player));
+    }
+
+    pub fn pumpkin_carve(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.each(|pl| pl.on_pumpkin_carve(s, pos, player));
+    }
+
+    pub fn berry_pick(&self, s: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.each(|pl| pl.on_berry_pick(s, pos, player));
+    }
+
+    pub fn spawn_egg_use(&self, s: &Server, player: &PlayerInfo, kind: &str, pos: (f32, f32, f32)) -> bool {
+        self.cancellable(|pl| pl.on_spawn_egg_use(s, player, kind, pos))
     }
 
     pub fn jump(&self, s: &Server, p: &PlayerInfo) {
@@ -1952,6 +2147,29 @@ mod tests {
         fn on_view_distance(&self, _: &Server, _: &PlayerInfo, chunks: &mut i32) {
             *chunks = (*chunks).min(4);
         }
+    }
+
+    struct Peaceful;
+    impl Plugin for Peaceful {
+        fn name(&self) -> &str {
+            "peaceful"
+        }
+        fn on_pvp_attack(&self, _: &Server, _: &PlayerInfo, _: &PlayerInfo, _: f32) -> bool {
+            false
+        }
+        fn on_spawn_protection(&self, _: &Server, name: &str, _: (i32, i32, i32)) -> bool {
+            name != "Builder"
+        }
+    }
+
+    #[test]
+    fn pvp_off_and_spawn_protection_exceptions() {
+        let server = Server::new();
+        let plugins = Plugins::new(vec![Box::new(Peaceful)]);
+        let (a, b) = (crate::players::tests::sample(1), crate::players::tests::sample(2));
+        assert!(!plugins.pvp_attack(&server, &a, &b, 5.0));
+        assert!(!plugins.spawn_protection(&server, "Builder", (0, 64, 0)), "Builder may build at spawn");
+        assert!(plugins.spawn_protection(&server, "Steve", (0, 64, 0)));
     }
 
     #[test]

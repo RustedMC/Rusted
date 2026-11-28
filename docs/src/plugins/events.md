@@ -210,6 +210,31 @@ Mob positions are `(f32, f32, f32)`.
 | `on_block_explode(server, pos: (i32, i32, i32), block: &str)` | The `block` at `pos` is about to blow up from being used (a respawn anchor outside the Nether) | yes |
 | `on_sign_open(server, player: &PlayerInfo, pos: (i32, i32, i32))` | Player placed a sign at `pos` and its edit screen is opening |  |
 | `on_mob_expire(server, mob: i64, kind: &str)` | Mob `mob` (a wandering trader and its llamas) left when its time ran out |  |
+| `on_sapling_grow(server, pos: (i32, i32, i32), sapling: &str)` | A `sapling` at `pos` is about to grow into a tree | yes |
+| `on_block_ignite(server, player: &PlayerInfo, pos: (i32, i32, i32))` | Player is about to light a fire at `pos` with flint and steel | yes |
+| `on_button_press(server, player: &PlayerInfo, pos: (i32, i32, i32), block: &str)` | Player is pressing the `block` button at `pos` | yes |
+| `on_pressure_plate(server, pos: (i32, i32, i32), signal: i32)` | The pressure plate at `pos` went down, giving `signal` (1-15) |  |
+| `on_tripwire_trigger(server, pos: (i32, i32, i32))` | Something walked into the tripwire at `pos` |  |
+| `on_target_hit(server, pos: (i32, i32, i32), signal: i32)` | A projectile hit the target block at `pos`, giving `signal` (1-15) |  |
+| `on_sculk_sensor(server, pos: (i32, i32, i32), player: Option<i64>)` | The sculk sensor at `pos` heard something (`player` set when a player made it) |  |
+| `on_log_strip(server, pos: (i32, i32, i32), player: Option<i64>)` | A log or stem at `pos` was stripped with an axe |  |
+| `on_copper_wax(server, pos: (i32, i32, i32), player: Option<i64>, waxed: bool)` | Copper at `pos` was waxed (`waxed` true) or had its wax taken off |  |
+| `on_copper_scrape(server, pos: (i32, i32, i32), player: Option<i64>)` | Copper at `pos` was scraped back one weathering stage |  |
+| `on_path_create(server, pos: (i32, i32, i32), player: Option<i64>)` | A shovel turned the block at `pos` into a path |  |
+| `on_till(server, pos: (i32, i32, i32), player: Option<i64>)` | A hoe tilled the block at `pos` |  |
+| `on_campfire_extinguish(server, pos: (i32, i32, i32), player: Option<i64>)` | The campfire at `pos` was put out with a shovel |  |
+| `on_villager_restock(server, villager: i64)` | Villager `villager` restocked its trades |  |
+| `on_pvp_attack(server, attacker: &PlayerInfo, victim: &PlayerInfo, damage: f32)` | Player `attacker` is about to hit `victim` for `damage` | yes |
+| `on_mending_repair(server, player: &PlayerInfo, points: i32)` | Player's mending gear soaked up `points` of picked-up XP to repair itself |  |
+| `on_idle_kick(server, player: &PlayerInfo)` | Player is about to be kicked for being idle | yes |
+| `on_spawn_protection(server, name: &str, pos: (i32, i32, i32))` | Spawn protection is about to stop `name` building or breaking at `pos` | yes |
+| `on_hopper_move(server, from: (i32, i32, i32), to: (i32, i32, i32))` | A hopper moved an item from `from` to `to` |  |
+| `on_jukebox_play(server, pos: (i32, i32, i32), record: &str, player: Option<i64>)` | The jukebox at `pos` started playing `record` (like "record.cat") |  |
+| `on_note_tune(server, pos: (i32, i32, i32), player: Option<i64>)` | Player clicked the note block at `pos`, tuning it up a note |  |
+| `on_honey_harvest(server, pos: (i32, i32, i32), player: Option<i64>)` | The beehive or nest at `pos` was sheared for honeycomb |  |
+| `on_pumpkin_carve(server, pos: (i32, i32, i32), player: Option<i64>)` | The pumpkin at `pos` was carved with shears |  |
+| `on_berry_pick(server, pos: (i32, i32, i32), player: Option<i64>)` | Berries were picked from the bush or cave vines at `pos` |  |
+| `on_spawn_egg_use(server, player: &PlayerInfo, kind: &str, pos: (f32, f32, f32))` | Player is about to use a spawn egg for `kind` at `pos` | yes |
 
 ## Example: a no-grief zone
 

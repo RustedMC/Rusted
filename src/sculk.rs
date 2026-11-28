@@ -96,6 +96,7 @@ pub fn vibrate(server: &Server, at: (f32, f32, f32), by: Option<i64>) {
         fresh
     });
     for (p, _) in &woken {
+        server.plugins.sculk_sensor(server, *p, by);
         set_phase(server, *p, 1);
         relay(server, crate::packets::play_sound("block.sculk_sensor.clicking", (p.0 as f32 + 0.5, p.1 as f32 + 0.5, p.2 as f32 + 0.5)));
         // A sensor going off sets off shriekers near it.

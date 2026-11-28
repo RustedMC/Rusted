@@ -213,6 +213,31 @@ Each event is JSON. `e.kind()` tells you which one; player events have `player` 
 | `block_explode` | `pos`, `block` | cancellable |
 | `sign_open` | `pos` |  |
 | `mob_expire` | `mob`, `kind` |  |
+| `sapling_grow` | `pos`, `sapling` | cancellable |
+| `block_ignite` | `pos` | cancellable |
+| `button_press` | `pos`, `block` | cancellable |
+| `pressure_plate` | `pos`, `signal` |  |
+| `tripwire_trigger` | `pos` |  |
+| `target_hit` | `pos`, `signal` |  |
+| `sculk_sensor` | `pos`, `player` |  |
+| `log_strip` | `pos`, `player` |  |
+| `copper_wax` | `pos`, `player`, `waxed` |  |
+| `copper_scrape` | `pos`, `player` |  |
+| `path_create` | `pos`, `player` |  |
+| `till` | `pos`, `player` |  |
+| `campfire_extinguish` | `pos`, `player` |  |
+| `villager_restock` | `villager` |  |
+| `pvp_attack` | `attacker`, `victim`, `damage` | cancellable |
+| `mending_repair` | `points` |  |
+| `idle_kick` |  | cancellable |
+| `spawn_protection` | `name`, `pos` | cancellable |
+| `hopper_move` | `from`, `to` |  |
+| `jukebox_play` | `pos`, `record`, `player` |  |
+| `note_tune` | `pos`, `player` |  |
+| `honey_harvest` | `pos`, `player` |  |
+| `pumpkin_carve` | `pos`, `player` |  |
+| `berry_pick` | `pos`, `player` |  |
+| `spawn_egg_use` | `kind`, `pos` | cancellable |
 
 ## What a plugin can do
 

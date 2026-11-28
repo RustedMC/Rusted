@@ -913,6 +913,106 @@ impl Plugin for WasmPlugin {
         self.notify(server, json!({ "event": "mob_expire", "mob": mob, "kind": kind }));
     }
 
+    fn on_sapling_grow(&self, server: &Server, pos: (i32, i32, i32), sapling: &str) -> bool {
+        self.ask(server, json!({ "event": "sapling_grow", "pos": [pos.0, pos.1, pos.2], "sapling": sapling }))
+    }
+
+    fn on_block_ignite(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32)) -> bool {
+        self.ask(server, json!({ "event": "block_ignite", "player": player_json(player), "pos": [pos.0, pos.1, pos.2] }))
+    }
+
+    fn on_button_press(&self, server: &Server, player: &PlayerInfo, pos: (i32, i32, i32), block: &str) -> bool {
+        self.ask(server, json!({ "event": "button_press", "player": player_json(player), "pos": [pos.0, pos.1, pos.2], "block": block }))
+    }
+
+    fn on_pressure_plate(&self, server: &Server, pos: (i32, i32, i32), signal: i32) {
+        self.notify(server, json!({ "event": "pressure_plate", "pos": [pos.0, pos.1, pos.2], "signal": signal }));
+    }
+
+    fn on_tripwire_trigger(&self, server: &Server, pos: (i32, i32, i32)) {
+        self.notify(server, json!({ "event": "tripwire_trigger", "pos": [pos.0, pos.1, pos.2] }));
+    }
+
+    fn on_target_hit(&self, server: &Server, pos: (i32, i32, i32), signal: i32) {
+        self.notify(server, json!({ "event": "target_hit", "pos": [pos.0, pos.1, pos.2], "signal": signal }));
+    }
+
+    fn on_sculk_sensor(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.notify(server, json!({ "event": "sculk_sensor", "pos": [pos.0, pos.1, pos.2], "player": player }));
+    }
+
+    fn on_log_strip(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.notify(server, json!({ "event": "log_strip", "pos": [pos.0, pos.1, pos.2], "player": player }));
+    }
+
+    fn on_copper_wax(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>, waxed: bool) {
+        self.notify(server, json!({ "event": "copper_wax", "pos": [pos.0, pos.1, pos.2], "player": player, "waxed": waxed }));
+    }
+
+    fn on_copper_scrape(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.notify(server, json!({ "event": "copper_scrape", "pos": [pos.0, pos.1, pos.2], "player": player }));
+    }
+
+    fn on_path_create(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.notify(server, json!({ "event": "path_create", "pos": [pos.0, pos.1, pos.2], "player": player }));
+    }
+
+    fn on_till(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.notify(server, json!({ "event": "till", "pos": [pos.0, pos.1, pos.2], "player": player }));
+    }
+
+    fn on_campfire_extinguish(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.notify(server, json!({ "event": "campfire_extinguish", "pos": [pos.0, pos.1, pos.2], "player": player }));
+    }
+
+    fn on_villager_restock(&self, server: &Server, villager: i64) {
+        self.notify(server, json!({ "event": "villager_restock", "villager": villager }));
+    }
+
+    fn on_pvp_attack(&self, server: &Server, attacker: &PlayerInfo, victim: &PlayerInfo, damage: f32) -> bool {
+        self.ask(server, json!({ "event": "pvp_attack", "attacker": player_json(attacker), "victim": player_json(victim), "damage": damage }))
+    }
+
+    fn on_mending_repair(&self, server: &Server, player: &PlayerInfo, points: i32) {
+        self.notify(server, json!({ "event": "mending_repair", "player": player_json(player), "points": points }));
+    }
+
+    fn on_idle_kick(&self, server: &Server, player: &PlayerInfo) -> bool {
+        self.ask(server, json!({ "event": "idle_kick", "player": player_json(player) }))
+    }
+
+    fn on_spawn_protection(&self, server: &Server, name: &str, pos: (i32, i32, i32)) -> bool {
+        self.ask(server, json!({ "event": "spawn_protection", "name": name, "pos": [pos.0, pos.1, pos.2] }))
+    }
+
+    fn on_hopper_move(&self, server: &Server, from: (i32, i32, i32), to: (i32, i32, i32)) {
+        self.notify(server, json!({ "event": "hopper_move", "from": [from.0, from.1, from.2], "to": [to.0, to.1, to.2] }));
+    }
+
+    fn on_jukebox_play(&self, server: &Server, pos: (i32, i32, i32), record: &str, player: Option<i64>) {
+        self.notify(server, json!({ "event": "jukebox_play", "pos": [pos.0, pos.1, pos.2], "record": record, "player": player }));
+    }
+
+    fn on_note_tune(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.notify(server, json!({ "event": "note_tune", "pos": [pos.0, pos.1, pos.2], "player": player }));
+    }
+
+    fn on_honey_harvest(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.notify(server, json!({ "event": "honey_harvest", "pos": [pos.0, pos.1, pos.2], "player": player }));
+    }
+
+    fn on_pumpkin_carve(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.notify(server, json!({ "event": "pumpkin_carve", "pos": [pos.0, pos.1, pos.2], "player": player }));
+    }
+
+    fn on_berry_pick(&self, server: &Server, pos: (i32, i32, i32), player: Option<i64>) {
+        self.notify(server, json!({ "event": "berry_pick", "pos": [pos.0, pos.1, pos.2], "player": player }));
+    }
+
+    fn on_spawn_egg_use(&self, server: &Server, player: &PlayerInfo, kind: &str, pos: (f32, f32, f32)) -> bool {
+        self.ask(server, json!({ "event": "spawn_egg_use", "player": player_json(player), "kind": kind, "pos": [pos.0, pos.1, pos.2] }))
+    }
+
 }
 
 #[cfg(test)]

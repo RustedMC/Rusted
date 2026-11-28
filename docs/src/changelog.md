@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.14
+
+- 25 more plugin events (188 now):
+  - Redstone: `on_button_press`, `on_pressure_plate`, `on_tripwire_trigger`, `on_target_hit`, `on_sculk_sensor`, `on_hopper_move`
+  - Tools on blocks: `on_block_ignite`, `on_log_strip`, `on_copper_wax`, `on_copper_scrape`, `on_path_create`, `on_till`, `on_campfire_extinguish`, `on_honey_harvest`, `on_pumpkin_carve`, `on_berry_pick`, `on_jukebox_play`, `on_note_tune`
+  - Players: `on_pvp_attack` (cancel it for PvP-free players or areas), `on_mending_repair`, `on_idle_kick`, `on_spawn_protection` (let chosen players build at spawn), `on_spawn_egg_use`
+  - World: `on_sapling_grow` (stops the whole tree), `on_villager_restock`
+- 7 of them can be cancelled. Runtime `.wasm` plugins get them all.
+
 ## 0.6.13
 
 - 25 more plugin events (163 now):

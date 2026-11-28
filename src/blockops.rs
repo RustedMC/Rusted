@@ -137,6 +137,18 @@ pub(crate) fn apply_use(server: &players::Server, id: i64, p: (i32, i32, i32), o
         Some("respawn_anchor.charge") => server.plugins.anchor_charge(server, p, by),
         Some("block.end_portal_frame.fill") => server.plugins.end_portal_fill(server, p, by),
         Some(s) if s.starts_with("block.composter") => server.plugins.composter_use(server, p, by),
+        Some("use.wood") => server.plugins.log_strip(server, p, by),
+        Some("copper.wax.on") => server.plugins.copper_wax(server, p, by, true),
+        Some("copper.wax.off") => server.plugins.copper_wax(server, p, by, false),
+        Some("scrape") => server.plugins.copper_scrape(server, p, by),
+        Some("use.grass") => server.plugins.path_create(server, p, by),
+        Some("use.gravel") => server.plugins.till(server, p, by),
+        Some("random.fizz") => server.plugins.campfire_extinguish(server, p, by),
+        Some("block.beehive.shear") => server.plugins.honey_harvest(server, p, by),
+        Some("block.pumpkin.carve") => server.plugins.pumpkin_carve(server, p, by),
+        Some("block.sweet_berry_bush.pick" | "pick_berries.cave_vines") => server.plugins.berry_pick(server, p, by),
+        Some(s) if s.starts_with("record.") => server.plugins.jukebox_play(server, p, s, by),
+        Some(s) if s.starts_with("note.") && by.is_some() => server.plugins.note_tune(server, p, by),
         _ => {}
     }
     if o.eat.is_some() {

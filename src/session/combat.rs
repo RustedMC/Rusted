@@ -179,6 +179,9 @@ impl Session {
         // Sprinting counts as one more Knockback level.
         let push = 0.3 + 0.5 * (enchant::level(&data, enchant::KNOCKBACK) + self.sprinting as i16) as f32;
         let knock = (dx / len * push, push.min(0.4), dz / len * push);
+        if !self.server.plugins.pvp_attack(&self.server, &me, &them, dmg) {
+            return;
+        }
         let _ = self.server.events.send(crate::players::Event::Damage { to: target, damage: crate::health::Damage::Mob(dmg, intern(&me.name)), knock });
         // Thorns on their armor hurt us back.
         let armor: Vec<Vec<u8>> = crate::players::EQUIPMENT.lock().as_ref().and_then(|e| e.get(&target)).map(|e| e.armor.iter().flatten().map(|s| s.item.user_data_buffer.clone()).collect()).unwrap_or_default();

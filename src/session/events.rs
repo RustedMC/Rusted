@@ -83,7 +83,7 @@ impl Session {
         }
         self.idle += 1;
         let limit = config::get().player_idle_timeout * 60;
-        if limit > 0 && self.idle >= limit && !commands::is_op(&self.name) {
+        if limit > 0 && self.idle >= limit && !commands::is_op(&self.name) && self.server.get(self.id).is_none_or(|me| self.server.plugins.idle_kick(&self.server, &me)) {
             self.server.kick(self.id, "You were idle for too long");
         }
         // An elytra wears 1 durability per second of gliding (vanilla).
@@ -365,6 +365,9 @@ impl Session {
                 if points > 0 && survival_like(&self.mode) {
                     let left = self.inv.mend(points, self.selected_slot as usize);
                     if left != points {
+                        if let Some(me) = self.server.get(self.id) {
+                            self.server.plugins.mending_repair(&self.server, &me, points - left);
+                        }
                         let _ = self.conn.send(&[self.inv.content_packet()]).await;
                     }
                     points = left;

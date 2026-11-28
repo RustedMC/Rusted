@@ -428,7 +428,9 @@ impl Containers {
                     _ => None,
                 };
                 if let Some(to) = to {
-                    self.move_one(h, 0..5, target, to);
+                    if self.move_one(h, 0..5, target, to) {
+                        crate::plugin::later(crate::plugin::Later::Hopper(h, target));
+                    }
                 }
             }
             let above = (h.0, h.1 + 1, h.2);
@@ -441,7 +443,9 @@ impl Containers {
                     _ => None,
                 };
                 if let Some(from) = from {
-                    self.move_one(above, from, h, 0..5);
+                    if self.move_one(above, from, h, 0..5) {
+                        crate::plugin::later(crate::plugin::Later::Hopper(above, h));
+                    }
                 }
             }
         }
