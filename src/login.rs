@@ -95,7 +95,7 @@ pub(crate) async fn handle_login(unknown_conn: Connection<Unknown>, server: play
         Some((players::Kick::Kicked, "You are banned from this server".to_string()))
     } else if *lists.whitelist_on.lock() && !lists.whitelist.contains(&display_name) && !lists.ops.contains(&display_name) {
         Some((players::Kick::Kicked, "You are not white-listed on this server".to_string()))
-    } else if server.find_by_name(&display_name).is_none() && server.all().len() >= config::get().max_players as usize {
+    } else if server.find_by_name(&display_name).is_none() && server.all().len() >= crate::commands::max_players() as usize {
         Some((players::Kick::Full, "The server is full".to_string()))
     } else {
         server.plugins.pre_login(&server, &display_name, &xuid).map(|m| (players::Kick::Kicked, m))

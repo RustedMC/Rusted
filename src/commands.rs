@@ -253,6 +253,10 @@ fn target_index(cmd: &str, args: &[&str]) -> Option<usize> {
         "gamemode" | "gm" => Some(2),
         "xp" | "playsound" => Some(2),
         "kill" | "clear" | "effect" | "enchant" | "title" | "titleraw" | "tellraw" | "stopsound" | "damage" | "spawnpoint" | "camerashake" | "transfer" | "give" => Some(1),
+        "clearspawnpoint" | "hud" | "fog" | "playanimation" if args.len() > 1 => Some(1),
+        "inputpermission" if matches!(args.get(1), Some(&"set" | &"query")) => Some(2),
+        "replaceitem" if args.get(1) == Some(&"entity") => Some(2),
+        "loot" if args.get(1) == Some(&"give") => Some(2),
         // /tp only has a target if there's a destination after it
         "tp" | "teleport" if args.len() == 3 || args.len() == 5 => Some(1),
         _ => None,
@@ -395,6 +399,8 @@ pub fn difficulty_packet(d: u32) -> crate::Protocol {
 
 /// Op-only commands (console can run them too).
 pub const OP_ONLY: &[&str] = &[
+    "clearspawnpoint", "fog", "hud", "inputpermission", "loot", "music", "particle", "playanimation", "recipe", "replaceitem", "schedule",
+    "setmaxplayers", "spreadplayers", "testforblocks", "tickingarea",
     "kick", "op", "deop", "ban", "unban", "pardon", "ban-ip", "banip", "unban-ip", "pardon-ip", "banlist", "whitelist", "say", "weather", "difficulty", "gamemode", "gm",
     "tp", "teleport", "give", "summon", "effect", "enchant", "xp", "title", "titleraw", "tellraw", "playsound", "stopsound", "camerashake",
     "transfer", "damage", "setblock", "fill", "clone", "testfor", "locate", "execute", "function", "mv", "multiverse", "testforblock", "toggledownfall", "daylock", "alwaysday", "scoreboard", "time", "gamerule", "kill", "clear", "spawnpoint", "setworldspawn", "stop", "status", "perf",
@@ -402,6 +408,21 @@ pub const OP_ONLY: &[&str] = &[
 
 /// (name, description) for everything we advertise and show in /help.
 pub const HELP: &[(&str, &str)] = &[
+    ("clearspawnpoint", "Removes a player's spawn point"),
+    ("fog", "Adds or removes fog settings for a player"),
+    ("hud", "Hides or shows parts of a player's screen"),
+    ("inputpermission", "Turns a player's camera or movement controls on or off"),
+    ("loot", "Gives or drops the items from a loot table"),
+    ("music", "Plays or stops music for everyone"),
+    ("particle", "Shows a particle effect"),
+    ("playanimation", "Plays an animation on a player"),
+    ("recipe", "Unlocks or locks recipes"),
+    ("replaceitem", "Puts an item in a player's inventory slot"),
+    ("schedule", "Runs a function after a delay"),
+    ("setmaxplayers", "Sets how many players can join"),
+    ("spreadplayers", "Teleports players to random spots in an area"),
+    ("testforblocks", "Checks whether two areas have the same blocks"),
+    ("tickingarea", "Keeps chunks ticking with no players near"),
     ("ban", "Bans a player"),
     ("ban-ip", "Bans an IP address, or the address a player joined from"),
     ("locate", "Finds the nearest structure"),
@@ -516,6 +537,171 @@ pub fn spawn_of(name: &str, server: &Server) -> (f32, f32, f32) {
     own.filter(|p| crate::dims::of_f(p.1) == crate::dims::OVERWORLD).unwrap_or_else(|| world_spawn(server))
 }
 
+/// /setmaxplayers, until the next restart (0 = the max-players setting).
+pub static MAX_PLAYERS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+pub fn max_players() -> u32 {
+    match MAX_PLAYERS.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => crate::config::get().max_players,
+        n => n,
+    }
+}
+
+/// /clearspawnpoint: back to the world spawn.
+pub fn clear_spawn(player: &str) {
+    let mut s = spawns().lock();
+    s.remove(&player.to_lowercase());
+    let text: String = s.iter().map(|(n, p)| format!("{n} {} {} {}\n", p.0, p.1, p.2)).collect();
+    if let Err(e) = std::fs::write(spawn_file(), text) {
+        println!("failed to save spawn points: {e}");
+    }
+}
+
+/// A /tickingarea: chunks that keep random-ticking (crops grow, leaves decay) with nobody near.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TickingArea {
+    pub name: String,
+    /// Chunk corners, inclusive.
+    pub min: (i32, i32),
+    pub max: (i32, i32),
+}
+
+fn ticking_file() -> std::path::PathBuf {
+    std::path::Path::new("worlds").join(&crate::config::get().level_name).join("tickingareas.txt")
+}
+
+fn ticking_areas() -> &'static Mutex<Vec<TickingArea>> {
+    static A: OnceLock<Mutex<Vec<TickingArea>>> = OnceLock::new();
+    A.get_or_init(|| {
+        let text = std::fs::read_to_string(ticking_file()).unwrap_or_default();
+        Mutex::new(
+            text.lines()
+                .filter_map(|l| {
+                    let p: Vec<&str> = l.split_whitespace().collect();
+                    let n = |i: usize| p.get(i)?.parse::<i32>().ok();
+                    Some(TickingArea { name: p.first()?.to_string(), min: (n(1)?, n(2)?), max: (n(3)?, n(4)?) })
+                })
+                .collect(),
+        )
+    })
+}
+
+fn save_ticking(areas: &[TickingArea]) {
+    let text: String = areas.iter().map(|a| format!("{} {} {} {} {}\n", a.name, a.min.0, a.min.1, a.max.0, a.max.1)).collect();
+    if let Err(e) = std::fs::write(ticking_file(), text) {
+        println!("failed to save ticking areas: {e}");
+    }
+}
+
+/// Every chunk inside a ticking area.
+pub fn ticking_chunks() -> Vec<(i32, i32)> {
+    let areas = ticking_areas().lock();
+    let mut out = Vec::new();
+    for a in areas.iter() {
+        for x in a.min.0..=a.max.0 {
+            for z in a.min.1..=a.max.1 {
+                out.push((x, z));
+            }
+        }
+    }
+    out
+}
+
+/// Vanilla limits: 10 areas, 100 chunks each.
+const MAX_TICKING_AREAS: usize = 10;
+const MAX_TICKING_CHUNKS: i64 = 100;
+
+fn tickingarea(server: &Server, sender: &str, args: &[&str]) -> String {
+    let here = server.find_by_name(sender).and_then(|id| server.get(id)).map_or((0.0, 0.0, 0.0), |p| (p.pos.0, p.pos.1 - 1.62, p.pos.2));
+    let chunk = |p: (f32, f32, f32)| ((p.0.floor() as i32) >> 4, (p.2.floor() as i32) >> 4);
+    let mut areas = ticking_areas().lock();
+    let add = |areas: &mut Vec<TickingArea>, min: (i32, i32), max: (i32, i32), name: Option<&str>| -> String {
+        if areas.len() >= MAX_TICKING_AREAS {
+            return format!("§cThere are already {MAX_TICKING_AREAS} ticking areas");
+        }
+        let (min, max) = ((min.0.min(max.0), min.1.min(max.1)), (min.0.max(max.0), min.1.max(max.1)));
+        let n = (max.0 - min.0 + 1) as i64 * (max.1 - min.1 + 1) as i64;
+        if n > MAX_TICKING_CHUNKS {
+            return format!("§cA ticking area can cover at most {MAX_TICKING_CHUNKS} chunks ({n} asked)");
+        }
+        let name = name.map(str::to_string).unwrap_or_else(|| format!("Area{}", areas.len() + 1));
+        if areas.iter().any(|a| a.name.eq_ignore_ascii_case(&name)) {
+            return format!("§cA ticking area named {name} already exists");
+        }
+        areas.push(TickingArea { name: name.clone(), min, max });
+        save_ticking(areas);
+        format!("Added ticking area {name} covering {n} chunks")
+    };
+    match args {
+        ["add", "circle", x, y, z, r, rest @ ..] => match (crate::cmdargs::coords(&[x, y, z], here), r.parse::<i32>()) {
+            (Some(c), Ok(r)) if (1..=4).contains(&r) => {
+                let (cx, cz) = chunk(c);
+                add(&mut areas, (cx - r, cz - r), (cx + r, cz + r), rest.first().copied())
+            }
+            _ => "§cUse /tickingarea add circle <x y z> <radius 1-4> [name]".into(),
+        },
+        ["add", x1, y1, z1, x2, y2, z2, rest @ ..] => match (crate::cmdargs::coords(&[x1, y1, z1], here), crate::cmdargs::coords(&[x2, y2, z2], here)) {
+            (Some(a), Some(b)) => add(&mut areas, chunk(a), chunk(b), rest.first().copied()),
+            _ => "§cUse /tickingarea add <from> <to> [name]".into(),
+        },
+        ["remove_all"] => {
+            let n = areas.len();
+            areas.clear();
+            save_ticking(&areas);
+            format!("Removed {n} ticking areas")
+        }
+        ["remove", x, y, z] if crate::cmdargs::coords(&[x, y, z], here).is_some() => {
+            let (cx, cz) = chunk(crate::cmdargs::coords(&[x, y, z], here).unwrap());
+            let before = areas.len();
+            areas.retain(|a| !(a.min.0..=a.max.0).contains(&cx) || !(a.min.1..=a.max.1).contains(&cz));
+            save_ticking(&areas);
+            format!("Removed {} ticking areas", before - areas.len())
+        }
+        ["remove", name] => {
+            let before = areas.len();
+            areas.retain(|a| !a.name.eq_ignore_ascii_case(name));
+            save_ticking(&areas);
+            if areas.len() < before { format!("Removed ticking area {name}") } else { format!("§cNo ticking area named {name}") }
+        }
+        ["list", ..] => {
+            if areas.is_empty() {
+                "No ticking areas".into()
+            } else {
+                areas.iter().map(|a| format!("- {}: chunks {} {} to {} {}", a.name, a.min.0, a.min.1, a.max.0, a.max.1)).collect::<Vec<_>>().join("\n")
+            }
+        }
+        _ => "§cUse /tickingarea add|remove|remove_all|list".into(),
+    }
+}
+
+/// /music: plays to everyone (Bedrock's /music has no target).
+fn music(server: &Server, args: &[&str]) -> String {
+    use bedrock::protocol::v712::packets::StopSoundPacket;
+    let stop = || crate::Protocol::StopSoundPacket(Box::new(StopSoundPacket { sound_name: String::new(), stop_all_sounds: false, stop_music_legacy: true }));
+    match args {
+        ["play" | "queue", track, rest @ ..] => {
+            let volume: f32 = rest.first().and_then(|v| v.parse().ok()).unwrap_or(1.0);
+            if args[0] == "play" {
+                let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(stop()) });
+            }
+            for p in server.all() {
+                let mut pkt = crate::packets::play_sound_pitch(track, p.pos, 1.0);
+                if let crate::Protocol::PlaySoundPacket(s) = &mut pkt {
+                    s.volume = volume.clamp(0.01, 1.0);
+                }
+                let _ = server.events.send(Event::Packet { to: p.id, packet: Box::new(pkt) });
+            }
+            format!("Now playing {track}")
+        }
+        ["stop", ..] => {
+            let _ = server.events.send(Event::Relay { from: 0, packet: Box::new(stop()) });
+            "Stopped the music".into()
+        }
+        ["volume", _] => "Music volume follows each player's own settings".into(),
+        _ => "§cUse /music play|queue <track> [volume] | stop".into(),
+    }
+}
+
 pub fn started() -> std::time::Instant {
     static T: OnceLock<std::time::Instant> = OnceLock::new();
     *T.get_or_init(std::time::Instant::now)
@@ -528,8 +714,20 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
         ["scoreboard", rest @ ..] => crate::ui::command(server, sender, rest),
         ["list"] => {
             let names: Vec<String> = server.all().into_iter().map(|p| p.name).collect();
-            format!("There are {}/{} players online:\n{}", names.len(), crate::config::get().max_players, names.join(", "))
+            format!("There are {}/{} players online:\n{}", names.len(), max_players(), names.join(", "))
         }
+        ["setmaxplayers", n] => match n.parse::<u32>() {
+            Ok(n) => {
+                // Vanilla clamps to 1..=30; dedicated servers here allow more.
+                let n = n.clamp(1, 1000);
+                MAX_PLAYERS.store(n, std::sync::atomic::Ordering::Relaxed);
+                format!("Set max players to {n}")
+            }
+            Err(_) => "§cUse /setmaxplayers <number>".into(),
+        },
+        ["tickingarea", rest @ ..] => tickingarea(server, sender, rest),
+        ["recipe", "give" | "take", ..] => "All recipes are always unlocked on this server".into(),
+        ["music", rest @ ..] => music(server, rest),
         ["say", words @ ..] if !words.is_empty() => {
             server.broadcast(&format!("[{sender}] {}", words.join(" ")));
             String::new()
@@ -680,7 +878,7 @@ pub fn run(server: &Server, sender: &str, args: &[&str]) -> Option<String> {
                 up / 60 % 60,
                 up % 60,
                 server.all().len(),
-                crate::config::get().max_players,
+                max_players(),
                 server.world.edited_chunks(),
             )
         }

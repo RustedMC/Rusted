@@ -9,6 +9,7 @@ mod held;
 mod input;
 mod interact;
 mod state;
+mod vanilla_cmds;
 mod windows;
 
 pub(crate) use state::*;

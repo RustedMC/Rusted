@@ -369,3 +369,29 @@ mod tests {
         assert!(take((1, 2, 3), 27).is_none());
     }
 }
+
+/// One roll of a chest loot table by name (`/loot`), e.g. "village" or
+/// "chests/simple_dungeon"-style paths ending in a known table. None for unknown tables.
+pub fn roll_named(name: &str) -> Option<Vec<Stack>> {
+    let key = name.rsplit('/').next().unwrap_or(name);
+    let pools = table(key).or_else(|| table(key.trim_end_matches(|c: char| c == '_' || c.is_ascii_digit())))?;
+    Some(roll(pools, 27, now_nanos()).into_iter().flatten().collect())
+}
+
+/// Loot table names `/loot` knows.
+pub const NAMES: &[&str] = &[
+    "desert_pyramid", "jungle_temple", "mineshaft", "stronghold", "village", "igloo", "shipwreck", "ocean_ruin",
+    "pillager_outpost", "woodland_mansion", "ancient_city", "trial_chambers", "ruined_portal", "nether_fortress", "bastion", "end_city",
+];
+
+#[cfg(test)]
+mod roll_tests {
+    #[test]
+    fn every_listed_table_rolls() {
+        for n in super::NAMES {
+            assert!(super::roll_named(n).is_some(), "{n}");
+        }
+        assert!(super::roll_named("chests/village").is_some());
+        assert!(super::roll_named("nope").is_none());
+    }
+}

@@ -23,7 +23,7 @@ fn builtin(name: &str, server: &Server, p: &PlayerInfo) -> Option<String> {
     Some(match name {
         "player" => p.name.clone(),
         "online" => server.all().len().to_string(),
-        "max" => crate::config::get().max_players.to_string(),
+        "max" => crate::commands::max_players().to_string(),
         "x" => format!("{:.0}", p.pos.0.floor()),
         "y" => format!("{:.0}", (p.pos.1 - 1.62).floor()),
         "z" => format!("{:.0}", p.pos.2.floor()),

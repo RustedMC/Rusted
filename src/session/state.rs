@@ -78,6 +78,10 @@ pub(crate) struct Session {
     pub mining_since: (Instant, bool),
     /// Last mining hit sound, so it plays every 4 ticks.
     pub mining_hit: Instant,
+    /// /fog stack: (name, fog id), bottom first.
+    pub fog: Vec<(String, String)>,
+    /// /inputpermission: disabled ClientInputLocks bits.
+    pub input_locks: u32,
     /// Going down since the last movement packet (a hit now is a critical hit).
     pub falling: bool,
     /// Swimming, crawling: either shrinks the hitbox to 0.6 so 1x1 gaps fit.
@@ -188,6 +192,8 @@ impl Session {
             mining: None,
             mining_since: (Instant::now(), false),
             mining_hit: Instant::now(),
+            fog: Vec::new(),
+            input_locks: 0,
             falling: false,
             swimming: false,
             crawling: false,

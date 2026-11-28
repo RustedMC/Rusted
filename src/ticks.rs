@@ -20,11 +20,24 @@ pub(crate) fn random_ticks(server: &players::Server, rng: &mut u64) {
         })
     };
     let mut seen = std::collections::HashSet::new();
+    // Sub-chunks near each player, then every sub-chunk inside a /tickingarea.
+    let mut subs = Vec::new();
     for p in server.all() {
         let (cx, cz, sy) = ((p.pos.0.floor() as i32) >> 4, (p.pos.2.floor() as i32) >> 4, (p.pos.1.floor() as i32) >> 4);
         for x in cx - 3..=cx + 3 {
             for z in cz - 3..=cz + 3 {
                 for s in sy - 2..=sy + 2 {
+                    subs.push((x, s, z));
+                }
+            }
+        }
+    }
+    for (x, z) in commands::ticking_chunks() {
+        for s in -4..20 {
+            subs.push((x, s, z));
+        }
+    }
+    for (x, s, z) in subs {
                     if !(-4..20).contains(&s) || !seen.insert((x, s, z)) {
                         continue;
                     }
@@ -51,9 +64,6 @@ pub(crate) fn random_ticks(server: &players::Server, rng: &mut u64) {
                             }
                         }
                     }
-                }
-            }
-        }
     }
 }
 

@@ -47,7 +47,7 @@ impl Session {
 
     pub async fn run_command(&mut self, line: String, reply_to: Option<i64>) {
         let mut args: Vec<&str> = line.split_whitespace().collect();
-        if args.len() > 1 && args[1] == "@s" && matches!(args[0], "kill" | "clear" | "give" | "spawnpoint" | "tp" | "teleport" | "title" | "titleraw" | "tellraw" | "stopsound" | "damage" | "camerashake" | "transfer") {
+        if args.len() > 1 && args[1] == "@s" && matches!(args[0], "kill" | "clear" | "give" | "spawnpoint" | "tp" | "teleport" | "title" | "titleraw" | "tellraw" | "stopsound" | "damage" | "camerashake" | "transfer" | "clearspawnpoint") {
             args.remove(1);
         }
         let here = self.server.get(self.id).map_or((0.0, 0.0, 0.0), |p| (p.pos.0, p.pos.1 - 1.62, p.pos.2));
@@ -63,6 +63,8 @@ impl Session {
         } else if let Some(r) = self.player_command(&args, here).await {
             r
         } else if let Some(r) = self.world_command(&args, here) {
+            r
+        } else if let Some(r) = self.vanilla_command(&args, here).await {
             r
         } else {
             self.misc_command(&args, here).await
