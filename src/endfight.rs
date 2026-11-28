@@ -95,6 +95,12 @@ fn spawn_shulkers(server: &Server) {
 
 /// Dragon died. Opens the exit portal, egg on the first kill, next gateway,
 /// and XP for the killer (12000 first time, 500 after).
+/// Where the dragon sits when it lands: on top of the exit portal's bedrock column.
+pub fn perch_point() -> Option<(f32, f32, f32)> {
+    let end = END.get()?;
+    Some((0.5, (dims::base(dims::END) + end.exit_portal_y() + 5) as f32, 0.5))
+}
+
 pub fn dragon_died(server: &Server, killer: Option<i64>) {
     let (killed, gateways) = state();
     let Some(end) = END.get() else { return };

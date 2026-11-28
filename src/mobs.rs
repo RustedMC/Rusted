@@ -435,6 +435,8 @@ pub struct Mob {
     lit: bool,
     /// A creeper struck by lightning: bigger blast, blue glow (PNX EntityCreeper.setPowered).
     charged: bool,
+    /// Ender dragon: ticks left sitting on the exit portal (PNX DragonPhase landing/sitting).
+    perch: u32,
     /// Mob ticks until it leaves on its own (wandering traders and their llamas), 0 = never.
     lifetime: u32,
     /// On a lead: who holds it (a player, or the llama ahead in a caravan).
@@ -911,6 +913,11 @@ fn event(id: i64, e: bedrock::protocol::v975::enums::ActorEvent) -> Protocol {
     }))
 }
 
+/// About once a minute of circling the dragon decides to land.
+const PERCH_CHANCE: u32 = 60 * TPS;
+/// How long it sits on the portal.
+const PERCH_TICKS: u32 = 20 * TPS;
+
 /// Blocks mobs collide with.
 fn solid(b: i32) -> bool {
     blocks::is_solid(b) || blocks::is_leaves(b)
@@ -985,7 +992,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: kind.max_health(), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: if baby { GROW } else { 0 }, baby: if baby { GROW } else { 0 },
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, passenger: None, steered: None, saddled: false, kept: false, lit: false, charged: false, lifetime: 0, leash: None, draw: 0, aim: 0, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
+            color: if kind == Kind::Sheep { sheep_color(self.rand()) } else { 0 }, sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, passenger: None, steered: None, saddled: false, kept: false, lit: false, charged: false, perch: 0, lifetime: 0, leash: None, draw: 0, aim: 0, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
         };
         let size = [1u8, 2, 4][(self.rand() % 3) as usize];
         if kind.spec().splits {
@@ -1013,7 +1020,7 @@ impl Mobs {
             id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health: (size as f32).powi(2), on_ground: false, target: None, panic: 0, dying: 0,
             sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: 0,
             aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner: None, sitting: false,
-            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, passenger: None, steered: None, saddled: false, kept: false, lit: false, charged: false, lifetime: 0, leash: None, draw: 0, aim: 0, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
+            color: size.max(1), sheared: false, regrow: 0, hurt_at: None, fire: 0, job: None, weak: 0, curing: 0, captain: false, rider: None, passenger: None, steered: None, saddled: false, kept: false, lit: false, charged: false, perch: 0, lifetime: 0, leash: None, draw: 0, aim: 0, temper: 0, buck: 0, push: None, home: None, brain: Default::default(),
         };
         broadcast(server, add_packet(&m));
         if let Some(p) = held_packet(&m) {
@@ -2264,8 +2271,25 @@ impl Mobs {
         let mut target = m.kind.hostile().then(|| {
             server.all().into_iter().filter(|p| targets.contains(&p.id)).map(|p| (dist2(p.pos, m.pos), p)).filter(|(d, _)| *d < reach * reach).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, p)| p)
         }).flatten();
-        if m.kind == Kind::EnderDragon && m.attack_cd > 0 {
-            // Circles the main island between dives. TODO: perch on the portal (PNX phase manager)
+        // Now and then, while circling, the dragon lands on the exit portal and sits there for
+        // 20 s, where it can be hit up close (PNX DragonPhase landing approach and sitting).
+        if m.kind == Kind::EnderDragon && m.perch == 0 && m.attack_cd > 0 && self.rand().is_multiple_of(PERCH_CHANCE) {
+            m.perch = PERCH_TICKS;
+        }
+        if m.kind == Kind::EnderDragon && m.perch > 0 && let Some(spot) = crate::endfight::perch_point() {
+            m.perch -= 1;
+            target = None;
+            m.path = vec![(spot.0.floor() as i32, spot.1.floor() as i32, spot.2.floor() as i32)];
+            if dist2(spot, m.pos) < 4.0 {
+                // Landed: sit still facing the nearest player.
+                m.pos = spot;
+                m.vel = (0.0, 0.0, 0.0);
+                if let Some(p) = server.all().into_iter().min_by(|a, b| dist2(a.pos, m.pos).total_cmp(&dist2(b.pos, m.pos))) {
+                    m.head_yaw = (-(p.pos.0 - m.pos.0)).atan2(p.pos.2 - m.pos.2).to_degrees();
+                }
+            }
+        } else if m.kind == Kind::EnderDragon && m.attack_cd > 0 {
+            // Circles the main island between dives.
             target = None;
             let base = crate::dims::base(crate::dims::END) as f32;
             let a = (m.attack_cd as f32 * 0.03) + m.id as f32;
@@ -3962,7 +3986,7 @@ impl Mobs {
                         id, kind, pos, vel: (0.0, 0.0, 0.0), yaw, health, on_ground: false, target: None, panic: 0, dying: 0,
                         sent: (pos, yaw, yaw), head_yaw: yaw, path: vec![], love: 0, cooldown: 0, baby: baby.parse().unwrap_or(0),
                         aggro: None, attack_cd: 0, fuse: 0, burning: false, prey: None, owner, sitting: *sitting == "1",
-                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false, rider: None, passenger: None, steered: None, saddled, kept, lit: false, charged: false, lifetime: 0, leash: None, draw: 0, aim: 0, temper, buck: 0, push: None, home, brain: Default::default(),
+                        color: color.parse().unwrap_or(0).min(15), sheared: *sheared == "1", regrow: if *sheared == "1" { 3 * 60 * TPS } else { 0 }, hurt_at: None, fire: 0, job: job.clone(), weak: 0, curing: 0, captain: false, rider: None, passenger: None, steered: None, saddled, kept, lit: false, charged: false, perch: 0, lifetime: 0, leash: None, draw: 0, aim: 0, temper, buck: 0, push: None, home, brain: Default::default(),
                     });
                     if let Some(site) = job.and_then(|j| j.site) {
                         crate::villagers::claim(site, id);
