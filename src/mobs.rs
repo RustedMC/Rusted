@@ -1812,6 +1812,7 @@ impl Mobs {
                     let pos = m.pos;
                     out.push(sound("mob.zombie.unfect", pos));
                     let nid = self.spawn(server, Kind::Villager, pos);
+                    crate::plugin::later(crate::plugin::Later::Transform(id, Kind::ZombieVillager.identifier(), Kind::Villager.identifier(), nid));
                     if let Some(p) = CURED_BY.lock().remove(&id) {
                         CURED_BY.lock().insert(nid, p);
                     }
@@ -2897,6 +2898,7 @@ impl Mobs {
     }
 
     fn shoot(&self, server: &Server, m: &Mob, at: (f32, f32, f32), out: &mut Vec<Protocol>) {
+        crate::plugin::later(crate::plugin::Later::MobShoot(m.id, m.kind.identifier()));
         let from = (m.pos.0, m.pos.1 + 1.5, m.pos.2);
         let (dx, dy, dz) = (at.0 - from.0, at.1 - from.1, at.2 - from.2);
         let horiz = (dx * dx + dz * dz).sqrt().max(0.01);

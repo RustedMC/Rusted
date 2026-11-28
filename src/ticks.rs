@@ -345,6 +345,9 @@ pub(crate) fn hopper_ticks(server: &players::Server) {
 /// Hurts anyone within 3 blocks and starts a fire.
 /// A lightning bolt at `at`: the flash, thunder, and damage to players within 3 blocks.
 pub(crate) fn strike(server: &players::Server, at: (f32, f32, f32)) {
+    if !server.plugins.lightning(server, at) {
+        return;
+    }
     let bolt = players::next_id();
     let add = Protocol::AddActorPacket(Box::new(bedrock::protocol::v2225::packets::AddActorPacket {
         target_actor_id: ActorUniqueID(bolt),

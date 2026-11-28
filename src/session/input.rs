@@ -234,9 +234,13 @@ impl Session {
             return END;
         }
         let loaded = std::mem::take(&mut self.chunks.just_sent);
-        if !loaded.is_empty() && let Some(me) = self.server.get(self.id) {
+        let dropped = std::mem::take(&mut self.chunks.just_dropped);
+        if (!loaded.is_empty() || !dropped.is_empty()) && let Some(me) = self.server.get(self.id) {
             for c in loaded {
                 self.server.plugins.chunk_load(&self.server, &me, c);
+            }
+            for c in dropped {
+                self.server.plugins.chunk_unload(&self.server, &me, c);
             }
         }
         GO

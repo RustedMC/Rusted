@@ -556,7 +556,7 @@ fn strip_colors(s: &str) -> String {
 impl Default for ChunkTracker {
     fn default() -> Self {
         let (ready_tx, ready) = tokio::sync::mpsc::unbounded_channel();
-        Self { sent: Default::default(), center: None, radius: VIEW_RADIUS.min(config::get().view_distance), pending: Default::default(), last_batch: None, just_sent: vec![], inflight: false, ready_tx, ready }
+        Self { sent: Default::default(), center: None, radius: VIEW_RADIUS.min(config::get().view_distance), pending: Default::default(), last_batch: None, just_sent: vec![], just_dropped: vec![], inflight: false, ready_tx, ready }
     }
 }
 

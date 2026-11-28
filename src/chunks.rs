@@ -15,6 +15,8 @@ pub(crate) struct ChunkTracker {
     pub(crate) last_batch: Option<std::time::Instant>,
     /// Chunks the last `update` sent, for the chunk-load plugin event.
     pub(crate) just_sent: Vec<(i32, i32)>,
+    /// Chunks the client dropped on the last recenter, for the chunk-unload plugin event.
+    pub(crate) just_dropped: Vec<(i32, i32)>,
     /// A streaming batch is being generated in the background; its packets arrive on `ready`
     /// so the player's connection keeps running meanwhile (fast elytra flight froze it).
     pub(crate) inflight: bool,
@@ -36,7 +38,14 @@ impl ChunkTracker {
         }
         // The client drops chunks outside the publisher radius, so forget exactly those too;
         // otherwise walking back leaves holes we never resend.
-        self.sent.retain(|&(x, z)| in_view(x - cx, z - cz));
+        let dropped = &mut self.just_dropped;
+        self.sent.retain(|&(x, z)| {
+            let keep = in_view(x - cx, z - cz);
+            if !keep {
+                dropped.push((x, z));
+            }
+            keep
+        });
         new
     }
 
@@ -172,3 +181,17 @@ fn chunk_packets(encoded: Vec<((i32, i32), (Vec<u8>, u32))>, dim: u8) -> Vec<Pro
 pub(crate) const CHUNK_BATCH: usize = 16;
 
 pub(crate) const BATCH_GAP: std::time::Duration = std::time::Duration::from_millis(100);
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn walking_away_reports_dropped_chunks() {
+        let mut t = super::ChunkTracker::default();
+        t.radius = 2;
+        t.recenter(0, 0);
+        assert!(t.just_dropped.is_empty());
+        t.recenter(10, 0);
+        assert!(t.just_dropped.contains(&(0, 0)), "the old centre went out of view");
+        assert!(!t.sent.contains(&(0, 0)));
+    }
+}

@@ -347,6 +347,20 @@ impl Session {
             Protocol::RespawnPacket(r) if self.hp.dead && matches!(r.state, PlayerRespawnState::ClientReadyToSpawn) => return self.on_respawn().await,
             Protocol::PlayerActionPacket(a) if self.hp.dead && matches!(a.action, PlayerActionType::Respawn) => return self.on_respawn().await,
             Protocol::PlayerActionPacket(a) => self.on_player_action(&a).await,
+            // Emotes and skin changes go to everyone else (they were dropped before).
+            Protocol::EmotePacket(e) => {
+                if let Some(me) = self.server.get(self.id)
+                    && self.server.plugins.emote(&self.server, &me, &e.emote_id)
+                {
+                    let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(Protocol::EmotePacket(e)) });
+                }
+            }
+            Protocol::PlayerSkinPacket(skin) => {
+                if let Some(me) = self.server.get(self.id) {
+                    self.server.plugins.skin_change(&self.server, &me, &skin.new_skin_name);
+                }
+                let _ = self.server.events.send(Event::Relay { from: self.id, packet: Box::new(Protocol::PlayerSkinPacket(skin)) });
+            }
             other => {
                 let _ = other;
             }

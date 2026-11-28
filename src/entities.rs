@@ -519,9 +519,16 @@ impl Entities {
     pub fn despawn_old(&self, server: &Server) {
         let mut items = self.items.lock();
         let old: Vec<i64> = items.values().filter(|e| e.born.elapsed() >= DESPAWN).map(|e| e.id).collect();
+        let mut gone = Vec::new();
         for id in old {
-            items.remove(&id);
+            if let Some(e) = items.remove(&id) {
+                gone.push(e);
+            }
             broadcast(server, remove_packet(id));
+        }
+        drop(items); // plugins may look at items
+        for e in gone {
+            server.plugins.item_despawn(server, crate::items::name_of(e.item.id).unwrap_or(""), e.count, e.pos);
         }
     }
 

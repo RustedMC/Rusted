@@ -128,6 +128,13 @@ Mob positions are `(f32, f32, f32)`.
 | `on_block_toggle(server, player, pos, block: &str, on: bool)` | Opening or closing a door, trapdoor or gate, or flipping a lever | yes |
 | `on_vehicle_place(server, player, kind: &str, pos)` | Placing a boat or minecart | yes |
 | `on_vehicle_destroy(server, kind: &str, pos, killer: Option<i64>)` | A boat or minecart broke | |
+| `on_emote(server, player, emote: &str)` | Playing an emote | yes |
+| `on_skin_change(server, player, skin: &str)` | Changed skin in game | |
+| `on_lightning(server, pos)` | Lightning about to strike | yes |
+| `on_item_despawn(server, item: &str, count: i8, pos)` | A dropped item despawned | |
+| `on_entity_transform(server, mob, from: &str, to: &str, new_mob)` | A mob turned into another (cured zombie villager) | |
+| `on_mob_shoot(server, mob, kind: &str)` | A mob fired a projectile | |
+| `on_chunk_unload(server, player, chunk)` | A chunk left the player's view | |
 
 ## Example: a no-grief zone
 

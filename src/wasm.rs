@@ -583,6 +583,34 @@ impl Plugin for WasmPlugin {
         self.notify(server, json!({ "event": "vehicle_destroy", "kind": kind, "pos": [pos.0, pos.1, pos.2], "killer": killer }));
     }
 
+    fn on_emote(&self, server: &Server, player: &PlayerInfo, emote: &str) -> bool {
+        self.ask(server, json!({ "event": "emote", "player": player_json(player), "emote": emote }))
+    }
+
+    fn on_skin_change(&self, server: &Server, player: &PlayerInfo, skin: &str) {
+        self.notify(server, json!({ "event": "skin_change", "player": player_json(player), "skin": skin }));
+    }
+
+    fn on_lightning(&self, server: &Server, pos: (f32, f32, f32)) -> bool {
+        self.ask(server, json!({ "event": "lightning", "pos": [pos.0, pos.1, pos.2] }))
+    }
+
+    fn on_item_despawn(&self, server: &Server, item: &str, count: i8, pos: (f32, f32, f32)) {
+        self.notify(server, json!({ "event": "item_despawn", "item": item, "count": count, "pos": [pos.0, pos.1, pos.2] }));
+    }
+
+    fn on_entity_transform(&self, server: &Server, mob: i64, from: &str, to: &str, new_mob: i64) {
+        self.notify(server, json!({ "event": "entity_transform", "mob": mob, "from": from, "to": to, "new_mob": new_mob }));
+    }
+
+    fn on_mob_shoot(&self, server: &Server, mob: i64, kind: &str) {
+        self.notify(server, json!({ "event": "mob_shoot", "mob": mob, "kind": kind }));
+    }
+
+    fn on_chunk_unload(&self, server: &Server, player: &PlayerInfo, chunk: (i32, i32)) {
+        self.notify(server, json!({ "event": "chunk_unload", "player": player_json(player), "chunk": [chunk.0, chunk.1] }));
+    }
+
 }
 
 #[cfg(test)]

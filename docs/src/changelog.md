@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.10
+
+- Emotes and in-game skin changes now show to other players (they were dropped before).
+- 7 more plugin events (88 now): `on_emote` (cancellable), `on_skin_change`, `on_lightning` (cancellable), `on_item_despawn`, `on_entity_transform`, `on_mob_shoot` and `on_chunk_unload`. Runtime `.wasm` plugins get them too.
+
 ## 0.6.9
 
 - 7 more plugin events (81 now): `on_leaves_decay`, `on_block_spread`, `on_block_form` (snow, ice, and obsidian or cobblestone from lava), `on_block_fade`, `on_block_toggle` (doors, trapdoors, gates, levers), `on_vehicle_place` and `on_vehicle_destroy`. All but the last can be cancelled, and runtime `.wasm` plugins get them too.

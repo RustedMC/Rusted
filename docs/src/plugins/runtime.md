@@ -131,6 +131,13 @@ Each event is JSON. `e.kind()` tells you which one; player events have `player` 
 | `block_toggle` | `pos`, `block`, `on` | cancellable; doors, trapdoors, gates, levers |
 | `vehicle_place` | `kind`, `pos` | cancellable |
 | `vehicle_destroy` | `kind`, `pos`, `killer` |  |
+| `emote` | `emote` | cancellable (others don't see it) |
+| `skin_change` | `skin` |  |
+| `lightning` | `pos` | cancellable |
+| `item_despawn` | `item`, `count`, `pos` |  |
+| `entity_transform` | `mob`, `from`, `to`, `new_mob` |  |
+| `mob_shoot` | `mob`, `kind` |  |
+| `chunk_unload` | `chunk` |  |
 
 ## What a plugin can do
 

@@ -39,6 +39,8 @@ pub enum Later {
     Combust(i64, &'static str),
     Despawn(i64, &'static str),
     Piston((i32, i32, i32), bool),
+    Transform(i64, &'static str, &'static str, i64),
+    MobShoot(i64, &'static str),
 }
 
 static LATER: parking_lot::Mutex<Vec<Later>> = parking_lot::Mutex::new(Vec::new());
@@ -465,6 +467,32 @@ pub trait Plugin: Send + Sync {
     /// A boat or minecart was broken at `pos` (by `killer`, an entity id, if anyone).
     fn on_vehicle_destroy(&self, _server: &Server, _kind: &str, _pos: (f32, f32, f32), _killer: Option<i64>) {}
 
+    /// Player is playing emote `emote` (its id). Return false to stop others seeing it.
+    fn on_emote(&self, _server: &Server, _player: &PlayerInfo, _emote: &str) -> bool {
+        true
+    }
+
+    /// Player changed their skin in game (`skin` is the new skin's name).
+    fn on_skin_change(&self, _server: &Server, _player: &PlayerInfo, _skin: &str) {}
+
+    /// Lightning is about to strike at `pos`. Return false to stop it.
+    fn on_lightning(&self, _server: &Server, _pos: (f32, f32, f32)) -> bool {
+        true
+    }
+
+    /// A dropped item at `pos` despawned after 5 minutes.
+    fn on_item_despawn(&self, _server: &Server, _item: &str, _count: i8, _pos: (f32, f32, f32)) {}
+
+    /// Mob `mob` turned into another (`from` and `to` kinds, `new_mob` its new id), such as a
+    /// cured zombie villager. Fired after the mob tick.
+    fn on_entity_transform(&self, _server: &Server, _mob: i64, _from: &str, _to: &str, _new_mob: i64) {}
+
+    /// Mob `mob` fired a projectile (skeleton arrows and the like). Fired after the mob tick.
+    fn on_mob_shoot(&self, _server: &Server, _mob: i64, _kind: &str) {}
+
+    /// Player's client dropped the chunk at `chunk` (it's out of their view now).
+    fn on_chunk_unload(&self, _server: &Server, _player: &PlayerInfo, _chunk: (i32, i32)) {}
+
     /// Player jumped.
     fn on_jump(&self, _server: &Server, _player: &PlayerInfo) {}
 
@@ -778,6 +806,8 @@ impl Plugins {
                 Later::Combust(id, kind) => self.each(|pl| pl.on_entity_combust(s, id, kind)),
                 Later::Despawn(id, kind) => self.each(|pl| pl.on_entity_despawn(s, id, kind)),
                 Later::Piston(pos, ext) => self.each(|pl| pl.on_piston(s, pos, ext)),
+                Later::Transform(id, from, to, new) => self.each(|pl| pl.on_entity_transform(s, id, from, to, new)),
+                Later::MobShoot(id, kind) => self.each(|pl| pl.on_mob_shoot(s, id, kind)),
             }
         }
     }
@@ -813,6 +843,26 @@ impl Plugins {
 
     pub fn vehicle_destroy(&self, s: &Server, kind: &str, pos: (f32, f32, f32), killer: Option<i64>) {
         self.each(|pl| pl.on_vehicle_destroy(s, kind, pos, killer));
+    }
+
+    pub fn emote(&self, s: &Server, p: &PlayerInfo, emote: &str) -> bool {
+        self.cancellable(|pl| pl.on_emote(s, p, emote))
+    }
+
+    pub fn skin_change(&self, s: &Server, p: &PlayerInfo, skin: &str) {
+        self.each(|pl| pl.on_skin_change(s, p, skin));
+    }
+
+    pub fn lightning(&self, s: &Server, pos: (f32, f32, f32)) -> bool {
+        self.cancellable(|pl| pl.on_lightning(s, pos))
+    }
+
+    pub fn item_despawn(&self, s: &Server, item: &str, count: i8, pos: (f32, f32, f32)) {
+        self.each(|pl| pl.on_item_despawn(s, item, count, pos));
+    }
+
+    pub fn chunk_unload(&self, s: &Server, p: &PlayerInfo, chunk: (i32, i32)) {
+        self.each(|pl| pl.on_chunk_unload(s, p, chunk));
     }
 
     pub fn jump(&self, s: &Server, p: &PlayerInfo) {
